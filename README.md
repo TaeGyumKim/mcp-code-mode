@@ -2,24 +2,26 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Node Version](https://img.shields.io/badge/node-%3E%3D20.0.0-brightgreen)](https://nodejs.org)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.9-blue)](https://www.typescriptlang.org/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.9.3-blue)](https://www.typescriptlang.org/)
 [![Docker](https://img.shields.io/badge/docker-ready-blue)](https://www.docker.com/)
 [![Code Mode](https://img.shields.io/badge/MCP-Code%20Mode-purple)](https://blog.cloudflare.com/code-mode/)
 
-> **🚀 Production-Ready Code Mode Implementation**
+> **🚀 Production-Ready TypeScript Code Mode Implementation**
 > 
-> Cloudflare와 Anthropic이 제시한 "Code Mode" 패턴을 완벽 구현한 MCP 서버입니다.
+> Cloudflare와 Anthropic이 제시한 "Code Mode" 패턴을 **완전한 TypeScript**로 구현한 MCP 서버입니다.
 > 토큰 사용량을 **98% 절감**하고, GPU 기반 AI 분석으로 코드 품질을 자동 평가합니다.
 
 ## ✨ 특징
 
 - 🎯 **Code Mode 표준 준수**: 단일 `execute` 툴 + Sandbox 실행 + TypeScript API
+- 💎 **100% TypeScript**: 모든 소스 코드가 TypeScript 5.9.3 strict mode로 작성됨
 - 🤖 **AI 코드 분석**: Ollama LLM (qwen2.5-coder:1.5b) + GPU 기반 실시간 품질 측정
 - 💾 **BestCase 관리**: 프로젝트 패턴 자동 저장 및 로드
 - 🔒 **안전한 실행**: vm2 샌드박스 격리
 - 📊 **스마트 스코어링**: API 품질 + 컴포넌트 사용도 자동 평가 (S/A/B/C/D 티어)
 - 🐳 **Docker 배포**: GPU 지원 + 자동 스캔 스케줄러
 - ⚡ **98% 토큰 절감**: 중간 데이터 격리, 최종 결과만 반환
+- 🏗️ **Yarn Berry Workspace**: 모노레포 패키지 관리 (workspaces)
 
 ## 🎯 Code Mode란?
 
@@ -91,14 +93,14 @@ Code Mode는 LLM이 직접 tool calling을 하는 대신, **TypeScript 코드를
 # 1. 의존성 설치
 yarn install
 
-# 2. 프로젝트 빌드
-yarn build:all
+# 2. 모든 패키지 빌드 (TypeScript → JavaScript)
+yarn workspaces foreach -A run build
 
 # 3. 프로젝트 스캔 (선택)
 yarn scan:advanced
 
 # 4. MCP 서버 실행
-node mcp-stdio-server.ts
+npx tsx mcp-stdio-server.ts
 ```
 
 ### Docker 실행 (GPU 지원)
