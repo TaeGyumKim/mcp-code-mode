@@ -1,422 +1,842 @@
-------
-
-applyTo: "**"applyTo: "**"
-
-------
+# MCP Code Mode Starter - AI Coding Guidelines------
 
 
 
-# MCP Code Mode Starter - AI Coding GuidelinesProvide project context and coding guidelines that AI should follow when generating code, answering questions, or reviewing changes.# Global AI Coding Agent Instructions
+> **Code Mode 패턴을 준수하는 MCP 서버 프로젝트**applyTo: "**"applyTo: "**"
+
+>
+
+> 이 지침은 AI 코딩 에이전트가 코드 생성, 질문 응답, 변경 사항 검토 시 따라야 할 프로젝트 컨텍스트와 코딩 가이드라인을 제공합니다.------
 
 
 
-이 프로젝트는 BestCase 관리 및 프로젝트 스캐닝 기능을 갖춘 MCP (Model Context Protocol) Code Mode 서버를 구현합니다.## MCP Server Integration
+## 📋 프로젝트 개요
 
 
 
-## 프로젝트 개요### Standard Workflow for Feature Implementation
+**목적**: Code Mode 패턴 기반 MCP 서버 구현 - BestCase 관리 + 프로젝트 스캐닝 + 98% 토큰 절감# MCP Code Mode Starter - AI Coding GuidelinesProvide project context and coding guidelines that AI should follow when generating code, answering questions, or reviewing changes.# Global AI Coding Agent Instructions
 
 
 
-**목적:** 프로젝트를 스캔하고 BestCase를 저장하여 LLM 토큰 사용량을 98% 절감하는 코드 실행 기반 MCP 서버 구축When implementing features, **ALWAYS** follow this decision tree workflow:
+**핵심 기술**:
 
 
 
-**핵심 기술:**#### Decision Tree: Choose Your Implementation Path
+- TypeScript 5.9 (strict mode)이 프로젝트는 BestCase 관리 및 프로젝트 스캐닝 기능을 갖춘 MCP (Model Context Protocol) Code Mode 서버를 구현합니다.## MCP Server Integration
 
-- Yarn 4.9.1 (Berry) 워크스페이스 모노레포
+- Yarn 4.9.1 Berry (워크스페이스)
 
-- Node.js 20 + TypeScript**START HERE:** What type of feature are you implementing?
+- Node.js 20+
 
-- Nuxt 3 웹 인터페이스
+- vm2 (샌드박스)
 
-- vm2 샌드박스 코드 실행---
+- Docker (GPU 지원)## 프로젝트 개요### Standard Workflow for Feature Implementation
 
-- Docker 배포
 
-#### Path A: UI Component Usage (openerd-nuxt3)
 
-**핵심 컨셉:** 중간 데이터를 LLM 컨텍스트로 전달하는 대신, 샌드박스에서 코드를 실행하고 최종 결과만 반환
+**핵심 컨셉**:
 
-**When to use:** Using CommonTable, CommonButton, CommonLayout, or any openerd-nuxt3 component
 
----
 
-**Step 1: Check Component Library (`openerd-nuxt3`)**
+> **Code Mode** = 중간 데이터를 LLM 컨텍스트로 전달하지 않고, 샌드박스에서 TypeScript 코드를 실행하여 최종 결과만 반환**목적:** 프로젝트를 스캔하고 BestCase를 저장하여 LLM 토큰 사용량을 98% 절감하는 코드 실행 기반 MCP 서버 구축When implementing features, **ALWAYS** follow this decision tree workflow:
 
-## 필수 아키텍처 규칙
 
-- Use **`openerd-nuxt3-lib`** to read component source files
 
-### 1. 워크스페이스 구조 (반드시 준수)- Use **`openerd-nuxt3-search`** to search for type definitions and interfaces
+## 🏗️ 프로젝트 구조
 
-- Look for:
 
-```  - Component props and their types
 
-mcp-code-mode-starter/  - Model value structure (e.g., `v-model` format)
+```**핵심 기술:**#### Decision Tree: Choose Your Implementation Path
 
-├── packages/  - Available slots and events (especially for CommonTable: use field names as slot names)
+mcp-code-mode-starter/
 
-│   ├── bestcase-db/      # BestCase 저장소 (JSON 파일 기반)  - Required vs optional properties
+├── packages/- Yarn 4.9.1 (Berry) 워크스페이스 모노레포
 
-│   ├── ai-bindings/      # filesystem + bestcase API export
+│   ├── bestcase-db/      # BestCase 저장소 (JSON 파일)
 
-│   └── ai-runner/        # vm2 샌드박스 실행**Example:**
+│   ├── ai-bindings/      # filesystem + bestcase API export- Node.js 20 + TypeScript**START HERE:** What type of feature are you implementing?
+
+│   ├── ai-runner/        # vm2 샌드박스 실행
+
+│   └── llm-analyzer/     # Ollama LLM 코드 분석기- Nuxt 3 웹 인터페이스
 
 ├── mcp-servers/
 
-│   ├── filesystem/       # TypeScript API: readFile, writeFile, searchFiles```
+│   ├── filesystem/       # 파일 시스템 API (TypeScript)- vm2 샌드박스 코드 실행---
 
-│   └── bestcase/         # TypeScript API: saveBestCase, loadBestCase1. Search component: mcp_openerd-nuxt3_search_files("CommonTable")
+│   └── bestcase/         # BestCase API (TypeScript)
 
-├── apps/2. Read source: mcp_openerd-nuxt3_read_text_file("path/to/CommonTable.vue")
+├── apps/web/             # Nuxt3 웹 인터페이스 (선택)- Docker 배포
 
-│   └── web/              # Nuxt3 웹 인터페이스 (선택적)3. Check types: Look for CommonTableHeader interface, slot definitions
+├── scripts/              # 스캔 스크립트 (TypeScript 변환 완료)
 
-├── scan-*.js             # 스캐닝 스크립트 (ai-runner로 실행)4. Important: For CommonTable, header 'value' must match actual object field names
+├── mcp-stdio-server.ts   # MCP STDIO 서버 (메인)#### Path A: UI Component Usage (openerd-nuxt3)
 
-└── run-*.js              # 실행 래퍼```
+└── docker-compose.ai.yml # GPU 지원 Docker 구성
 
-```
+```**핵심 컨셉:** 중간 데이터를 LLM 컨텍스트로 전달하는 대신, 샌드박스에서 코드를 실행하고 최종 결과만 반환
 
-**Step 2: Find Usage Patterns (Reference Projects)**
 
-**패키지 의존성:**
 
-- `ai-bindings`는 `mcp-servers/*` 의존 (상대 경로 import)- Use **`reference-tailwind-nuxt3`** for real-world examples
+## 🎯 Code Mode 아키텍처 규칙**When to use:** Using CommonTable, CommonButton, CommonLayout, or any openerd-nuxt3 component
 
-- `ai-runner`는 `ai-bindings` 의존 (workspace:*)- Use **`reference-tailwind-nuxt3-search`** to search for component usage
 
-- `mcp-servers/bestcase`는 `bestcase-db/dist` 의존 (상대 경로 import)- Look for:
 
-  - Real-world usage patterns
+### 1. 단일 `execute` Tool 패턴---
 
-### 2. 모듈 해석 (매우 중요)  - Data binding patterns
 
-  - Event handling approaches
 
-**✅ 올바른 import 패턴:**  - Common configurations
+**✅ 올바른 패턴 (Code Mode)**:**Step 1: Check Component Library (`openerd-nuxt3`)**
 
 
 
-```typescript**Example:**
+```typescript## 필수 아키텍처 규칙
 
-// mcp-servers/bestcase/saveBestCase.ts에서
+// mcp-stdio-server.ts
 
-import { BestCaseStorage } from '../../packages/bestcase-db/dist/index.js';```
+{- Use **`openerd-nuxt3-lib`** to read component source files
 
-1. Search usage: grep_search for "CommonTable" in reference project
+  name: 'execute',
 
-// packages/ai-bindings/src/index.ts에서2. Read examples: Read files that use the component
+  description: 'Execute TypeScript code in sandbox',### 1. 워크스페이스 구조 (반드시 준수)- Use **`openerd-nuxt3-search`** to search for type definitions and interfaces
 
-export * as filesystem from '../../mcp-servers/filesystem/index.js';3. Note patterns: How headers are defined, slot usage, data structures
+  inputSchema: {
 
-export * as bestcase from '../../mcp-servers/bestcase/index.js';```
+    properties: {- Look for:
 
+      code: { type: 'string' },
 
+      timeoutMs: { type: 'number' }```  - Component props and their types
 
-// packages/ai-runner/src/sandbox.ts에서**Step 3: Implement Following Patterns**
+    }
 
-import { filesystem, bestcase } from 'ai-bindings';
-
-```- Use the exact model structure from component library
-
-- Follow data binding patterns from reference projects
-
-**❌ 잘못된 패턴:**- Match naming conventions and coding style
-
-- Include proper TypeScript types
-
-```typescript
-
-// mcp-servers에서 workspace:* 사용 금지---
-
-import { BestCaseStorage } from 'bestcase-db';  // ❌ 실패함
-
-#### Path B: API Integration (gRPC or OpenAPI)
-
-// fs/path default import 금지
-
-import fs from 'fs';  // ❌ named import 사용**When to use:** Implementing API calls with proto or OpenAPI definitions
-
-import path from 'path';  // ❌ named import 사용
-
-```**Step 1: Identify API Type**
-
-Check `package.json` dependencies:
-
-**올바른 fs/path import:**
-
-- Has `@airian/proto` or similar? → Use gRPC/Proto workflow
-
-```typescript- Has `@~/openapi` or OpenAPI generator? → Use OpenAPI workflow
-
-import { promises as fs } from 'fs';
-
-import { join, dirname } from 'path';**Step 2A: gRPC/Proto Workflow**
-
-```
-
-1. **Find API Client Pattern:**
-
-### 3. TypeScript 빌드 설정
-
-   ```
-
-**tsup 설정 (packages/*/package.json):**   - Read composables/grpc.ts for useBackendClient pattern
-
-   - Check reference project for gRPC integration examples
-
-```json   - Look for interceptors (auth, language, loading, error handling)
-
-{   ```
-
-  "scripts": {
-
-    "build": "tsup src/*.ts --format esm --dts"2. **Locate Proto Definitions:**
-
-  },
-
-  "main": "dist/index.js",   ```
-
-  "types": "dist/index.d.ts",   - Check node_modules/@airian/proto/dist/types/proto_pb.d.ts for message types
-
-  "type": "module"   - Check node_modules/@airian/proto/dist/types/proto_connect.d.ts for service methods
-
-}   - Search for specific Request/Response types related to your feature
-
-```   ```
-
-
-
-**일반적인 빌드 에러:**3. **Import Proto Types:**
-
-
-
-| 에러 | 원인 | 해결책 |   ```typescript
-
-|------|------|--------|   import type { GetPopupsRequest, GetPopupsResponse_Popup, UpdatePopupRequest } from "@airian/proto";
-
-| `Cannot find module 'vm2'` | 타입 정의 누락 | `src/vm2.d.ts` 생성 |   ```
-
-| `ERR_MODULE_NOT_FOUND: dist/index.js` | 잘못된 import 경로 | `dist/agentRunner.js` 사용 (실제 빌드 출력) |
-
-| `Default export not found` | 잘못된 import 문법 | named import 사용: `import { promises as fs }` |4. **Use Proto Types Correctly:**
-
-| BestCase ID에 `/` 포함 | sanitization 누락 | 슬래시 치환: `projectName.replace(/\//g, '-')` |
-
-   ```typescript
-
-### 4. 샌드박스 실행 (vm2)   // ✅ CORRECT: Use plain objects for API calls
-
-   const req = {
-
-**타입 정의 필수 (packages/ai-runner/src/vm2.d.ts):**     page: 1,
-
-     limit: 10,
-
-```typescript     title: "search term"
-
-declare module 'vm2' {   };
-
-  export class VM {   await client.getPopups(req);
-
-    constructor(options?: {
-
-      timeout?: number;   // ❌ WRONG: Don't instantiate Message classes
-
-      sandbox?: any;   const req = new GetPopupsRequest({ ... }); // This will fail
-
-      compiler?: string;   ```
-
-    });
-
-    run(code: string): any;5. **Handle Proto Timestamp Fields:**
-
-  }
-
-}   ```typescript
-
-```   // Proto Timestamps have { seconds: string | number }
-
-   const timestamp = element.displayStartAt?.seconds;
-
-**샌드박스 컨텍스트 패턴:**   const date = new Date(Number(timestamp) * 1000);
-
-   ```
-
-```typescript
-
-// packages/ai-runner/src/sandbox.ts6. **Error Handling Pattern:**
-
-import { VM } from 'vm2';   ```typescript
-
-import { filesystem, bestcase } from 'ai-bindings';   await client
-
-     .methodName(request)
-
-const logs: string[] = [];     .then((response) => {
-
-const sandbox = {       // Handle success
-
-  filesystem,     })
-
-  bestcase,     .catch(async (error) => {
-
-  console: {       await useModal?.error(error, "methodName");
-
-    log: (...args: any[]) => logs.push(args.join(' '))     });
-
-  }   ```
-
-};
-
-**Step 2B: OpenAPI Workflow**
-
-const vm = new VM({ timeout: 30000, sandbox });
-
-```1. **Find API Client Pattern:**
-
-
-
-**일반적인 샌드박스 이슈:**   ```
-
-   - Read composables/api.ts or similar for API client setup
-
-- **Async/Await 지원:** 코드를 async IIFE로 래핑   - Check reference project (e.g., token.ts) for OpenAPI usage
-
-  ```typescript   ```
-
-  const wrappedCode = `(async () => { ${code} })()`;
-
-  ```2. **Locate OpenAPI Definitions:**
-
-- **타임아웃 처리:** 기본 30초, `timeoutMs` 파라미터로 설정 가능
-
-- **콘솔 로깅:** `logs[]` 배열에 캡처, 실행 후 출력   ```
-
-   - Check node_modules/@~/openapi for generated types
-
-### 5. BestCase 저장소   - Look for API service classes and type definitions
-
-   ```
-
-**파일 구조:**
-
-3. **Import and Use Types:**
-
-```   ```typescript
-
-D:/01.Work/01.Projects/.bestcases/   import type { YourRequestType, YourResponseType } from "@~/openapi";
-
-└── {projectName}-{category}-{timestamp}.json   ```
-
-```
-
----
-
-**ID Sanitization (매우 중요):**
-
-#### Path C: Combined Workflow (openerd-nuxt3 + API)
-
-```typescript
-
-// ✅ 올바름: 프로젝트명의 슬래시 치환**When to use:** Building pages with UI components AND API integration
-
-const sanitizedProjectName = input.projectName.replace(/\//g, '-').replace(/\\/g, '-');
-
-const id = `${sanitizedProjectName}-${input.category}-${Date.now()}`;**Combined Steps:**
-
-
-
-// ❌ 잘못됨: 직접 연결1. **Start with Component Structure (Path A)**
-
-const id = `${input.projectName}-${input.category}-${Date.now()}`;   - Design UI with openerd-nuxt3 components
-
-// "50.dktechin/frontend"인 경우 서브디렉토리 생성 시도로 실패   - Define headers, slots, and data structures
-
-```   - Use reference project for layout patterns
-
-
-
-**BestCase 스키마:**2. **Add API Integration (Path B)**
-
-   - Implement API client setup
-
-```typescript   - Import proto/OpenAPI types
-
-interface BestCase {   - Connect data to components
-
-  id: string;
-
-  projectName: string;  // 원본 이름 (슬래시 포함 가능)3. **Map API Data to UI Components:**
-
-  category: string;
-
-  description: string;   ```typescript
-
-  files: Array<{   // Example: CommonTable with Proto data
-
-    path: string;   const headers: CommonTableHeader[] = [
-
-    content: string;     { title: "번호", value: "index" },        // Custom field
-
-    purpose: string;     { title: "제목", value: "title" },        // Proto field: element.title
-
-  }>;     { title: "작성자", value: "authorName" }, // Proto field: element.authorName
-
-  patterns: {   ];
-
-    stats?: { totalFiles: number; vueFiles: number; ... };
-
-    apiInfo?: { hasGrpc: boolean; hasOpenApi: boolean; ... };   // List contains proto objects directly
-
-    codePatterns?: { framework: string; usesTypescript: boolean; ... };   const list = ref<GetPopupsResponse_Popup[]>([]);
-
-    sampleCode?: { components: [], composables: [], api: [] };
-
-    [key: string]: any;   // Template slots use proto field names
-
-  };   <template #title="{ element }">
-
-  metadata: {     <td>{{ element.title }}</td>
-
-    createdAt: string;   </template>
-
-    updatedAt: string;   ```
-
-    tags: string[];
-
-  };4. **Handle Route Query Sync (Reference Pattern):**
+  }mcp-code-mode-starter/  - Model value structure (e.g., `v-model` format)
 
 }
 
-```   ```typescript
+```├── packages/  - Available slots and events (especially for CommonTable: use field names as slot names)
 
-   // Watch route query and sync with request state
 
----   watch(
 
-     () => route.query,
+**❌ 잘못된 패턴 (전통적인 MCP)**:│   ├── bestcase-db/      # BestCase 저장소 (JSON 파일 기반)  - Required vs optional properties
 
-## 구현 패턴     () => {
 
-       request.value = {
+
+```typescript│   ├── ai-bindings/      # filesystem + bestcase API export
+
+// 개별 tool 100개 노출 (안 됨)
+
+{ name: 'read_file' }│   └── ai-runner/        # vm2 샌드박스 실행**Example:**
+
+{ name: 'write_file' }
+
+{ name: 'search_files' }├── mcp-servers/
+
+// ... 97개 더
+
+```│   ├── filesystem/       # TypeScript API: readFile, writeFile, searchFiles```
+
+
+
+### 2. TypeScript API 노출│   └── bestcase/         # TypeScript API: saveBestCase, loadBestCase1. Search component: mcp_openerd-nuxt3_search_files("CommonTable")
+
+
+
+**mcp-servers/** = TypeScript 함수로 구현된 API├── apps/2. Read source: mcp_openerd-nuxt3_read_text_file("path/to/CommonTable.vue")
+
+
+
+```typescript│   └── web/              # Nuxt3 웹 인터페이스 (선택적)3. Check types: Look for CommonTableHeader interface, slot definitions
+
+// mcp-servers/filesystem/readFile.ts
+
+export async function readTextFile(path: string): Promise<string> {├── scan-*.js             # 스캐닝 스크립트 (ai-runner로 실행)4. Important: For CommonTable, header 'value' must match actual object field names
+
+  return await fs.readFile(path, 'utf-8');
+
+}└── run-*.js              # 실행 래퍼```
+
+```
+
+```
+
+**packages/ai-bindings/** = 샌드박스에 노출
+
+**Step 2: Find Usage Patterns (Reference Projects)**
+
+```typescript
+
+// packages/ai-bindings/src/index.ts**패키지 의존성:**
+
+export * as filesystem from '../../mcp-servers/filesystem/index.js';
+
+export * as bestcase from '../../mcp-servers/bestcase/index.js';- `ai-bindings`는 `mcp-servers/*` 의존 (상대 경로 import)- Use **`reference-tailwind-nuxt3`** for real-world examples
+
+```
+
+- `ai-runner`는 `ai-bindings` 의존 (workspace:*)- Use **`reference-tailwind-nuxt3-search`** to search for component usage
+
+### 3. 샌드박스 실행 (vm2)
+
+- `mcp-servers/bestcase`는 `bestcase-db/dist` 의존 (상대 경로 import)- Look for:
+
+**packages/ai-runner/src/sandbox.ts**:
+
+  - Real-world usage patterns
+
+```typescript
+
+import { VM } from 'vm2';### 2. 모듈 해석 (매우 중요)  - Data binding patterns
+
+import { filesystem, bestcase } from 'ai-bindings';
+
+  - Event handling approaches
+
+const vm = new VM({
+
+  timeout: timeoutMs,**✅ 올바른 import 패턴:**  - Common configurations
+
+  sandbox: {
+
+    filesystem,  // API 노출
+
+    bestcase,    // API 노출
+
+    console: captureConsole```typescript**Example:**
+
+  }
+
+});// mcp-servers/bestcase/saveBestCase.ts에서
+
+
+
+const result = await vm.run(code);  // 샌드박스 내 실행import { BestCaseStorage } from '../../packages/bestcase-db/dist/index.js';```
+
+```
+
+1. Search usage: grep_search for "CommonTable" in reference project
+
+### 4. 토큰 절감 원리
+
+// packages/ai-bindings/src/index.ts에서2. Read examples: Read files that use the component
+
+```typescript
+
+// ❌ 전통적인 MCP (150,000 토큰)export * as filesystem from '../../mcp-servers/filesystem/index.js';3. Note patterns: How headers are defined, slot usage, data structures
+
+{
+
+  tool: 'read_file',export * as bestcase from '../../mcp-servers/bestcase/index.js';```
+
+  result: '<500KB CSV 전체 내용>'  // 전부 LLM으로
+
+}
+
+
+
+// ✅ Code Mode (2,000 토큰)// packages/ai-runner/src/sandbox.ts에서**Step 3: Implement Following Patterns**
+
+{
+
+  tool: 'execute',import { filesystem, bestcase } from 'ai-bindings';
+
+  code: `
+
+    const data = filesystem.readTextFile('/data.csv');```- Use the exact model structure from component library
+
+    const summary = data.split('\n').slice(0, 10);  // 샌드박스에서 필터링
+
+    return summary;  // 10행만 반환- Follow data binding patterns from reference projects
+
+  `
+
+}**❌ 잘못된 패턴:**- Match naming conventions and coding style
+
+```
+
+- Include proper TypeScript types
+
+**결과**: 98% 토큰 절감 (150,000 → 2,000)
+
+```typescript
+
+## 🛠️ 코딩 규칙
+
+// mcp-servers에서 workspace:* 사용 금지---
+
+### 1. 모듈 해석 (매우 중요)
+
+import { BestCaseStorage } from 'bestcase-db';  // ❌ 실패함
+
+**✅ 올바른 import 패턴**:
+
+#### Path B: API Integration (gRPC or OpenAPI)
+
+```typescript
+
+// mcp-servers/bestcase/saveBestCase.ts// fs/path default import 금지
+
+import { BestCaseStorage } from '../../packages/bestcase-db/dist/index.js';
+
+import fs from 'fs';  // ❌ named import 사용**When to use:** Implementing API calls with proto or OpenAPI definitions
+
+// packages/ai-bindings/src/index.ts
+
+export * as filesystem from '../../mcp-servers/filesystem/index.js';import path from 'path';  // ❌ named import 사용
+
+export * as bestcase from '../../mcp-servers/bestcase/index.js';
+
+```**Step 1: Identify API Type**
+
+// packages/ai-runner/src/sandbox.ts
+
+import { filesystem, bestcase } from 'ai-bindings';Check `package.json` dependencies:
+
+
+
+// fs/path named import**올바른 fs/path import:**
+
+import { promises as fs } from 'fs';
+
+import { join, dirname } from 'path';- Has `@airian/proto` or similar? → Use gRPC/Proto workflow
+
+```
+
+```typescript- Has `@~/openapi` or OpenAPI generator? → Use OpenAPI workflow
+
+**❌ 잘못된 패턴**:
+
+import { promises as fs } from 'fs';
+
+```typescript
+
+// mcp-servers에서 workspace:* 사용 금지import { join, dirname } from 'path';**Step 2A: gRPC/Proto Workflow**
+
+import { BestCaseStorage } from 'bestcase-db';  // ❌
+
+```
+
+// fs/path default import 금지
+
+import fs from 'fs';    // ❌1. **Find API Client Pattern:**
+
+import path from 'path'; // ❌
+
+```### 3. TypeScript 빌드 설정
+
+
+
+### 2. TypeScript 빌드 설정   ```
+
+
+
+**tsup 설정 (packages/*/package.json)**:**tsup 설정 (packages/*/package.json):**   - Read composables/grpc.ts for useBackendClient pattern
+
+
+
+```json   - Check reference project for gRPC integration examples
+
+{
+
+  "scripts": {```json   - Look for interceptors (auth, language, loading, error handling)
+
+    "build": "tsup src/*.ts --format esm --dts"
+
+  },{   ```
+
+  "main": "dist/index.js",
+
+  "types": "dist/index.d.ts",  "scripts": {
+
+  "type": "module"
+
+}    "build": "tsup src/*.ts --format esm --dts"2. **Locate Proto Definitions:**
+
+```
+
+  },
+
+**빌드 순서 (필수)**:
+
+  "main": "dist/index.js",   ```
+
+```bash
+
+# 1. BestCase DB (의존성 없음)  "types": "dist/index.d.ts",   - Check node_modules/@airian/proto/dist/types/proto_pb.d.ts for message types
+
+yarn workspace bestcase-db run build
+
+  "type": "module"   - Check node_modules/@airian/proto/dist/types/proto_connect.d.ts for service methods
+
+# 2. AI Bindings (mcp-servers에 의존)
+
+yarn workspace ai-bindings run build}   - Search for specific Request/Response types related to your feature
+
+
+
+# 3. AI Runner (ai-bindings에 의존)```   ```
+
+yarn workspace ai-runner run build
+
+
+
+# 또는 통합 명령어:
+
+yarn build:all**일반적인 빌드 에러:**3. **Import Proto Types:**
+
+```
+
+
+
+### 3. BestCase ID Sanitization (필수)
+
+| 에러 | 원인 | 해결책 |   ```typescript
+
+```typescript
+
+// ✅ 올바름: 슬래시 치환|------|------|--------|   import type { GetPopupsRequest, GetPopupsResponse_Popup, UpdatePopupRequest } from "@airian/proto";
+
+const sanitizedProjectName = input.projectName
+
+  .replace(/\//g, '-')| `Cannot find module 'vm2'` | 타입 정의 누락 | `src/vm2.d.ts` 생성 |   ```
+
+  .replace(/\\/g, '-');
+
+const id = `${sanitizedProjectName}-${input.category}-${Date.now()}`;| `ERR_MODULE_NOT_FOUND: dist/index.js` | 잘못된 import 경로 | `dist/agentRunner.js` 사용 (실제 빌드 출력) |
+
+
+
+// ❌ 잘못됨: 슬래시 포함 시 서브디렉토리 생성 실패| `Default export not found` | 잘못된 import 문법 | named import 사용: `import { promises as fs }` |4. **Use Proto Types Correctly:**
+
+const id = `${input.projectName}-${input.category}-${Date.now()}`;
+
+// "50.dktechin/frontend" → 서브디렉토리 생성 시도로 에러| BestCase ID에 `/` 포함 | sanitization 누락 | 슬래시 치환: `projectName.replace(/\//g, '-')` |
+
+```
+
+   ```typescript
+
+### 4. vm2 타입 정의
+
+### 4. 샌드박스 실행 (vm2)   // ✅ CORRECT: Use plain objects for API calls
+
+**packages/ai-runner/src/vm2.d.ts** (필수):
+
+   const req = {
+
+```typescript
+
+declare module 'vm2' {**타입 정의 필수 (packages/ai-runner/src/vm2.d.ts):**     page: 1,
+
+  export class VM {
+
+    constructor(options?: {     limit: 10,
+
+      timeout?: number;
+
+      sandbox?: any;```typescript     title: "search term"
+
+      compiler?: string;
+
+    });declare module 'vm2' {   };
+
+    run(code: string): any;
+
+  }  export class VM {   await client.getPopups(req);
+
+}
+
+```    constructor(options?: {
+
+
+
+## 🤖 AI 코드 분석 시스템      timeout?: number;   // ❌ WRONG: Don't instantiate Message classes
+
+
+
+### 1. Ollama + GPU 설정      sandbox?: any;   const req = new GetPopupsRequest({ ... }); // This will fail
+
+
+
+**docker-compose.ai.yml**:      compiler?: string;   ```
+
+
+
+```yaml    });
+
+ollama:
+
+  runtime: nvidia  # 필수    run(code: string): any;5. **Handle Proto Timestamp Fields:**
+
+  deploy:
+
+    resources:  }
+
+      reservations:
+
+        devices:}   ```typescript
+
+          - driver: nvidia
+
+            device_ids: ['1']  # NVIDIA GPU 강제 지정```   // Proto Timestamps have { seconds: string | number }
+
+            capabilities: [gpu]
+
+  environment:   const timestamp = element.displayStartAt?.seconds;
+
+    - OLLAMA_NUM_PARALLEL=3  # 병렬 처리
+
+```**샌드박스 컨텍스트 패턴:**   const date = new Date(Number(timestamp) * 1000);
+
+
+
+### 2. CodeAnalyzer 사용법   ```
+
+
+
+```typescript```typescript
+
+import { CodeAnalyzer } from './packages/llm-analyzer/dist/index.js';
+
+// packages/ai-runner/src/sandbox.ts6. **Error Handling Pattern:**
+
+// ✅ CORRECT: config 객체 사용
+
+const analyzer = new CodeAnalyzer({import { VM } from 'vm2';   ```typescript
+
+  ollamaUrl: 'http://ollama-code-analyzer:11434',
+
+  model: 'qwen2.5-coder:1.5b',import { filesystem, bestcase } from 'ai-bindings';   await client
+
+  concurrency: 3
+
+});     .methodName(request)
+
+
+
+// ✅ 파일 분석: { path, content } 배열 필요const logs: string[] = [];     .then((response) => {
+
+const filesWithContent = [];
+
+for (const file of filesToAnalyze) {const sandbox = {       // Handle success
+
+  const content = await fs.readFile(file.path, 'utf-8');
+
+  filesWithContent.push({ path: file.path, content });  filesystem,     })
+
+}
+
+  bestcase,     .catch(async (error) => {
+
+const result = await analyzer.analyzeProject(
+
+  projectPath,  console: {       await useModal?.error(error, "methodName");
+
+  filesWithContent,  // { path, content }[]
+
+  3  // concurrency    log: (...args: any[]) => logs.push(args.join(' '))     });
+
+);
+
+```  }   ```
+
+
+
+### 3. GPU 사용 확인};
+
+
+
+```bash**Step 2B: OpenAPI Workflow**
+
+# GPU 상태 확인
+
+docker exec ollama-code-analyzer nvidia-smiconst vm = new VM({ timeout: 30000, sandbox });
+
+
+
+# 출력 예시:```1. **Find API Client Pattern:**
+
+# GPU-Util: 84% ✅ (정상)
+
+# Process: /ollama
+
+
+
+# 모델 확인**일반적인 샌드박스 이슈:**   ```
+
+docker exec ollama-code-analyzer ollama ps
+
+   - Read composables/api.ts or similar for API client setup
+
+# 출력:
+
+# PROCESSOR: 100% GPU ✅- **Async/Await 지원:** 코드를 async IIFE로 래핑   - Check reference project (e.g., token.ts) for OpenAPI usage
+
+```
+
+  ```typescript   ```
+
+## 📊 BestCase 스키마
+
+  const wrappedCode = `(async () => { ${code} })()`;
+
+```typescript
+
+interface BestCase {  ```2. **Locate OpenAPI Definitions:**
+
+  id: string;                    // sanitized-project-name-category-timestamp
+
+  projectName: string;           // 원본 이름 (슬래시 포함 가능)- **타임아웃 처리:** 기본 30초, `timeoutMs` 파라미터로 설정 가능
+
+  category: string;              // 'auto-scan', 'manual', etc.
+
+  description: string;- **콘솔 로깅:** `logs[]` 배열에 캡처, 실행 후 출력   ```
+
+  files: Array<{
+
+    path: string;   - Check node_modules/@~/openapi for generated types
+
+    content: string;
+
+    purpose: string;### 5. BestCase 저장소   - Look for API service classes and type definitions
+
+  }>;
+
+  patterns: {   ```
+
+    stats?: {
+
+      totalFiles: number;**파일 구조:**
+
+      vueFiles: number;
+
+      tsFiles: number;3. **Import and Use Types:**
+
+    };
+
+    apiInfo?: {```   ```typescript
+
+      hasGrpc: boolean;
+
+      hasOpenApi: boolean;D:/01.Work/01.Projects/.bestcases/   import type { YourRequestType, YourResponseType } from "@~/openapi";
+
+      apiType: 'gRPC' | 'OpenAPI' | 'unknown';
+
+    };└── {projectName}-{category}-{timestamp}.json   ```
+
+    componentUsage?: {
+
+      CommonTable: number;```
+
+      CommonButton: number;
+
+      // ...---
+
+    };
+
+    scores?: {**ID Sanitization (매우 중요):**
+
+      final: number;       // 0-100
+
+      pattern: number;     // 0-100#### Path C: Combined Workflow (openerd-nuxt3 + API)
+
+      api: number;         // 0-100
+
+      component: number;   // 0-100```typescript
+
+      tier: 'S' | 'A' | 'B' | 'C' | 'D';
+
+    };// ✅ 올바름: 프로젝트명의 슬래시 치환**When to use:** Building pages with UI components AND API integration
+
+    aiAnalysis?: {
+
+      averageScore: number;const sanitizedProjectName = input.projectName.replace(/\//g, '-').replace(/\\/g, '-');
+
+      topFiles: Array<{ path: string; score: number }>;
+
+    };const id = `${sanitizedProjectName}-${input.category}-${Date.now()}`;**Combined Steps:**
+
+  };
+
+  metadata: {
+
+    createdAt: string;
+
+    updatedAt: string;// ❌ 잘못됨: 직접 연결1. **Start with Component Structure (Path A)**
+
+    tags: string[];
+
+  };const id = `${input.projectName}-${input.category}-${Date.now()}`;   - Design UI with openerd-nuxt3 components
+
+}
+
+```// "50.dktechin/frontend"인 경우 서브디렉토리 생성 시도로 실패   - Define headers, slots, and data structures
+
+
+
+## 🧪 테스팅 & 디버깅```   - Use reference project for layout patterns
+
+
+
+### 일반적인 빌드 에러
+
+
+
+| 에러 | 원인 | 해결책 |**BestCase 스키마:**2. **Add API Integration (Path B)**
+
+|------|------|--------|
+
+| `Cannot find module 'vm2'` | 타입 정의 누락 | `src/vm2.d.ts` 생성 |   - Implement API client setup
+
+| `ERR_MODULE_NOT_FOUND: dist/index.js` | 잘못된 import | 실제 빌드 출력 확인 |
+
+| `Default export not found` | 잘못된 import | named import 사용 |```typescript   - Import proto/OpenAPI types
+
+| BestCase ID에 `/` 포함 | sanitization 누락 | `replace(/\//g, '-')` |
+
+interface BestCase {   - Connect data to components
+
+### Docker 관련 실패 사례
+
+  id: string;
+
+**1. Yarn 4 devDependencies 설치 문제**:
+
+  projectName: string;  // 원본 이름 (슬래시 포함 가능)3. **Map API Data to UI Components:**
+
+```dockerfile
+
+# ✅ 올바른 설정  category: string;
+
+COPY .yarnrc.yml ./
+
+# .yarnrc.yml: nodeLinker: node-modules  description: string;   ```typescript
+
+
+
+RUN yarn install --inline-builds  files: Array<{   // Example: CommonTable with Proto data
+
+```
+
+    path: string;   const headers: CommonTableHeader[] = [
+
+**2. 컨테이너 재시작 루프**:
+
+    content: string;     { title: "번호", value: "index" },        // Custom field
+
+```dockerfile
+
+# ✅ 대기 상태 유지    purpose: string;     { title: "제목", value: "title" },        // Proto field: element.title
+
+CMD ["tail", "-f", "/dev/null"]
+
+  }>;     { title: "작성자", value: "authorName" }, // Proto field: element.authorName
+
+# 실제 실행은 docker exec로
+
+docker exec -i mcp-code-mode-server node /app/mcp-stdio-server.js  patterns: {   ];
+
+```
+
+    stats?: { totalFiles: number; vueFiles: number; ... };
+
+**3. read-only 볼륨 문제**:
+
+    apiInfo?: { hasGrpc: boolean; hasOpenApi: boolean; ... };   // List contains proto objects directly
+
+```yaml
+
+# ✅ read-write 볼륨    codePatterns?: { framework: string; usesTypescript: boolean; ... };   const list = ref<GetPopupsResponse_Popup[]>([]);
+
+volumes:
+
+  - D:/01.Work/01.Projects:/projects  # :ro 제거    sampleCode?: { components: [], composables: [], api: [] };
+
+```
+
+    [key: string]: any;   // Template slots use proto field names
+
+### 필수 명령어
+
+  };   <template #title="{ element }">
+
+```bash
+
+# 전체 빌드  metadata: {     <td>{{ element.title }}</td>
+
+yarn build:all
+
+    createdAt: string;   </template>
+
+# 프로젝트 스캔
+
+yarn scan:advanced    updatedAt: string;   ```
+
+
+
+# AI 분석 스캔    tags: string[];
+
+yarn scan:auto-ai
+
+  };4. **Handle Route Query Sync (Reference Pattern):**
+
+# 점수 확인
+
+yarn test:scores}
+
+
+
+# Docker GPU 확인```   ```typescript
+
+docker exec ollama-code-analyzer nvidia-smi
+
+```   // Watch route query and sync with request state
+
+
+
+## 📚 참고 문서---   watch(
+
+
+
+- **README.md** - 프로젝트 개요, 빠른 시작     () => route.query,
+
+- **TYPESCRIPT_MIGRATION.md** - TypeScript 마이그레이션 가이드
+
+- **docs/AI_CODE_ANALYZER.md** - AI 분석 시스템 상세## 구현 패턴     () => {
+
+- **docs/SCORING_SYSTEM.md** - 점수 시스템 가이드
+
+- **Cloudflare Blog** - [Code Mode 패턴](https://blog.cloudflare.com/code-mode/)       request.value = {
+
+- **Anthropic Research** - [Building Effective Agents](https://www.anthropic.com/research/building-effective-agents)
 
 ### 패턴 1: 새 MCP 서버 API 생성         page: Number(route.query.page ?? 1),
 
+## 🎓 핵심 원칙
+
          limit: Number(route.query.limit ?? 10),
 
-**사용 시기:** 샌드박스 코드에 노출할 새로운 기능 추가         title: route.query.title ? String(route.query.title) : undefined,
+1. ✅ **단일 execute tool**: 100개 tool 대신 1개
 
-       };
+2. ✅ **TypeScript API**: MCP 툴을 함수로 노출**사용 시기:** 샌드박스 코드에 노출할 새로운 기능 추가         title: route.query.title ? String(route.query.title) : undefined,
 
-**단계:**     },
+3. ✅ **샌드박스 실행**: vm2로 격리
+
+4. ✅ **중간 데이터 격리**: 샌드박스 내부에서 처리       };
+
+5. ✅ **최종 결과만 반환**: 98% 토큰 절감
+
+6. ✅ **타입 안전성**: TypeScript strict mode**단계:**     },
+
+7. ✅ **모듈 해석**: 상대 경로 import 사용
 
      { immediate: true },
 
+---
+
 1. **API 디렉토리 생성:**   );
+
+**이 지침을 따르면 Code Mode 패턴을 준수하는 production-ready MCP 서버를 구축할 수 있습니다.**
 
    ```
 

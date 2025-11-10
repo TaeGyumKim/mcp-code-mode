@@ -1,100 +1,136 @@
 # MCP Code Mode Starter
 
-> AI-powered BestCase management with Model Context Protocol (MCP)
-> 
-> 프로젝트 패턴을 학습하여 AI가 자동으로 최적의 코드를 생성합니다. 토큰 사용량을 98% 절감하고, Ollama LLM 기반 실제 코드 품질을 측정합니다.
-
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Node Version](https://img.shields.io/badge/node-%3E%3D20.0.0-brightgreen)](https://nodejs.org)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.9-blue)](https://www.typescriptlang.org/)
 [![Docker](https://img.shields.io/badge/docker-ready-blue)](https://www.docker.com/)
+[![Code Mode](https://img.shields.io/badge/MCP-Code%20Mode-purple)](https://blog.cloudflare.com/code-mode/)
 
-코드 실행 기반 MCP (Model Context Protocol) 서버로, 프로젝트 BestCase를 저장하고 토큰을 98% 절감합니다.
+> **🚀 Production-Ready Code Mode Implementation**
+> 
+> Cloudflare와 Anthropic이 제시한 "Code Mode" 패턴을 완벽 구현한 MCP 서버입니다.
+> 토큰 사용량을 **98% 절감**하고, GPU 기반 AI 분석으로 코드 품질을 자동 평가합니다.
 
-## 주요 기능
+## ✨ 특징
 
-- 📁 **프로젝트 스캔**: Vue/TS 파일, gRPC/OpenAPI 자동 감지
-- 💾 **BestCase 저장**: 프로젝트 패턴과 샘플 코드 저장
-- 🤖 **AI 코드 분석**: Ollama LLM 기반 실제 코드 품질 측정 ⭐ NEW
-- 🎯 **BestCase 자동 활용**: MCP를 통한 현재 프로젝트 패턴 자동 로드 ⭐ NEW
-- 📊 **점수 시스템**: API 품질 + openerd-nuxt3 사용도 자동 평가 (0-100점, S/A/B/C/D 등급)
-- 🚀 **토큰 최적화**: 코드 실행으로 중간 데이터 전송 제거 (98% 절감)
-- 🔒 **샌드박스 실행**: vm2 기반 안전한 코드 실행
-- 🐳 **Docker 배포**: VS Code MCP 연동 지원
-- ⏰ **주간 자동 스캔**: 매주 일요일 02:00 AM 자동 실행 (66개 Nuxt 프로젝트)
-- 🧹 **중복 관리**: 프로젝트별 최신 BestCase만 자동 유지
+- 🎯 **Code Mode 표준 준수**: 단일 `execute` 툴 + Sandbox 실행 + TypeScript API
+- 🤖 **AI 코드 분석**: Ollama LLM (qwen2.5-coder:1.5b) + GPU 기반 실시간 품질 측정
+- 💾 **BestCase 관리**: 프로젝트 패턴 자동 저장 및 로드
+- 🔒 **안전한 실행**: vm2 샌드박스 격리
+- 📊 **스마트 스코어링**: API 품질 + 컴포넌트 사용도 자동 평가 (S/A/B/C/D 티어)
+- 🐳 **Docker 배포**: GPU 지원 + 자동 스캔 스케줄러
+- ⚡ **98% 토큰 절감**: 중간 데이터 격리, 최종 결과만 반환
 
-## 🎯 BestCase 자동 활용 (핵심 기능)
+## 🎯 Code Mode란?
 
-AI 코딩 에이전트가 **현재 프로젝트의 BestCase를 자동으로 로드**하여 코드를 생성합니다.
+Code Mode는 LLM이 직접 tool calling을 하는 대신, **TypeScript 코드를 작성하고 샌드박스에서 실행**하는 패턴입니다.
 
-### 작동 원리
+### 전통적인 MCP vs Code Mode
+
+| 구분 | 전통적인 MCP | Code Mode (본 프로젝트) |
+|------|-------------|------------------------|
+| **Tool 노출** | 100개 tool 개별 노출 | 단일 `execute` tool |
+| **데이터 흐름** | Tool → LLM → Tool | Sandbox 내부 처리 |
+| **토큰 소비** | 중간 데이터 전부 전송 | 최종 결과만 반환 |
+| **실행 방식** | JSON-RPC tool calls | TypeScript 코드 실행 |
+
+### 토큰 절감 예시
 
 ```typescript
-// 사용자 요청: "상품 목록 페이지 만들어줘"
+// ❌ 전통적인 MCP (150,000 토큰)
+{
+  "tool": "read_file",
+  "result": "<500KB CSV 전체 내용>"  // 전체가 LLM 컨텍스트로
+}
 
-// AI가 자동으로 실행:
-// 1. BestCase 로드
-const bestCase = await loadCurrentProjectBestCase();
-// → API 타입 확인: gRPC or OpenAPI?
-// → 자주 쓰는 컴포넌트: CommonTable (15회)
-// → 우수 사례 코드: composables/grpc.ts (88점)
-
-// 2. openerd-nuxt3 확인
-const component = await checkOpenerdNuxt3("CommonTable");
-// → Props: list, headers, v-model:selected
-// → Slots: header의 value를 slot name으로
-
-const util = await checkOpenerdNuxt3("formatNumber");
-// → 있으면: import from 'openerd-nuxt3/utils'
-// → 없으면: 프로젝트에 새로 생성
-
-// 3. BestCase + openerd-nuxt3 기반 코드 생성:
-// - gRPC 클라이언트 자동 선택
-// - CommonTable 우선 사용 (통계 기반)
-// - openerd-nuxt3 Props/Slots 패턴 적용
-// - openerd-nuxt3 유틸리티 우선 사용
-// - 우수 사례 패턴 적용
+// ✅ Code Mode (2,000 토큰)
+{
+  "tool": "execute",
+  "code": `
+    const data = filesystem.readTextFile('/data.csv');
+    const summary = data.split('\\n').slice(0, 10);  // Sandbox에서 처리
+    return summary;  // 10행만 반환
+  `
+}
 ```
 
-### 장점
+**결과: 98% 토큰 절감** (150,000 → 2,000 토큰)
 
-- ✅ **API 타입 자동 감지**: gRPC/OpenAPI 추측 불필요
-- ✅ **프로젝트 패턴 준수**: 실제 사용 중인 컴포넌트 우선
-- ✅ **openerd-nuxt3 우선 활용**: 컴포넌트/유틸리티 자동 확인
-- ✅ **우수 사례 참고**: 85점 이상 코드를 템플릿으로 활용
-- ✅ **일관성 유지**: 프로젝트 내 코딩 스타일 자동 적용
+## 📋 주요 기능
 
-**상세 가이드**: [BestCase 활용 가이드](./.github/instructions/bestcase-usage.md)
+### 1. 프로젝트 스캔 및 분석
 
-## 빠른 시작
+- **자동 탐지**: Vue/TS 파일, gRPC/OpenAPI 패키지 감지
+- **AI 분석**: Ollama LLM + GPU 기반 코드 품질 측정
+- **패턴 추출**: 컴포넌트 사용 통계, API 타입, 프레임워크 정보
+
+### 2. BestCase 관리
+
+- **자동 저장**: 프로젝트 패턴, 샘플 코드, 점수 저장
+- **스마트 로드**: 현재 프로젝트의 BestCase 자동 로드
+- **버전 관리**: 타임스탬프 기반 버전 추적
+
+### 3. 점수 시스템
+
+- **API 품질** (0-100점): gRPC/OpenAPI 사용도 평가
+- **컴포넌트 품질** (0-100점): openerd-nuxt3 활용도 평가
+- **종합 점수**: API 40% + 컴포넌트 20% + 패턴 40%
+- **티어 시스템**: S (90+), A (80-89), B (70-79), C (60-69), D (0-59)
+
+### 4. 자동화
+
+- **주간 스캔**: 매주 일요일 02:00 AM (66개 Nuxt 프로젝트)
+- **중복 제거**: 프로젝트별 최신 BestCase만 유지
+- **Docker 배포**: GPU 지원 + 자동 스케줄러
+
+## 🚀 빠른 시작
 
 ### 로컬 실행
 
 ```bash
-# 의존성 설치
+# 1. 의존성 설치
 yarn install
 
-# 프로젝트 빌드
+# 2. 프로젝트 빌드
 yarn build:all
 
-# 프로젝트 스캔
+# 3. 프로젝트 스캔 (선택)
 yarn scan:advanced
 
-# 개발 서버 실행
-yarn dev
+# 4. MCP 서버 실행
+node mcp-stdio-server.ts
 ```
 
-### Docker 실행
+### Docker 실행 (GPU 지원)
 
 ```bash
-# Docker 이미지 빌드 및 실행
-docker-compose up -d
+# 1. Docker 이미지 빌드 및 실행
+docker-compose -f docker-compose.ai.yml up -d
 
-# 로그 확인
-docker-compose logs -f
+# 2. GPU 사용 확인
+docker exec ollama-code-analyzer nvidia-smi
 
-# 중지
+# 3. 로그 확인
+docker-compose logs -f mcp-code-mode-server
+
+# 4. 중지
 docker-compose down
+```
+
+### VS Code MCP 연동
+
+`.vscode/settings.json` 또는 `%APPDATA%\Code\User\globalStorage\saoudrizwan.claude-dev\settings\cline_mcp_settings.json`:
+
+```json
+{
+  "mcpServers": {
+    "mcp-code-mode": {
+      "type": "stdio",
+      "command": "docker",
+      "args": ["exec", "-i", "mcp-code-mode-server", "node", "/app/mcp-stdio-server.js"]
+    }
+  }
+}
 ```
 
 ## 사용 예제

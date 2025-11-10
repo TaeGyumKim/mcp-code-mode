@@ -1,0 +1,19 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": ".",
+    "composite": false
+  },
+  "include": [
+    "mcp-stdio-server.ts",
+    "update-mcp-tool-names.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "apps",
+    "packages",
+    "scripts"
+  ]
+}

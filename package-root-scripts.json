@@ -1,0 +1,14 @@
+{
+  "name": "mcp-root-scripts",
+  "version": "1.0.0",
+  "description": "Root level TypeScript scripts",
+  "type": "module",
+  "scripts": {
+    "build:root": "tsup mcp-stdio-server.ts update-mcp-tool-names.ts --format esm --dts --clean"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.0",
+    "tsup": "^8.5.0",
+    "typescript": "^5.9.3"
+  }
+}
