@@ -316,29 +316,3 @@ MIT License - 자세한 내용은 [LICENSE](./LICENSE) 파일을 참조하세요
 
 이슈와 풀 리퀘스트를 환영합니다!
 
-```
-
-## 라이선스
-
-MIT
-
-## 문서
-
-- **[AI_QUICK_START.md](./AI_QUICK_START.md)** - AI 기반 코드 분석 빠른 시작 ⭐ NEW
-- **[AI_CODE_ANALYZER.md](./AI_CODE_ANALYZER.md)** - AI 분석 시스템 상세 설계 ⭐ NEW
-- **[SCORING_SYSTEM.md](./SCORING_SYSTEM.md)** - 점수 시스템 상세 가이드
-- **[AUTO_UPDATE_GUIDE.md](./AUTO_UPDATE_GUIDE.md)** - 자동 BestCase 업데이트 가이드
-- **[MCP_SETUP_GUIDE.md](./MCP_SETUP_GUIDE.md)** - Docker 및 VS Code MCP 설정
-- **[DOCKER_SETUP_COMPLETE.md](./DOCKER_SETUP_COMPLETE.md)** - Docker 설정 완료 가이드
-- **[VSCODE_MCP_GUIDE.md](./VSCODE_MCP_GUIDE.md)** - VS Code 통합 상세 가이드
-- **[COMPLETION_SUMMARY.md](./COMPLETION_SUMMARY.md)** - 구현 요약
-- **[.github/instructions/default.instructions.md](./.github/instructions/default.instructions.md)** - AI 코딩 가이드라인
-
-## 참고
-
-- [Anthropic - MCP Code Mode](https://www.anthropic.com/research/building-effective-agents)
-- [Cloudflare - MCP Deep Dive](https://blog.cloudflare.com/mcp-deep-dive)
-- [AI Sparkup - MCP Code Mode](https://aisparkup.com/articles/mcp-code-mode)
-#   m c p - c o d e - m o d e 
- 
- 
