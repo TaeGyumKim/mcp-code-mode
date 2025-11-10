@@ -1,0 +1,45 @@
+version: '3.8'
+
+services:
+  mcp-code-mode:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: mcp-code-mode-server
+    ports:
+      - "3000:3000"
+    volumes:
+      # 로컬 프로젝트 디렉토리를 컨테이너에 마운트 (읽기/쓰기)
+      - D:/01.Work/01.Projects:/projects
+    environment:
+      - NODE_ENV=production
+      - PROJECTS_PATH=/projects
+      - BESTCASE_STORAGE_PATH=/projects/.bestcases
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # 개발용 서비스 (선택적)
+  mcp-code-mode-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: mcp-code-mode-dev
+    ports:
+      - "3001:3000"
+    volumes:
+      # 전체 소스 코드 마운트 (개발 모드)
+      - .:/app
+      - /app/node_modules
+      - D:/01.Work/01.Projects:/projects
+    environment:
+      - NODE_ENV=development
+      - PROJECTS_PATH=/projects
+      - BESTCASE_STORAGE_PATH=/projects/.bestcases
+    command: yarn workspace web dev
+    profiles:
+      - dev

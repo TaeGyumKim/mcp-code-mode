@@ -1,4 +1,12 @@
-# MCP Code Mode Server
+# MCP Code Mode Starter
+
+> AI-powered BestCase management with Model Context Protocol (MCP)
+> 
+> 프로젝트 패턴을 학습하여 AI가 자동으로 최적의 코드를 생성합니다. 토큰 사용량을 98% 절감하고, Ollama LLM 기반 실제 코드 품질을 측정합니다.
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Node Version](https://img.shields.io/badge/node-%3E%3D20.0.0-brightgreen)](https://nodejs.org)
+[![Docker](https://img.shields.io/badge/docker-ready-blue)](https://www.docker.com/)
 
 코드 실행 기반 MCP (Model Context Protocol) 서버로, 프로젝트 BestCase를 저장하고 토큰을 98% 절감합니다.
 
@@ -284,6 +292,34 @@ yarn scan:all
 
 ## 라이선스
 
+MIT License - 자세한 내용은 [LICENSE](./LICENSE) 파일을 참조하세요.
+
+## 문서
+
+- **[docs/AI_QUICK_START.md](./docs/AI_QUICK_START.md)** - AI 기반 코드 분석 빠른 시작 ⭐ NEW
+- **[docs/AI_CODE_ANALYZER.md](./docs/AI_CODE_ANALYZER.md)** - AI 분석 시스템 상세 설계 ⭐ NEW
+- **[docs/SCORING_SYSTEM.md](./docs/SCORING_SYSTEM.md)** - 점수 시스템 상세 가이드
+- **[docs/AUTO_UPDATE_GUIDE.md](./docs/AUTO_UPDATE_GUIDE.md)** - 자동 BestCase 업데이트 가이드
+- **[docs/MCP_SETUP_GUIDE.md](./docs/MCP_SETUP_GUIDE.md)** - Docker 및 VS Code MCP 설정
+- **[docs/DOCKER_SETUP_COMPLETE.md](./docs/DOCKER_SETUP_COMPLETE.md)** - Docker 설정 완료 가이드
+- **[docs/VSCODE_MCP_GUIDE.md](./docs/VSCODE_MCP_GUIDE.md)** - VS Code 통합 상세 가이드
+- **[docs/COMPLETION_SUMMARY.md](./docs/COMPLETION_SUMMARY.md)** - 구현 요약
+- **[.github/instructions/default.instructions.md](./.github/instructions/default.instructions.md)** - AI 코딩 가이드라인
+
+## 참고
+
+- [Anthropic - MCP Code Mode](https://www.anthropic.com/research/building-effective-agents)
+- [Cloudflare - MCP Deep Dive](https://blog.cloudflare.com/mcp-deep-dive)
+- [AI Sparkup - MCP Code Mode](https://aisparkup.com/articles/mcp-code-mode)
+
+## 기여
+
+이슈와 풀 리퀘스트를 환영합니다!
+
+```
+
+## 라이선스
+
 MIT
 
 ## 문서
@@ -303,5 +339,6 @@ MIT
 - [Anthropic - MCP Code Mode](https://www.anthropic.com/research/building-effective-agents)
 - [Cloudflare - MCP Deep Dive](https://blog.cloudflare.com/mcp-deep-dive)
 - [AI Sparkup - MCP Code Mode](https://aisparkup.com/articles/mcp-code-mode)
-#   m c p - c o d e - m o d e  
+#   m c p - c o d e - m o d e 
+ 
  

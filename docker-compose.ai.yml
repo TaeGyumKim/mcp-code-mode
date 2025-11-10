@@ -1,0 +1,105 @@
+services:
+  # Ollama LLM Server for Code Analysis with GPU
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama-code-analyzer
+    volumes:
+      - ollama-models:/root/.ollama
+    ports:
+      - "11434:11434"
+    restart: unless-stopped
+    networks:
+      - mcp-network
+    # GPU 강제 활성화 (NVIDIA GTX 1060 6GB)
+    runtime: nvidia
+    deploy:
+      resources:
+        limits:
+          memory: 24G
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ['1']
+              capabilities: [gpu]
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+      - OLLAMA_NUM_PARALLEL=3
+      - OLLAMA_MAX_LOADED_MODELS=1
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # MCP Code Mode Server
+  mcp-code-mode:
+    build: .
+    container_name: mcp-code-mode-server
+    volumes:
+      - D:/01.Work/01.Projects:/projects  # read-write로 변경
+    environment:
+      - NODE_ENV=production
+      - PROJECTS_PATH=/projects
+      - BESTCASE_STORAGE_PATH=/projects/.bestcases
+      - OLLAMA_URL=http://ollama:11434
+      - LLM_PROVIDER=ollama
+      - LLM_MODEL=qwen2.5-coder:7b  # 7B 모델 (더 정교한 분석)
+      # LLM 분석 설정
+      - OLLAMA_HOST=http://ollama-code-analyzer:11434
+      - OLLAMA_MODEL=qwen2.5-coder:7b
+      - CONCURRENCY=2  # 7B 모델은 더 크므로 동시 실행 수 줄임
+    deploy:
+      resources:
+        limits:
+          memory: 8G  # MCP 서버에 8GB RAM 할당
+    restart: unless-stopped
+    depends_on:
+      - ollama
+    networks:
+      - mcp-network
+    command: tail -f /dev/null
+
+  # Cron Scheduler for Auto Scan (Weekly)
+  cron-scheduler:
+    build: .
+    container_name: bestcase-cron-scheduler
+    volumes:
+      - D:/01.Work/01.Projects:/projects
+    environment:
+      - NODE_ENV=production
+      - PROJECTS_PATH=/projects
+      - BESTCASE_STORAGE_PATH=/projects/.bestcases
+      - OLLAMA_URL=http://ollama:11434
+      - LLM_MODEL=qwen2.5-coder:7b
+      - CONCURRENCY=2
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+    restart: unless-stopped
+    depends_on:
+      - ollama
+      - mcp-code-mode
+    networks:
+      - mcp-network
+    entrypoint: /bin/sh
+    command: >
+      -c "
+      mkdir -p /var/log &&
+      touch /var/log/cron.log &&
+      echo '0 2 * * 0 /app/cron-scan.sh >> /var/log/cron.log 2>&1' | crontab - &&
+      chmod +x /app/cron-scan.sh &&
+      cron &&
+      echo 'Weekly cron scheduler started (Every Sunday at 2:00 AM)' &&
+      echo 'Next run: Sunday 02:00' &&
+      tail -f /var/log/cron.log
+      "
+
+networks:
+  mcp-network:
+    driver: bridge
+
+volumes:
+  ollama-models:
+    driver: local

@@ -1,0 +1,56 @@
+{
+  "name": "mcp-code-mode-starter",
+  "version": "1.0.0",
+  "description": "MCP Code Mode Server - AI-powered BestCase management with 98% token reduction",
+  "private": true,
+  "type": "module",
+  "packageManager": "yarn@4.9.1",
+  "author": "Your Name",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/mcp-code-mode-starter.git"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "code-analysis",
+    "ai",
+    "bestcase",
+    "nuxt3",
+    "typescript",
+    "ollama",
+    "llm"
+  ],
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "yarn workspace web run dev",
+    "build:all": "yarn workspace bestcase-db run build && yarn workspace ai-bindings run build && yarn workspace ai-runner run build && yarn workspace llm-analyzer run build",
+    "scan": "node scripts/tests/run-scan.js",
+    "scan:target": "node scripts/tests/run-target-scan.js",
+    "scan:advanced": "node scripts/tests/run-advanced-scan.js",
+    "scan:score": "node scripts/tests/run-advanced-score.js",
+    "scan:ai": "node scripts/scan/scan-ai-powered.js",
+    "scan:all": "node scripts/tests/run-scan-all.js",
+    "scan:auto": "node scripts/scan/auto-scan-projects.js",
+    "scan:auto-ai": "node scripts/scan/auto-scan-projects-ai.js",
+    "test:simple": "node scripts/tests/run-simple-test.js",
+    "test:bestcase": "node scripts/tests/run-test.js",
+    "test:scores": "node scripts/tests/test-list-scores.js",
+    "test:ai": "node scripts/tests/run-ai-analysis.js",
+    "ollama:init": "powershell -ExecutionPolicy Bypass -File ./init-ollama.ps1",
+    "ollama:test": "docker exec ollama-code-analyzer ollama list",
+    "docker:up": "docker-compose up -d",
+    "docker:down": "docker-compose down",
+    "docker:logs": "docker-compose logs -f"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.0",
+    "esbuild": "^0.25.12",
+    "tsup": "^8.5.0",
+    "typescript": "^5.9.3"
+  }
+}

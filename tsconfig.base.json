@@ -1,0 +1,15 @@
+﻿{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "resolveJsonModule": true,
+    "esModuleInterop": true,
+    "strict": true,
+    "baseUrl": ".",
+    "paths": {
+      "ai-bindings/*": ["packages/ai-bindings/*"],
+      "ai-runner/*": ["packages/ai-runner/*"]
+    }
+  }
+}

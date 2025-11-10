@@ -1,0 +1,20 @@
+{
+  "name": "ai-runner",
+  "version": "0.0.0",
+  "type": "module",
+  "main": "dist/agentRunner.js",
+  "types": "dist/agentRunner.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup src/*.ts --format esm --dts"
+  },
+  "dependencies": {
+    "ai-bindings": "workspace:*",
+    "vm2": "^3.10.0"
+  },
+  "devDependencies": {
+    "tsup": "^8.5.0"
+  }
+}
