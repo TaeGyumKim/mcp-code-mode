@@ -148,6 +148,86 @@ docker-compose down
 }
 ```
 
+---
+
+## 🎯 VSCode Copilot (Claude)으로 사용하기
+
+이 시스템은 **메타데이터 기반 자동 작업 분류**를 제공합니다:
+
+### 📋 워크플로우
+
+```
+사용자 요청
+  → 대상 프로젝트 메타데이터 추출 (patterns, frameworks, complexity)
+  → 서버 BestCase 메타데이터와 비교
+  → 작업 분류 (누락된 패턴 자동 파악)
+  → 필요한 가이드라인만 로드 (94% 토큰 절감)
+  → 고품질 참고 파일 선택 (점수 70점 이상)
+  → 코드 생성
+```
+
+### ✨ 핵심 기능
+
+- 🎯 **자동 작업 분류**: 메타데이터 비교로 누락된 패턴/개선점 자동 파악
+- 📚 **동적 가이드 로딩**: 필요한 가이드만 선택적으로 로드 (94% 토큰 절감)
+- 💎 **품질 기반 참고**: 점수(0-100)로 고품질 참고 파일 자동 선택
+- ⚡ **토큰 90% 절감**: MCP 도구 최소화 (7개 → 1개) + 선택적 로딩
+
+### 🚀 사용 예시
+
+**VSCode Copilot 채팅에서**:
+
+```
+👤 현재 프로젝트를 분석하고 개선점을 알려줘
+
+🤖 프로젝트를 분석하겠습니다...
+
+   📊 분석 결과:
+   - Patterns: state-management, api-call
+   - Frameworks: nuxt, vue, pinia
+   - API Type: grpc
+   - Complexity: medium
+
+   📋 개선이 필요한 항목 (2개):
+
+   1. ⚠️ interceptor 패턴 추가 (우선순위: 높음)
+      - 참고: useGrpcClient.ts (92점/100점)
+
+   2. ⚠️ 에러 처리 개선 (우선순위: 높음)
+      - 현재: 71% vs BestCase: 90%
+      - 참고 파일 3개 발견 (70점 이상)
+
+   어떤 항목부터 개선하시겠습니까?
+```
+
+### 📚 상세 가이드
+
+**[📖 VSCode Copilot 사용 가이드](./docs/VSCODE_COPILOT_USAGE.md)** 문서를 참고하세요:
+
+- 기본 사용법 (execute 도구)
+- 메타데이터 추출
+- BestCase 비교 및 작업 분류
+- 가이드 로드
+- 코드 생성
+- 실전 예시
+- 문제 해결
+
+### 🎓 주요 API
+
+VSCode Copilot은 `execute` 도구로 TypeScript 코드를 실행합니다:
+
+```typescript
+// Sandbox에서 사용 가능한 API
+await filesystem.searchFiles({ path: '...' });        // 파일 검색
+await bestcase.list();                                 // BestCase 목록
+await guides.search({ keywords: [...] });              // 가이드 검색
+const analyzer = metadata.createAnalyzer({ ... });    // 메타데이터 분석기
+```
+
+**더 자세한 내용**: [docs/VSCODE_COPILOT_USAGE.md](./docs/VSCODE_COPILOT_USAGE.md)
+
+---
+
 ## 사용 예제
 
 ### 1. 고급 프로젝트 스캔
@@ -359,6 +439,16 @@ MIT License - 자세한 내용은 [LICENSE](./LICENSE) 파일을 참조하세요
 - **[docs/WORKFLOW_CORRECT.md](./docs/WORKFLOW_CORRECT.md)** - 🎯 올바른 워크플로우 (5단계 상세 설명)
 - **[docs/METADATA_SYSTEM.md](./docs/METADATA_SYSTEM.md)** - 🔑 메타데이터 추출 시스템
 - **[docs/GUIDES_MCP_INTEGRATION.md](./docs/GUIDES_MCP_INTEGRATION.md)** - 📖 가이드 시스템 Sandbox API 통합
+
+### 🚀 사용 가이드
+
+- **[docs/VSCODE_COPILOT_USAGE.md](./docs/VSCODE_COPILOT_USAGE.md)** - 🎯 VSCode Copilot (Claude) 사용 가이드 ⭐ **실전 사용법**
+  - 메타데이터 추출
+  - BestCase 비교 및 작업 분류
+  - 가이드 로드
+  - 코드 생성
+  - 실전 예시
+  - 문제 해결
 
 ### 설정 가이드
 
