@@ -1,13 +1,25 @@
 #!/usr/bin/env node
 /**
  * MCP STDIO Server
- * 
+ *
  * VS Code MCP Extension과 stdio 프로토콜로 통신하는 서버
  * Docker 컨테이너 내부에서 실행됩니다.
  */
 
 import { runAgentScript } from './packages/ai-runner/dist/agentRunner.js';
 import * as readline from 'readline';
+
+// Guides 서버 함수 import (동적 지침 로딩 시스템)
+import {
+  searchGuides,
+  loadGuide,
+  combineGuides,
+  executeWorkflow,
+  type SearchGuidesInput,
+  type LoadGuideInput,
+  type CombineGuidesInput,
+  type ExecuteWorkflowInput
+} from './mcp-servers/guides/index.js';
 
 interface JsonRpcRequest {
   jsonrpc: string;
@@ -119,6 +131,102 @@ rl.on('line', async (line: string) => {
                 },
                 required: ['projectName', 'category']
               }
+            },
+            {
+              name: 'search_guides',
+              description: 'Search for guidelines based on keywords, API type, and scope. Returns ranked guides using BM25-like scoring.',
+              inputSchema: {
+                type: 'object',
+                properties: {
+                  keywords: {
+                    type: 'array',
+                    items: { type: 'string' },
+                    description: 'Keywords to search for (e.g., ["grpc", "nuxt3", "asyncData"])'
+                  },
+                  projectName: { type: 'string', description: 'Optional project name for context' },
+                  apiType: {
+                    type: 'string',
+                    enum: ['grpc', 'openapi', 'any'],
+                    description: 'API type filter'
+                  },
+                  scope: {
+                    type: 'string',
+                    enum: ['project', 'repo', 'org', 'global'],
+                    description: 'Scope filter'
+                  },
+                  mandatoryIds: {
+                    type: 'array',
+                    items: { type: 'string' },
+                    description: 'Mandatory guide IDs to include regardless of keyword matching'
+                  }
+                },
+                required: ['keywords']
+              }
+            },
+            {
+              name: 'load_guide',
+              description: 'Load a specific guide by ID with full content and metadata',
+              inputSchema: {
+                type: 'object',
+                properties: {
+                  id: { type: 'string', description: 'Guide ID (e.g., "grpc.api.connection")' }
+                },
+                required: ['id']
+              }
+            },
+            {
+              name: 'combine_guides',
+              description: 'Combine multiple guides with priority rules (scope > priority > version). Handles requires/excludes dependencies.',
+              inputSchema: {
+                type: 'object',
+                properties: {
+                  ids: {
+                    type: 'array',
+                    items: { type: 'string' },
+                    description: 'Guide IDs to combine'
+                  },
+                  context: {
+                    type: 'object',
+                    properties: {
+                      project: { type: 'string', description: 'Project name' },
+                      apiType: {
+                        type: 'string',
+                        enum: ['grpc', 'openapi', 'any'],
+                        description: 'API type for context'
+                      }
+                    },
+                    required: ['project', 'apiType']
+                  }
+                },
+                required: ['ids', 'context']
+              }
+            },
+            {
+              name: 'execute_workflow',
+              description: 'Execute the full dynamic guideline loading workflow: metadata extraction → TODO synthesis → preflight check → keyword extraction → guide search/combine → pattern application',
+              inputSchema: {
+                type: 'object',
+                properties: {
+                  userRequest: {
+                    type: 'string',
+                    description: 'User request text (e.g., "Create inquiry list page with gRPC")'
+                  },
+                  workspacePath: {
+                    type: 'string',
+                    description: 'Workspace path for project detection'
+                  },
+                  projectName: {
+                    type: 'string',
+                    description: 'Optional project name (extracted from workspace if not provided)'
+                  },
+                  category: {
+                    type: 'string',
+                    description: 'BestCase category to load',
+                    default: 'auto-scan-ai'
+                  }
+                },
+                required: ['userRequest', 'workspacePath']
+              }
             }
           ]
         }
@@ -176,7 +284,7 @@ rl.on('line', async (line: string) => {
         const code = `await bestcase.loadBestCase({ projectName: '${projectName}', category: '${category}' })`;
         const result = await runAgentScript({ code, timeoutMs: 10000 });
         log('BestCase loaded', { success: !result.error });
-        
+
         sendResponse({
           jsonrpc: '2.0',
           id: request.id,
@@ -190,6 +298,168 @@ rl.on('line', async (line: string) => {
           }
         });
       }
+
+      // 🔑 동적 지침 로딩 시스템 도구들
+      else if (name === 'search_guides') {
+        const input: SearchGuidesInput = {
+          keywords: args.keywords,
+          projectName: args.projectName,
+          apiType: args.apiType,
+          scope: args.scope,
+          mandatoryIds: args.mandatoryIds
+        };
+        log('Searching guides', { keywords: input.keywords, apiType: input.apiType });
+
+        try {
+          const result = await searchGuides(input);
+          log('Guides found', { count: result.guides.length });
+
+          sendResponse({
+            jsonrpc: '2.0',
+            id: request.id,
+            result: {
+              content: [
+                {
+                  type: 'text',
+                  text: JSON.stringify(result, null, 2)
+                }
+              ]
+            }
+          });
+        } catch (error: any) {
+          log('Search guides error', { message: error.message });
+          sendResponse({
+            jsonrpc: '2.0',
+            id: request.id,
+            error: {
+              code: -32603,
+              message: 'Failed to search guides: ' + error.message
+            }
+          });
+        }
+      }
+
+      else if (name === 'load_guide') {
+        const input: LoadGuideInput = {
+          id: args.id
+        };
+        log('Loading guide', { id: input.id });
+
+        try {
+          const result = await loadGuide(input);
+          log('Guide loaded', { id: result.guide.id, scope: result.guide.scope });
+
+          sendResponse({
+            jsonrpc: '2.0',
+            id: request.id,
+            result: {
+              content: [
+                {
+                  type: 'text',
+                  text: JSON.stringify(result, null, 2)
+                }
+              ]
+            }
+          });
+        } catch (error: any) {
+          log('Load guide error', { message: error.message });
+          sendResponse({
+            jsonrpc: '2.0',
+            id: request.id,
+            error: {
+              code: -32603,
+              message: 'Failed to load guide: ' + error.message
+            }
+          });
+        }
+      }
+
+      else if (name === 'combine_guides') {
+        const input: CombineGuidesInput = {
+          ids: args.ids,
+          context: args.context
+        };
+        log('Combining guides', { ids: input.ids, project: input.context.project });
+
+        try {
+          const result = await combineGuides(input);
+          log('Guides combined', { usedGuides: result.usedGuides.length });
+
+          sendResponse({
+            jsonrpc: '2.0',
+            id: request.id,
+            result: {
+              content: [
+                {
+                  type: 'text',
+                  text: JSON.stringify(result, null, 2)
+                }
+              ]
+            }
+          });
+        } catch (error: any) {
+          log('Combine guides error', { message: error.message });
+          sendResponse({
+            jsonrpc: '2.0',
+            id: request.id,
+            error: {
+              code: -32603,
+              message: 'Failed to combine guides: ' + error.message
+            }
+          });
+        }
+      }
+
+      else if (name === 'execute_workflow') {
+        const { userRequest, workspacePath, projectName, category = 'auto-scan-ai' } = args;
+        log('Executing workflow', { userRequest: userRequest.substring(0, 50), workspacePath });
+
+        try {
+          // BestCase 로드
+          const bestCaseCode = `await bestcase.loadBestCase({ projectName: '${projectName || workspacePath.split('/').slice(-2).join('/')}', category: '${category}' })`;
+          const bestCaseResult = await runAgentScript({ code: bestCaseCode, timeoutMs: 10000 });
+
+          if (bestCaseResult.error) {
+            throw new Error('Failed to load BestCase: ' + bestCaseResult.error);
+          }
+
+          const bestCase = bestCaseResult.output?.bestCases?.[0];
+
+          const input: ExecuteWorkflowInput = {
+            userRequest,
+            workspacePath,
+            bestCase,
+            workflowGuide: {} as any // Not used in current implementation
+          };
+
+          const result = await executeWorkflow(input);
+          log('Workflow executed', { success: result.success, risk: result.preflight?.risk });
+
+          sendResponse({
+            jsonrpc: '2.0',
+            id: request.id,
+            result: {
+              content: [
+                {
+                  type: 'text',
+                  text: JSON.stringify(result, null, 2)
+                }
+              ]
+            }
+          });
+        } catch (error: any) {
+          log('Execute workflow error', { message: error.message });
+          sendResponse({
+            jsonrpc: '2.0',
+            id: request.id,
+            error: {
+              code: -32603,
+              message: 'Failed to execute workflow: ' + error.message
+            }
+          });
+        }
+      }
+
       else {
         sendResponse({
           jsonrpc: '2.0',

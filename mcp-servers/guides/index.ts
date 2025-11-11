@@ -58,11 +58,14 @@ async function scanDirectory(baseDir: string, currentDir: string, guides: Guide[
       await scanDirectory(baseDir, fullPath, guides);
     } else if (entry.isFile() && entry.name.endsWith('.md')) {
       // .md 파일 처리
-      const content = await fs.readFile(fullPath, 'utf-8');
-      
+      let content = await fs.readFile(fullPath, 'utf-8');
+
+      // 줄바꿈 정규화 (CRLF → LF)
+      content = content.replace(/\r\n/g, '\n');
+
       // 메타데이터 추출 (YAML front matter)
       const metadataMatch = content.match(/^---\n([\s\S]+?)\n---/);
-      
+
       if (!metadataMatch) {
         console.error('[scanDirectory] No metadata in file:', fullPath);
         continue;

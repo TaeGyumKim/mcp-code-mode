@@ -74,13 +74,16 @@ Code Mode는 LLM이 직접 tool calling을 하는 대신, **TypeScript 코드를
 - **스마트 로드**: 현재 프로젝트의 BestCase 자동 로드
 - **버전 관리**: 타임스탬프 기반 버전 추적
 
-### 3. 동적 지침 로딩 시스템 🆕
+### 3. 동적 지침 로딩 시스템 (MCP 통합 완료) ⭐ NEW
 
-- **메타데이터 기반 검색**: scope/priority/version/tags로 관련 지침 자동 검색
+- **4가지 MCP 도구**: `search_guides`, `load_guide`, `combine_guides`, `execute_workflow`
+- **메타데이터 기반 검색**: scope/priority/version/tags로 관련 지침 자동 검색 (BM25-like)
+- **필수 지침 강제 포함**: mandatoryIds로 핵심 지침 자동 적용 (1000점 최상위 스코어)
 - **프리플라이트 검수**: API 시그니처, 의존성, 쓰기 범위, 지침 충돌 검증
 - **리스크 스코어링**: 40점 임계치로 자동 적용 vs 스캐폴딩만 결정
 - **우선순위 병합**: project > repo > org > global, requires/excludes 자동 처리
 - **감사 추적**: 사용된 지침 id/version/scope 자동 로깅
+- **11개 지침 파일**: API, UI, 에러 처리, 워크플로우 등
 
 ### 4. 점수 시스템
 
@@ -328,6 +331,12 @@ console.log(bc.patterns.componentUsage);
 ### 테스트
 
 ```bash
+# 동적 지침 로딩 통합 테스트 ⭐ NEW
+npm run test:guides
+
+# YAML 파서 테스트
+npm run test:yaml
+
 # 단순 테스트
 yarn test:simple
 
@@ -344,8 +353,9 @@ MIT License - 자세한 내용은 [LICENSE](./LICENSE) 파일을 참조하세요
 
 ## 문서
 
-- **[docs/AI_QUICK_START.md](./docs/AI_QUICK_START.md)** - AI 기반 코드 분석 빠른 시작 ⭐ NEW
-- **[docs/AI_CODE_ANALYZER.md](./docs/AI_CODE_ANALYZER.md)** - AI 분석 시스템 상세 설계 ⭐ NEW
+- **[docs/GUIDES_MCP_INTEGRATION.md](./docs/GUIDES_MCP_INTEGRATION.md)** - Guides MCP 통합 완료 문서 ⭐ NEW
+- **[docs/AI_QUICK_START.md](./docs/AI_QUICK_START.md)** - AI 기반 코드 분석 빠른 시작
+- **[docs/AI_CODE_ANALYZER.md](./docs/AI_CODE_ANALYZER.md)** - AI 분석 시스템 상세 설계
 - **[docs/SCORING_SYSTEM.md](./docs/SCORING_SYSTEM.md)** - 점수 시스템 상세 가이드
 - **[docs/AUTO_UPDATE_GUIDE.md](./docs/AUTO_UPDATE_GUIDE.md)** - 자동 BestCase 업데이트 가이드
 - **[docs/MCP_SETUP_GUIDE.md](./docs/MCP_SETUP_GUIDE.md)** - Docker 및 VS Code MCP 설정
