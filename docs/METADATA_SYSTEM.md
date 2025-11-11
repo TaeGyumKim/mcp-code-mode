@@ -144,67 +144,171 @@ interface ProjectMetadata {
 메타데이터를 키워드로 활용하여 관련 지침을 검색합니다.
 
 ```typescript
-// 파일 메타데이터 추출
-const metadata = await analyzer.extractFileMetadata(filePath, content);
+// Sandbox 내부에서 실행 (execute 도구 사용)
+await mcp.callTool('execute', {
+  code: `
+    // 1. 프로젝트 메타데이터 추출
+    const analyzer = metadata.createAnalyzer({
+      ollamaUrl: 'http://localhost:11434',
+      model: 'qwen2.5-coder:7b'
+    });
 
-// 메타데이터 → 키워드 변환
-const keywords = [
-  ...metadata.patterns,      // "interceptor", "error-recovery"
-  ...metadata.frameworks,    // "grpc", "nuxt3"
-  ...metadata.features,      // "api-client"
-  metadata.apiType          // "grpc"
-];
+    const files = await filesystem.scanProject('/workspace/myapp');
+    const projectMeta = await analyzer.analyzeProject('/workspace/myapp', files, 3);
 
-// 지침 검색
-const guides = await searchGuides({
-  keywords,
-  apiType: metadata.apiType
+    // 2. 메타데이터 → 키워드 변환
+    const keywords = [
+      ...projectMeta.patterns,      // "interceptor", "error-recovery"
+      ...projectMeta.frameworks,    // "grpc", "nuxt3"
+      ...projectMeta.features,      // "api-client"
+      projectMeta.apiType          // "grpc"
+    ];
+
+    // 3. 가이드 검색 (Sandbox의 guides API 사용)
+    const searchResult = await guides.search({
+      keywords,
+      apiType: projectMeta.apiType
+    });
+
+    return { projectMeta, keywords, guides: searchResult.guides };
+  `
 });
 ```
 
-### 2. BestCase 저장
+### 2. BestCase 저장 (cron job)
 
 우수 코드만 선별하여 패턴 라이브러리 구축합니다.
 
 ```typescript
-if (metadata.isExcellent && metadata.complexity === 'high') {
-  // BestCase 저장
-  await saveBestCase({
-    projectName: metadata.filePath,
-    category: 'auto-scan-metadata',
-    patterns: {
-      metadata,  // 전체 메타데이터 저장
-      excellentReasons: metadata.excellentReasons
-    }
+// cron job에서 실행 (scripts/scan/auto-scan-projects-ai.ts)
+const analyzer = new MetadataAnalyzer({
+  ollamaUrl: 'http://localhost:11434',
+  model: 'qwen2.5-coder:7b'
+});
+
+// 프로젝트 스캔
+const files = await scanProjectFiles(projectPath);
+const metadata = await analyzer.analyzeProject(projectPath, files, 2);
+
+// 우수 파일이 있으면 BestCase로 저장
+if (metadata.excellentFiles.length > 0) {
+  await runAgentScript({
+    code: `
+      await bestcase.save({
+        projectName: '${projectName}',
+        category: 'auto-scan-metadata',  // ✅ 메타데이터 카테고리
+        description: '자동 스캔: ${metadata.excellentFiles.length}개 우수 파일',
+        files: [/* 우수 파일들 */],
+        patterns: {
+          metadata: ${JSON.stringify(metadata)},  // ✅ ProjectMetadata 저장
+          excellentReasons: [/* 우수 이유들 */]
+        },
+        tags: ${JSON.stringify([...metadata.frameworks, ...metadata.patterns, metadata.apiType])}
+      });
+    `
   });
 }
 ```
 
-### 3. 프로젝트 분석
+### 3. 메타데이터 비교 → TODO 생성
 
-전체 기술 스택 및 복잡도 파악합니다.
+현재 프로젝트와 BestCase를 비교하여 개선점 도출합니다.
 
 ```typescript
-const projectMeta = await analyzer.analyzeProject(projectPath, files);
+// Sandbox 내부에서 실행
+await mcp.callTool('execute', {
+  code: `
+    // 1. 현재 프로젝트 메타데이터 추출
+    const projectMeta = await metadata.analyzeProject('/workspace/myapp', files, 3);
 
-console.log(`프로젝트: ${projectMeta.projectName}`);
-console.log(`파일 수: ${projectMeta.totalFiles}`);
-console.log(`프레임워크: ${projectMeta.frameworks.join(', ')}`);
-console.log(`API 타입: ${projectMeta.apiType}`);
-console.log(`평균 복잡도: ${projectMeta.averageComplexity}`);
-console.log(`우수 파일: ${projectMeta.excellentFiles.length}개`);
+    // 2. 유사한 BestCase 로드
+    const allCases = await bestcase.list();
+    const similarCase = allCases.bestcases.find(bc =>
+      bc.category === 'auto-scan-metadata' &&
+      bc.patterns?.metadata?.apiType === projectMeta.apiType
+    );
+
+    const bestCase = await bestcase.load({
+      projectName: similarCase.projectName,
+      category: similarCase.category
+    });
+
+    const bestCaseMeta = bestCase.bestCases[0].patterns.metadata;
+
+    // 3. 메타데이터 비교 → TODO 생성
+    const todos = [];
+
+    // 누락된 패턴 체크
+    const missingPatterns = bestCaseMeta.patterns.filter(p =>
+      !projectMeta.patterns.includes(p)
+    );
+
+    if (missingPatterns.includes('interceptor')) {
+      todos.push({
+        id: 'add-interceptor-pattern',
+        reason: 'BestCase에 우수 interceptor 패턴 존재',
+        files: ['composables/useGrpcClient.ts'],
+        loc: 50,
+        priority: 'high',
+        referenceFile: bestCase.bestCases[0].files.find(f =>
+          f.path.includes('Grpc')
+        )
+      });
+    }
+
+    // 복잡도 비교
+    if (projectMeta.averageComplexity === 'very-high' &&
+        bestCaseMeta.averageComplexity === 'medium') {
+      todos.push({
+        id: 'refactor-complexity',
+        reason: 'BestCase 대비 복잡도 높음',
+        files: projectMeta.excellentFiles
+          .filter(f => f.complexity === 'very-high')
+          .map(f => f.path),
+        loc: 150,
+        priority: 'medium'
+      });
+    }
+
+    return { todos, projectMeta, bestCaseMeta };
+  `
+});
 ```
+
+**상세 예시는 [WORKFLOW_CORRECT.md](./WORKFLOW_CORRECT.md) 참조**
 
 ## 🔧 사용 방법
 
-### 설치
+### Sandbox API로 사용
 
-```bash
-yarn install
-yarn build:all
+**권장 방식** (execute 도구 사용):
+
+```typescript
+// Claude/Copilot가 실행
+await mcp.callTool('execute', {
+  code: `
+    // Sandbox의 metadata API 사용
+    const analyzer = metadata.createAnalyzer({
+      ollamaUrl: 'http://localhost:11434',
+      model: 'qwen2.5-coder:7b'
+    });
+
+    // 프로젝트 파일 스캔
+    const files = await filesystem.scanProject('/workspace/myapp');
+
+    // 메타데이터 추출
+    const projectMeta = await analyzer.analyzeProject(
+      '/workspace/myapp',
+      files,
+      3  // concurrency
+    );
+
+    return projectMeta;
+  `
+});
 ```
 
-### 기본 사용
+### 직접 사용 (cron job 등)
 
 ```typescript
 import { MetadataAnalyzer } from 'llm-analyzer';
@@ -336,21 +440,24 @@ npm run test:flow
 }
 ```
 
-## 🚀 다음 단계
+## 🔧 구현 상태
 
 1. ✅ 메타데이터 인터페이스 정의
 2. ✅ MetadataAnalyzer 구현
 3. ✅ MetadataPrompts 작성
-4. ⏳ Ollama 서버 연동 테스트
-5. ⏳ BestCase 시스템에 메타데이터 통합
-6. ⏳ 동적 지침 로딩과 메타데이터 연동
+4. 🔄 Sandbox API 통합 (진행 중)
+5. 🔄 BestCase 구조 변경 (진행 중)
+6. 🔄 cron job 스크립트 수정 (진행 중)
 
 ## 📚 참고
 
+- [WORKFLOW_CORRECT.md](./WORKFLOW_CORRECT.md) - 올바른 워크플로우 전체
+- [GUIDES_MCP_INTEGRATION.md](./GUIDES_MCP_INTEGRATION.md) - 가이드 시스템
 - [MetadataAnalyzer](../packages/llm-analyzer/src/metadataAnalyzer.ts) - 메타데이터 분석기
 - [메타데이터 타입 정의](../packages/llm-analyzer/src/metadata.ts)
 - [메타데이터 프롬프트](../packages/llm-analyzer/src/metadataPrompts.ts)
 - [테스트 스크립트](../scripts/test/test-metadata-analyzer.ts)
+- Anthropic MCP Code Mode: https://aisparkup.com/posts/6318
 
 ## 💡 FAQ
 

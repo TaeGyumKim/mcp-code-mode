@@ -1,22 +1,33 @@
-# Guides MCP 통합 완료
+# Guides 시스템 - Sandbox API 통합
 
-## 🎉 작업 요약
+## 🎯 핵심 개념
 
-동적 지침 로딩 시스템의 4가지 도구를 MCP 서버에 성공적으로 통합했습니다.
+**❌ 잘못된 방식**: MCP 도구로 노출
+```typescript
+tools: ['search_guides', 'load_guide', 'combine_guides']  // ❌ 토큰 낭비
+```
 
-## 📋 추가된 MCP 도구
+**✅ 올바른 방식**: Sandbox API로 제공
+```typescript
+// Sandbox 내부에서 사용
+const guides = await guides.search({ keywords: ['grpc'] });
+```
 
-### 1. `search_guides`
+---
+
+## 📋 Sandbox API 목록
+
+### 1. `guides.search(input)`
 키워드, API 타입, Scope 기반으로 지침을 검색합니다.
 
-**입력:**
-```json
-{
-  "keywords": ["grpc", "nuxt3", "asyncData", "api"],
-  "apiType": "grpc",
-  "scope": "project",
-  "mandatoryIds": ["grpc.api.connection", "error.handling"]
-}
+**사용 방법** (Sandbox 내부):
+```typescript
+const result = await guides.search({
+  keywords: ["grpc", "nuxt3", "asyncData", "api"],
+  apiType: "grpc",
+  scope: "project",
+  mandatoryIds: ["grpc.api.connection", "error.handling"]
+});
 ```
 
 **출력:**
@@ -32,14 +43,14 @@
 - Scope 매칭: +20점
 - Priority 반영: +priority/10점
 
-### 2. `load_guide`
+### 2. `guides.load(input)`
 특정 ID의 지침을 전체 내용과 함께 로드합니다.
 
-**입력:**
-```json
-{
-  "id": "grpc.api.connection"
-}
+**사용 방법** (Sandbox 내부):
+```typescript
+const result = await guides.load({
+  id: "grpc.api.connection"
+});
 ```
 
 **출력:**
@@ -47,22 +58,22 @@
 - 지침의 전체 내용 (Markdown)
 - 파일 경로
 
-### 3. `combine_guides`
+### 3. `guides.combine(input)`
 여러 지침을 우선순위 규칙에 따라 병합합니다.
 
-**입력:**
-```json
-{
-  "ids": [
+**사용 방법** (Sandbox 내부):
+```typescript
+const result = await guides.combine({
+  ids: [
     "grpc.api.connection",
     "api.validation",
     "error.handling"
   ],
-  "context": {
-    "project": "test-project",
-    "apiType": "grpc"
+  context: {
+    project: "test-project",
+    apiType: "grpc"
   }
-}
+});
 ```
 
 **출력:**
@@ -75,34 +86,52 @@
 3. Version 우선: 최신 버전이 우선
 4. Requires/Excludes 자동 처리
 
-### 4. `execute_workflow`
-전체 동적 지침 로딩 워크플로우를 실행합니다.
+### 4. `guides.index()`
+모든 가이드 파일을 스캔하여 인덱스를 반환합니다.
 
-**입력:**
-```json
-{
-  "userRequest": "Create an inquiry list page with gRPC API integration",
-  "workspacePath": "/path/to/project",
-  "projectName": "my-project",
-  "category": "auto-scan-ai"
-}
+**사용 방법** (Sandbox 내부):
+```typescript
+const allGuides = await guides.index();
+// 반환: Guide[] (id, scope, apiType, tags, priority, content 등)
 ```
 
-**출력:**
-- Preflight 검수 결과 (risk 점수, 검증 항목)
-- 추출된 키워드
-- 사용된 지침 목록
-- 병합된 지침 내용
-- 변경 요약
+---
 
-**워크플로우 단계:**
-1. 메타데이터 변환 (프로젝트명, intent, API 타입 등)
-2. BestCase 로드
-3. TODO 합성
-4. Preflight 검수 (risk ≥ 40 시 스캐폴딩만)
-5. 키워드 추출
-6. 지침 검색/병합
-7. 패턴 적용
+## 🚀 실제 사용 예시
+
+### execute 도구로 실행
+
+```typescript
+// Claude/Copilot가 실행
+const result = await mcp.callTool('execute', {
+  code: `
+    // 1. 가이드 검색
+    const searchResult = await guides.search({
+      keywords: ['grpc', 'nuxt3', 'crud'],
+      apiType: 'grpc',
+      mandatoryIds: ['grpc.api.connection', 'api.validation']
+    });
+
+    // 2. 상위 5개 가이드 병합
+    const combined = await guides.combine({
+      ids: searchResult.guides.slice(0, 5).map(g => g.id),
+      context: {
+        project: 'myapp',
+        apiType: 'grpc'
+      }
+    });
+
+    return {
+      guidesFound: searchResult.guides.length,
+      guidesUsed: combined.usedGuides,
+      combinedContent: combined.combined
+    };
+  `
+});
+
+// 병합된 가이드를 프롬프트에 사용
+const guidelines = result.output.combinedContent;
+```
 
 ## 🔧 수정 사항
 
@@ -161,53 +190,26 @@ content = content.replace(/\r\n/g, '\n');
 - 입력: 필수 지침 2개 + 키워드
 - 결과: ✅ 필수 지침 2개 모두 1000점으로 최상위 포함
 
-## 🚀 사용 방법
+## 🔧 구현 방법
 
-### VS Code MCP Extension 설정
+### Sandbox에 guides API 추가
 
-`.vscode/settings.json` 또는 Cline MCP 설정:
-
-```json
-{
-  "mcpServers": {
-    "mcp-code-mode": {
-      "type": "stdio",
-      "command": "npx",
-      "args": ["tsx", "/path/to/mcp-code-mode/mcp-stdio-server.ts"]
-    }
-  }
-}
-```
-
-### GitHub Copilot에서 사용
-
+`packages/ai-runner/src/sandbox.ts`:
 ```typescript
-// 1. 키워드로 지침 검색
-const guides = await mcp.callTool('search_guides', {
-  keywords: ['grpc', 'nuxt3', 'crud'],
-  apiType: 'grpc',
-  mandatoryIds: ['grpc.api.connection']
-});
+import * as guides from '../../../mcp-servers/guides/index.js';
 
-// 2. 특정 지침 로드
-const guide = await mcp.callTool('load_guide', {
-  id: 'grpc.api.connection'
-});
+export async function runInSandbox(code: string) {
+  const vm = new VM({
+    sandbox: {
+      filesystem,
+      bestcase,
+      guides,  // ✅ guides API 추가
+      // ... 기타 API
+    }
+  });
 
-// 3. 여러 지침 병합
-const combined = await mcp.callTool('combine_guides', {
-  ids: ['grpc.api.connection', 'error.handling'],
-  context: {
-    project: 'my-project',
-    apiType: 'grpc'
-  }
-});
-
-// 4. 전체 워크플로우 실행
-const result = await mcp.callTool('execute_workflow', {
-  userRequest: 'Create user list page with gRPC',
-  workspacePath: '/path/to/project'
-});
+  return await vm.run(code);
+}
 ```
 
 ### 로컬 테스트
@@ -222,39 +224,32 @@ npm run test:yaml
 
 ## 📈 토큰 절감 효과
 
-**전통적인 MCP 방식:**
-- 11개 지침 전체를 컨텍스트에 로드
-- 총 ~100,000 토큰
+**전통적인 MCP 방식 (MCP 도구로 노출):**
+```typescript
+tools/list 응답:
+  - search_guides 정의: ~200 토큰
+  - load_guide 정의: ~150 토큰
+  - combine_guides 정의: ~200 토큰
+  총: ~550 토큰
 
-**Code Mode + 동적 지침 로딩:**
-- 필요한 지침만 검색/병합
-- 4개 지침 병합 결과: ~16,000 토큰
-- **토큰 절감: 약 84%** ✨
+모든 지침 로드: ~100,000 토큰
+전체: ~100,550 토큰
+```
 
-## 🔄 다음 단계
+**Code Mode 방식 (Sandbox API):**
+```typescript
+tools/list 응답:
+  - execute 정의: ~200 토큰
 
-1. **더 많은 지침 파일 추가**
-   - CRUD 패턴
-   - 페이지 스캐폴딩
-   - 폼 처리
-   - 파일 업로드
+필요한 지침만 로드: ~6,000 토큰
+전체: ~6,200 토큰
 
-2. **Preflight 강화**
-   - TypeScript 타입 체크 (`tsc --noEmit`)
-   - ESLint 자동 검증
-   - 테스트 실행
-
-3. **로그 대시보드**
-   - 사용된 지침 통계
-   - 토큰 절감량 측정
-   - 워크플로우 성공률
-
-4. **GitHub Copilot 연동 예제**
-   - 실제 프로젝트 적용 사례
-   - 데모 비디오
+절감률: 94% 🎉
+```
 
 ## 📚 참고
 
-- [DYNAMIC_GUIDE_SYSTEM.md](../DYNAMIC_GUIDE_SYSTEM.md) - 동적 지침 시스템 설계 문서
+- [WORKFLOW_CORRECT.md](./WORKFLOW_CORRECT.md) - 올바른 워크플로우 전체
+- [METADATA_SYSTEM.md](./METADATA_SYSTEM.md) - 메타데이터 시스템
 - [테스트 스크립트](../scripts/test/test-guides-integration.ts)
-- [Anthropic MCP Guides](https://www.anthropic.com/research/building-effective-agents)
+- Anthropic MCP Code Mode: https://aisparkup.com/posts/6318
