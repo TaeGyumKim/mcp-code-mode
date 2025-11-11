@@ -1,9 +1,14 @@
 /**
  * AI 기반 자동 프로젝트 스캔 스크립트
- * 기존 스캔 + AI 코드 품질 분석 통합
+ * 메타데이터 기반 코드 분석 (Anthropic Code Mode 방식)
+ *
+ * 변경 사항:
+ * - CodeAnalyzer (점수 기반) → MetadataAnalyzer (메타데이터 기반)
+ * - 점수 계산 제거 → 구조화된 메타데이터 사용
+ * - BestCase patterns.metadata 필드 사용
  */
 
-import { CodeAnalyzer } from '../../packages/llm-analyzer/dist/index.js';
+import { MetadataAnalyzer } from '../../packages/llm-analyzer/dist/index.js';
 import { runAgentScript } from '../../packages/ai-runner/dist/agentRunner.js';
 import { readFileSync, existsSync, readdirSync, statSync } from 'fs';
 import { promises as fs } from 'fs';
@@ -101,31 +106,30 @@ function findAllNuxtProjects(basePath: string): ProjectInfo[] {
 }
 
 /**
- * AI 분석 수행
+ * AI 기반 메타데이터 추출 (MetadataAnalyzer 사용)
  */
-async function performAIAnalysis(projectPath: string, projectName: string): Promise<any | null> {
-  console.log('\n🤖 Starting AI Code Quality Analysis...');
-  
+async function performMetadataAnalysis(projectPath: string, projectName: string): Promise<any | null> {
+  console.log('\n🤖 Starting AI Metadata Extraction...');
+
   try {
-    const analyzer = new CodeAnalyzer({
+    const analyzer = new MetadataAnalyzer({
       ollamaUrl: OLLAMA_URL,
-      model: LLM_MODEL,
-      concurrency: CONCURRENCY
+      model: LLM_MODEL
     });
-    
+
     // Health check
     const isHealthy = await analyzer.healthCheck();
     if (!isHealthy) {
-      console.log('⚠️ Ollama server not available, skipping AI analysis');
+      console.log('⚠️ Ollama server not available, skipping metadata analysis');
       return null;
     }
-    
+
     // 분석할 파일 수집
     const filesToAnalyze: Array<{ path: string; content: string }> = [];
-    
+
     const composablesPath = join(projectPath, 'composables');
     const pagesPath = join(projectPath, 'pages');
-    
+
     // Composables 파일 스캔
     try {
       const composables = await fs.readdir(composablesPath);
@@ -143,7 +147,7 @@ async function performAIAnalysis(projectPath: string, projectName: string): Prom
     } catch (e) {
       // No composables
     }
-    
+
     // Pages 파일 스캔 (최대 5개)
     try {
       const pages = await fs.readdir(pagesPath);
@@ -161,74 +165,63 @@ async function performAIAnalysis(projectPath: string, projectName: string): Prom
     } catch (e) {
       // No pages
     }
-    
+
     if (filesToAnalyze.length === 0) {
-      console.log('⚠️ No files found for AI analysis');
+      console.log('⚠️ No files found for metadata analysis');
       return null;
     }
-    
-    console.log(`📊 Analyzing ${filesToAnalyze.length} files with ${CONCURRENCY} parallel workers...`);
-    
+
+    console.log(`📊 Analyzing ${filesToAnalyze.length} files with MetadataAnalyzer...`);
+
     // 최대 20개 파일만 분석
     const filesWithContent = filesToAnalyze.slice(0, 20);
-    
+
     if (filesWithContent.length === 0) {
-      console.log('⚠️ No readable files for AI analysis');
+      console.log('⚠️ No readable files for metadata analysis');
       return null;
     }
-    
+
     console.log(`📝 Read ${filesWithContent.length} files successfully\n`);
-    
-    // 병렬 AI 분석 실행
-    const analysisResult = await analyzer.analyzeProject(
+
+    // 메타데이터 추출 (우수 파일 최대 3개)
+    const projectMetadata = await analyzer.analyzeProject(
       projectPath,
       filesWithContent,
-      CONCURRENCY
-    ) as AnalysisResult;
-    
-    const { results, summary } = analysisResult;
-    
-    console.log(`✅ AI Analysis completed`);
-    console.log(`   Average score: ${summary.averageScore.toFixed(1)}/100`);
-    console.log(`   Excellent files (85+): ${summary.excellentSnippets?.length || 0}`);
-    
-    return {
-      averageScore: summary.averageScore,
-      totalFiles: summary.totalFiles,
-      topFiles: summary.topFiles,
-      excellentSnippets: summary.excellentSnippets || [],
-      detailedResults: results.map(r => ({
-        file: r.filePath.split(/[\\/]/).pop(),
-        score: r.score,
-        category: r.category || 'component',
-        strengths: r.strengths || [],
-        weaknesses: r.weaknesses || []
-      }))
-    };
-    
+      3  // maxExcellentFiles
+    );
+
+    console.log(`✅ Metadata extraction completed`);
+    console.log(`   Patterns: ${projectMetadata.patterns?.join(', ') || 'none'}`);
+    console.log(`   Frameworks: ${projectMetadata.frameworks?.join(', ') || 'none'}`);
+    console.log(`   API Type: ${projectMetadata.apiType || 'none'}`);
+    console.log(`   Complexity: ${projectMetadata.complexity || 'unknown'}`);
+    console.log(`   Excellent files: ${projectMetadata.excellentFiles?.length || 0}`);
+
+    return projectMetadata;
+
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
-    console.log('⚠️ AI analysis failed:', errorMessage);
+    console.log('⚠️ Metadata analysis failed:', errorMessage);
     return null;
   }
 }
 
 /**
- * 단일 프로젝트 스캔
+ * 단일 프로젝트 스캔 (메타데이터 기반)
  */
 async function scanProject(project: ProjectInfo): Promise<void> {
   console.log('========================================');
   console.log(`🔍 Scanning: ${project.name}`);
   console.log('========================================');
-  
+
   if (!existsSync(project.path)) {
     console.log('⚠️ Skipping: Path not found');
     console.log('');
     return;
   }
-  
-  // 1. AI 분석 먼저 수행
-  const aiAnalysis = await performAIAnalysis(project.path, project.name);
+
+  // 1. 메타데이터 추출 먼저 수행
+  const projectMetadata = await performMetadataAnalysis(project.path, project.name);
   
   // 2. 기존 패턴 분석
   const scanCode = `
@@ -317,37 +310,23 @@ try {
     } catch (e2) {}
   }
 
-  let apiScore = 0;
-  if (hasOpenApi) apiScore += 40;
-  else if (hasGrpc) apiScore += 35;
+  // 메타데이터 기반 패턴 정보
+  const projectMetadata = ${JSON.stringify(projectMetadata)};
 
-  let componentScore = 0;
-  const totalUsage = Object.values(componentUsage).reduce((sum, count) => sum + count, 0);
-  componentScore += Math.min(50, totalUsage * 2);
-  if (hasTailwindConfig) componentScore += 20;
-  componentScore += Object.values(composableUsage).reduce((sum, count) => sum + (count > 0 ? 10 : 0), 0);
-
-  const patternScore = Math.round((apiScore + componentScore) / 2);
-  
-  console.log(\`📊 Pattern Score: \${patternScore}/100 (API=\${apiScore}, Component=\${componentScore})\`);
-
-  const aiAnalysis = ${JSON.stringify(aiAnalysis)};
-  
-  let finalScore = patternScore;
-  let tier = 'D';
-  
-  if (aiAnalysis && aiAnalysis.averageScore > 0) {
-    finalScore = Math.round(aiAnalysis.averageScore * 0.6 + patternScore * 0.4);
-    console.log(\`🤖 AI Score: \${aiAnalysis.averageScore.toFixed(1)}/100\`);
-    console.log(\`📊 Final Score: \${finalScore}/100 (AI 60% + Pattern 40%)\`);
+  console.log(\`📊 Metadata extracted\`);
+  if (projectMetadata) {
+    console.log(\`   Patterns: \${projectMetadata.patterns?.join(', ') || 'none'}\`);
+    console.log(\`   API Type: \${projectMetadata.apiType || 'none'}\`);
+    console.log(\`   Complexity: \${projectMetadata.complexity || 'unknown'}\`);
+    console.log(\`   Is Excellent: \${projectMetadata.isExcellent ? 'Yes' : 'No'}\`);
   }
-  
-  if (finalScore >= 80) tier = 'S';
-  else if (finalScore >= 60) tier = 'A';
-  else if (finalScore >= 40) tier = 'B';
-  else if (finalScore >= 20) tier = 'C';
 
   const patterns = {
+    // ✅ 메타데이터 기반 (권장)
+    metadata: projectMetadata || null,
+    excellentReasons: projectMetadata?.excellentReasons || [],
+
+    // ⚠️ 하위 호환성: 기본 통계 정보 유지
     stats: {
       totalFiles: fileList.length,
       vueFiles: vueFiles.files.filter(f => !f.isDirectory).length,
@@ -366,15 +345,7 @@ try {
     codePatterns: {
       framework,
       usesTypescript: tsFiles.files.filter(f => !f.isDirectory).length > 0
-    },
-    scores: {
-      final: finalScore,
-      pattern: patternScore,
-      api: apiScore,
-      component: componentScore,
-      tier
-    },
-    aiAnalysis: aiAnalysis
+    }
   };
 
   const sampleFiles = [];
@@ -394,14 +365,7 @@ try {
   return {
     patterns,
     sampleFiles,
-    aiAnalysis,
-    scores: {
-      final: finalScore,
-      pattern: patternScore,
-      api: apiScore,
-      component: componentScore,
-      tier
-    }
+    metadata: projectMetadata  // ✅ 메타데이터 기반
   };
 
 } catch (error) {
@@ -429,31 +393,61 @@ try {
     return;
   }
 
-  // BestCase 저장
+  // BestCase 저장 (메타데이터 기반)
   if (scanResult && scanResult.patterns) {
     try {
       const { BestCaseStorage } = await import('../../packages/bestcase-db/dist/index.js');
       const storage = new BestCaseStorage(BESTCASE_STORAGE_PATH);
-      
+
       const sanitizedProjectName = project.name.replace(/\//g, '-').replace(/\\/g, '-');
       const bestCaseId = `${sanitizedProjectName}-${project.category}-${Date.now()}`;
-      
+
+      // 메타데이터 기반 설명 생성
+      const meta = scanResult.metadata;
+      let description = `${project.name} Metadata-based Scan`;
+      if (meta) {
+        if (meta.isExcellent) {
+          description += ' (Excellent)';
+        }
+        if (meta.complexity) {
+          description += ` - Complexity: ${meta.complexity}`;
+        }
+        if (meta.apiType) {
+          description += ` - API: ${meta.apiType}`;
+        }
+      }
+
+      // 메타데이터 기반 태그 생성
+      const tags = ['auto-scan', 'metadata-based'];
+      if (meta) {
+        if (meta.isExcellent) tags.push('excellent');
+        if (meta.complexity) tags.push(meta.complexity);
+        if (meta.apiType) tags.push(meta.apiType);
+        if (meta.frameworks) tags.push(...meta.frameworks);
+        if (meta.patterns) tags.push(...meta.patterns.slice(0, 3)); // 처음 3개만
+      }
+      tags.push(new Date().toISOString().split('T')[0]);
+
       const bestCase = {
         id: bestCaseId,
         projectName: project.name,
         category: project.category,
-        description: `${project.name} AI-Enhanced Scan (Tier ${scanResult.scores.tier}, Score: ${scanResult.scores.final}/100)`,
+        description,
         files: scanResult.sampleFiles,
-        patterns: scanResult.patterns,
+        patterns: scanResult.patterns,  // ✅ patterns.metadata 포함
         metadata: {
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
-          tags: ['auto-scan', 'ai-analysis', scanResult.scores.tier, scanResult.patterns.codePatterns.framework.toLowerCase(), new Date().toISOString().split('T')[0]]
+          tags: [...new Set(tags)]  // 중복 제거
         }
       };
-      
+
       await storage.save(bestCase);
       console.log(`✅ BestCase saved: ${bestCaseId}`);
+      if (meta?.isExcellent) {
+        console.log(`   🌟 Marked as Excellent!`);
+        console.log(`   Reasons: ${meta.excellentReasons?.join(', ') || 'none'}`);
+      }
       console.log('');
     } catch (saveError) {
       const errorMessage = saveError instanceof Error ? saveError.message : String(saveError);
