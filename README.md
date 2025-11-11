@@ -116,21 +116,32 @@ yarn scan:advanced
 npx tsx mcp-stdio-server.ts
 ```
 
-### Docker 실행 (GPU 지원)
+### Docker 실행
 
 ```bash
-# 1. Docker 이미지 빌드 및 실행
-docker-compose -f docker-compose.ai.yml up -d
+# GPU 사용 (NVIDIA GPU 필요)
+docker-compose up -d --build
 
-# 2. GPU 사용 확인
+# 또는 CPU 전용
+docker-compose -f docker-compose.cpu.yml up -d --build
+
+# 서비스 상태 확인
+docker-compose ps
+
+# 로그 확인
+docker-compose logs -f mcp-code-mode
+
+# GPU 사용 확인 (GPU 버전만)
 docker exec ollama-code-analyzer nvidia-smi
 
-# 3. 로그 확인
-docker-compose logs -f mcp-code-mode-server
-
-# 4. 중지
+# 중지
 docker-compose down
 ```
+
+**실행되는 서비스:**
+- **ollama**: LLM 서버 (qwen2.5-coder:7b)
+- **mcp-code-mode**: MCP STDIO 서버 (VSCode 연동)
+- **cron-scheduler**: 주간 자동 스캔 (일요일 02:00)
 
 ### VS Code MCP 연동
 

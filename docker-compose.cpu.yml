@@ -1,7 +1,7 @@
 version: '3.8'
 
 services:
-  # Ollama LLM Server for Code Analysis with GPU
+  # Ollama LLM Server (CPU 전용)
   ollama:
     image: ollama/ollama:latest
     container_name: ollama-code-analyzer
@@ -12,22 +12,12 @@ services:
     restart: unless-stopped
     networks:
       - mcp-network
-    # GPU 활성화 (NVIDIA GPU가 있는 경우)
-    # 없으면 CPU로 동작
-    runtime: nvidia
     deploy:
       resources:
         limits:
-          memory: 24G
-        reservations:
-          devices:
-            - driver: nvidia
-              device_ids: ['1']
-              capabilities: [gpu]
+          memory: 16G
     environment:
-      - NVIDIA_VISIBLE_DEVICES=all
-      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
-      - OLLAMA_NUM_PARALLEL=3
+      - OLLAMA_NUM_PARALLEL=2
       - OLLAMA_MAX_LOADED_MODELS=1
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
@@ -53,7 +43,7 @@ services:
       - OLLAMA_HOST=http://ollama:11434
       - LLM_PROVIDER=ollama
       - LLM_MODEL=qwen2.5-coder:7b
-      - CONCURRENCY=2
+      - CONCURRENCY=1  # CPU는 동시 실행 수 줄임
     deploy:
       resources:
         limits:
@@ -63,7 +53,6 @@ services:
       - ollama
     networks:
       - mcp-network
-    # 컨테이너 유지 (VSCode에서 docker exec로 mcp-stdio-server.js 실행)
     command: tail -f /dev/null
     healthcheck:
       test: ["CMD", "test", "-f", "/app/mcp-stdio-server.js"]
@@ -86,7 +75,7 @@ services:
       - BESTCASE_STORAGE_PATH=/projects/.bestcases
       - OLLAMA_URL=http://ollama:11434
       - LLM_MODEL=qwen2.5-coder:7b
-      - CONCURRENCY=2
+      - CONCURRENCY=1
     deploy:
       resources:
         limits:
@@ -109,31 +98,6 @@ services:
       echo 'Next run: Sunday 02:00' &&
       tail -f /var/log/cron.log
       "
-
-  # 개발용 서비스 (선택적)
-  mcp-code-mode-dev:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: mcp-code-mode-dev
-    ports:
-      - "3001:3000"
-    volumes:
-      - .:/app
-      - /app/node_modules
-      - D:/01.Work/01.Projects:/projects
-    environment:
-      - NODE_ENV=development
-      - PROJECTS_PATH=/projects
-      - BESTCASE_STORAGE_PATH=/projects/.bestcases
-      - OLLAMA_URL=http://ollama:11434
-    command: yarn workspace web dev
-    depends_on:
-      - ollama
-    networks:
-      - mcp-network
-    profiles:
-      - dev
 
 networks:
   mcp-network:
