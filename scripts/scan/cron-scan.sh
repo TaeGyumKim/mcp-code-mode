@@ -12,6 +12,7 @@ cd /app
 # 환경 변수 설정
 export LLM_MODEL="${LLM_MODEL:-qwen2.5-coder:7b}"
 export CONCURRENCY="${CONCURRENCY:-2}"
+export BESTCASE_STORAGE_PATH="${BESTCASE_STORAGE_PATH:-/projects/.bestcases}"
 
 # Ollama가 실행 중인지 확인
 if ! curl -sf http://ollama:11434/api/tags > /dev/null 2>&1; then
@@ -23,6 +24,7 @@ fi
 echo "✅ Ollama available, starting weekly scan process"
 echo "🧠 LLM Model: $LLM_MODEL"
 echo "⚡ Concurrency: $CONCURRENCY"
+echo "📁 Storage: $BESTCASE_STORAGE_PATH"
 echo ""
 
 # AI 기반 자동 스캔 실행
