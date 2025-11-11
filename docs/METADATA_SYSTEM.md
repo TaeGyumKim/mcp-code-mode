@@ -1,6 +1,31 @@
 **# 메타데이터 추출 시스템
 
-## 🎯 개요
+## 🎯 핵심 목적
+
+메타데이터 시스템은 다음과 같은 흐름으로 작동합니다:
+
+```
+1. 사용자 요청 + 대상 프로젝트 분석
+          ↓
+   메타데이터 추출 (patterns, frameworks, complexity 등)
+          ↓
+2. 서버의 BestCase 메타데이터와 비교
+          ↓
+3. 작업 분류 (누락된 패턴, 개선 필요 영역 파악)
+          ↓
+4. 필요한 가이드라인 로드 (메타데이터 키워드 기반)
+          ↓
+5. 코드 생성 (가이드 + BestCase 참고)
+```
+
+### 왜 메타데이터인가?
+
+- **객관적**: 점수는 주관적이지만, 메타데이터는 코드에서 추출한 사실
+- **활용도**: 점수는 순위만 가능하지만, 메타데이터는 검색/필터링/비교 가능
+- **자동화**: 패턴 기반으로 작업 분류 및 가이드 로딩 자동화
+- **품질 평가**: 메타데이터 → 점수 계산으로 참고 파일 품질 평가
+
+## 📊 개요
 
 기존 점수 기반 코드 분석을 **메타데이터 추출 시스템**으로 전환하여, 동적 지침 로딩 시스템과 통합 가능한 구조화된 정보를 추출합니다.
 
@@ -139,6 +164,46 @@ interface ProjectMetadata {
 
 ## 💡 활용 사례
 
+### 0. 전체 워크플로우 개요
+
+```typescript
+// 1단계: 사용자 요청 → 프로젝트 메타데이터 추출
+const projectMeta = await metadata.analyzeProject(targetPath, files);
+// → patterns: ["state-management", "api-call"]
+// → frameworks: ["nuxt", "vue"]
+// → apiType: "grpc"
+
+// 2단계: BestCase 메타데이터와 비교
+const bestCases = await bestcase.list();
+const similarCase = bestCases.find(bc =>
+  bc.patterns.metadata.apiType === projectMeta.apiType
+);
+const bestCaseMeta = similarCase.patterns.metadata;
+
+// 3단계: 작업 분류 (누락된 패턴 파악)
+const missingPatterns = bestCaseMeta.patterns.filter(p =>
+  !projectMeta.patterns.includes(p)
+);
+// → ["interceptor", "error-recovery"]
+
+// 4단계: 가이드 로드 (메타데이터 키워드 기반)
+const keywords = [
+  ...projectMeta.patterns,
+  ...projectMeta.frameworks,
+  ...missingPatterns  // 배워야 할 패턴
+];
+const guides = await guides.search({ keywords });
+
+// 5단계: 고품질 참고 파일 선택 (점수 기반)
+const referenceFiles = bestCase.files
+  .filter(f => f.metadata.patterns.includes("interceptor"))
+  .filter(f => f.score >= 70)  // 고품질 파일만
+  .sort((a, b) => b.score - a.score);
+
+// 6단계: 코드 생성 (가이드 + 참고 파일)
+// ... 코드 생성 로직
+```
+
 ### 1. 동적 지침 로딩
 
 메타데이터를 키워드로 활용하여 관련 지침을 검색합니다.
@@ -186,29 +251,76 @@ const analyzer = new MetadataAnalyzer({
   model: 'qwen2.5-coder:7b'
 });
 
-// 프로젝트 스캔
+// 1️⃣ 프로젝트 스캔 및 메타데이터 추출
 const files = await scanProjectFiles(projectPath);
-const metadata = await analyzer.analyzeProject(projectPath, files, 2);
+const fileResults = await analyzer.analyzeFilesParallel(files, 3);
+const metadata = await analyzer.aggregateMetadata(projectPath, fileResults);
 
-// 우수 파일이 있으면 BestCase로 저장
-if (metadata.excellentFiles.length > 0) {
+// 2️⃣ 메타데이터 기반 점수 계산
+const scores = analyzer.calculateProjectScore(metadata, fileResults);
+const tier = analyzer.getTierFromScore(scores.overall);
+// → overall: 85, tier: "A"
+
+// 3️⃣ 고품질 파일 선별 (점수 70점 이상)
+const highQualityFiles = fileResults
+  .map(file => ({
+    ...file,
+    score: analyzer.calculateFileScore(file),
+    tier: analyzer.getTierFromScore(analyzer.calculateFileScore(file))
+  }))
+  .filter(f => f.score >= 70)
+  .sort((a, b) => b.score - a.score);
+
+// 4️⃣ BestCase로 저장
+if (highQualityFiles.length > 0) {
   await runAgentScript({
     code: `
       await bestcase.save({
         projectName: '${projectName}',
-        category: 'auto-scan-metadata',  // ✅ 메타데이터 카테고리
-        description: '자동 스캔: ${metadata.excellentFiles.length}개 우수 파일',
-        files: [/* 우수 파일들 */],
+        category: 'auto-scan-metadata',
+        description: 'Score: ${scores.overall}/100 (Tier ${tier}) - ${highQualityFiles.length}개 우수 파일',
+        files: [
+          ${highQualityFiles.map(f => `{
+            path: '${f.filePath}',
+            content: '...',
+            purpose: 'Score: ${f.score}/100 - ${f.patterns.join(", ")}',
+            // ✅ 파일별 메타데이터
+            metadata: {
+              patterns: ${JSON.stringify(f.patterns)},
+              frameworks: ${JSON.stringify(f.frameworks)},
+              complexity: '${f.complexity}',
+              errorHandling: '${f.errorHandling}',
+              typeDefinitions: '${f.typeDefinitions}',
+              reusability: '${f.reusability}'
+            },
+            // ✅ 파일별 점수
+            score: ${f.score},
+            tier: '${f.tier}'
+          }`).join(',')}
+        ],
         patterns: {
-          metadata: ${JSON.stringify(metadata)},  // ✅ ProjectMetadata 저장
-          excellentReasons: [/* 우수 이유들 */]
+          // ✅ 프로젝트 메타데이터
+          metadata: ${JSON.stringify(metadata)},
+          // ✅ 프로젝트 점수
+          scores: {
+            overall: ${scores.overall},
+            average: ${scores.average},
+            tier: '${tier}',
+            distribution: ${JSON.stringify(scores.distribution)}
+          },
+          excellentReasons: ${JSON.stringify(metadata.excellentFiles.flatMap(f => f.reasons))}
         },
-        tags: ${JSON.stringify([...metadata.frameworks, ...metadata.patterns, metadata.apiType])}
+        tags: ['tier-${tier.toLowerCase()}', 'score-${Math.floor(scores.overall / 10) * 10}',
+               ...${JSON.stringify([...metadata.frameworks, ...metadata.patterns, metadata.apiType])}]
       });
     `
   });
 }
 ```
+
+**저장되는 정보**:
+- 각 파일: metadata (패턴, 복잡도 등) + score (0-100) + tier (S/A/B/C/D)
+- 프로젝트: metadata (전체 통계) + scores (overall, distribution)
 
 ### 3. 메타데이터 비교 → TODO 생성
 

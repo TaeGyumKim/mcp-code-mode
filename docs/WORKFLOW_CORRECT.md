@@ -1,5 +1,33 @@
 # 올바른 워크플로우 (Anthropic Code Mode 기반)
 
+## 🎯 시스템의 목적
+
+이 시스템은 다음과 같은 자동화된 워크플로우를 제공합니다:
+
+```
+📝 사용자 요청
+    ↓
+🔍 대상 프로젝트 분석 → 메타데이터 추출
+    ↓
+📊 서버 BestCase 메타데이터와 비교
+    ↓
+🏷️ 작업 분류 (패턴 기반)
+    ↓
+📚 필요한 가이드라인 로드 (메타데이터 키워드)
+    ↓
+💡 고품질 참고 파일 선택 (점수 기반)
+    ↓
+✨ 코드 생성 (가이드 + BestCase)
+```
+
+**핵심 가치**:
+- **자동 작업 분류**: 메타데이터 비교로 누락된 패턴/개선점 자동 파악
+- **동적 가이드 로딩**: 필요한 가이드만 선택적으로 로드 (94% 토큰 절감)
+- **품질 기반 참고**: 점수로 고품질 참고 파일 자동 선택
+- **일관성**: BestCase 기반으로 검증된 패턴 적용
+
+---
+
 ## 🎯 핵심 개념
 
 ### Anthropic MCP Code Mode란?
@@ -398,6 +426,36 @@ if (unusedComponents.length > 0) {
   });
 }
 
+// 6. 고품질 참고 파일 선택 (점수 기반)
+// 각 TODO에 대해 가장 적합한 참고 파일을 점수 기반으로 선택
+todos.forEach(todo => {
+  if (todo.id === 'add-interceptor-pattern') {
+    // interceptor 패턴을 포함하고, 점수가 높은 파일 선택
+    const referenceFiles = bestCase.files
+      .filter(f => f.metadata?.patterns?.includes('interceptor'))
+      .filter(f => f.score >= 70)  // 고품질 파일만 (A tier 이상)
+      .sort((a, b) => b.score - a.score);  // 점수 높은 순
+
+    if (referenceFiles.length > 0) {
+      todo.referenceFile = referenceFiles[0];  // 최고 점수 파일
+      todo.reason += \` (참고: \${referenceFiles[0].path}, Score: \${referenceFiles[0].score}/100)\`;
+    }
+  }
+
+  if (todo.id === 'improve-error-handling') {
+    // 에러 처리가 우수한 파일 선택
+    const referenceFiles = bestCase.files
+      .filter(f => f.metadata?.errorHandling === 'comprehensive')
+      .filter(f => f.score >= 70)
+      .sort((a, b) => b.score - a.score);
+
+    if (referenceFiles.length > 0) {
+      todo.referenceFiles = referenceFiles.slice(0, 3);  // 상위 3개
+      todo.reason += \` (참고 파일 \${referenceFiles.length}개 발견)\`;
+    }
+  }
+});
+
 return { todos, comparison: {
   missingPatterns,
   complexityGap: projectMeta.averageComplexity + ' vs ' + bestCaseMeta.averageComplexity,
@@ -411,22 +469,52 @@ return { todos, comparison: {
 [
   {
     id: 'add-interceptor-pattern',
-    reason: 'BestCase에 우수 interceptor 패턴 존재',
+    reason: 'BestCase에 우수 interceptor 패턴 존재 (참고: useGrpcClient.ts, Score: 92/100)',
     files: ['composables/useGrpcClient.ts'],
     loc: 50,
     priority: 'high',
     referenceFile: {
       path: 'composables/useGrpcClient.ts',
       content: '// BestCase 코드...',
-      purpose: 'Proper interceptor pattern'
+      purpose: 'Proper interceptor pattern',
+      // ✅ 메타데이터 + 점수
+      metadata: {
+        patterns: ['interceptor', 'error-recovery', 'singleton'],
+        complexity: 'high',
+        errorHandling: 'comprehensive',
+        typeDefinitions: 'excellent'
+      },
+      score: 92,
+      tier: 'S'
     }
   },
   {
     id: 'improve-error-handling',
-    reason: '에러 처리 품질 낮음 (71% vs 90%)',
+    reason: '에러 처리 품질 낮음 (71% vs 90%) (참고 파일 3개 발견)',
     files: ['pages/users/index.vue', 'composables/useApi.ts'],
     loc: 80,
-    priority: 'high'
+    priority: 'high',
+    // ✅ 고품질 참고 파일 여러 개
+    referenceFiles: [
+      {
+        path: 'composables/useGrpcClient.ts',
+        score: 92,
+        tier: 'S',
+        metadata: { errorHandling: 'comprehensive' }
+      },
+      {
+        path: 'composables/useApiClient.ts',
+        score: 85,
+        tier: 'A',
+        metadata: { errorHandling: 'comprehensive' }
+      },
+      {
+        path: 'pages/products/index.vue',
+        score: 78,
+        tier: 'A',
+        metadata: { errorHandling: 'comprehensive' }
+      }
+    ]
   }
 ]
 ```
@@ -483,39 +571,78 @@ const projects = findAllNuxtProjects(PROJECTS_BASE_PATH);
 for (const project of projects) {
   console.log(`📊 Analyzing ${project.name}...`);
 
-  // 프로젝트 파일 스캔
+  // 1️⃣ 프로젝트 파일 스캔
   const files = await scanProjectFiles(project.path);
 
-  // 메타데이터 추출 (Ollama LLM 사용)
-  const metadata = await analyzer.analyzeProject(
-    project.path,
-    files,
-    2  // concurrency
-  );
+  // 2️⃣ 메타데이터 추출 (Ollama LLM 사용)
+  console.log('Step 1/2: Extracting metadata...');
+  const fileResults = await analyzer.analyzeFilesParallel(files, 2);
+  const metadata = analyzer.aggregateMetadata(project.path, fileResults);
 
-  // 우수 파일이 있으면 BestCase로 저장
-  if (metadata.excellentFiles.length > 0) {
+  // 3️⃣ 메타데이터 기반 점수 계산
+  console.log('Step 2/2: Calculating scores from metadata...');
+  const scores = analyzer.calculateProjectScore(metadata, fileResults);
+  const tier = analyzer.getTierFromScore(scores.overall);
+
+  console.log(`Score: ${scores.overall}/100 (Tier ${tier})`);
+  console.log(`Distribution: S=${scores.distribution.S}, A=${scores.distribution.A}, B=${scores.distribution.B}`);
+
+  // 4️⃣ 고품질 파일 선별 (점수 70점 이상)
+  const highQualityFiles = fileResults
+    .map(file => ({
+      ...file,
+      score: analyzer.calculateFileScore(file),
+      tier: analyzer.getTierFromScore(analyzer.calculateFileScore(file))
+    }))
+    .filter(f => f.score >= 70)
+    .sort((a, b) => b.score - a.score);
+
+  // 5️⃣ BestCase로 저장
+  if (highQualityFiles.length > 0) {
     await runAgentScript({
       code: `
         await bestcase.save({
           projectName: '${project.name}',
           category: 'auto-scan-metadata',
-          description: '자동 스캔: ${metadata.excellentFiles.length}개 우수 파일',
-          files: ${JSON.stringify(metadata.excellentFiles.map(ef => ({
-            path: ef.path,
-            content: readFileSync(join(project.path, ef.path), 'utf-8'),
-            purpose: ef.reasons.join(', ')
+          description: 'Score: ${scores.overall}/100 (Tier ${tier}) - ${highQualityFiles.length}개 고품질 파일',
+          files: ${JSON.stringify(highQualityFiles.map(f => ({
+            path: f.filePath,
+            content: readFileSync(join(project.path, f.filePath), 'utf-8'),
+            purpose: \`Score: \${f.score}/100 - \${f.patterns.join(', ')}\`,
+            // ✅ 파일별 메타데이터
+            metadata: {
+              patterns: f.patterns,
+              frameworks: f.frameworks,
+              apiType: f.apiType,
+              complexity: f.complexity,
+              errorHandling: f.errorHandling,
+              typeDefinitions: f.typeDefinitions,
+              reusability: f.reusability
+            },
+            // ✅ 파일별 점수
+            score: f.score,
+            tier: f.tier
           })))},
           patterns: {
+            // ✅ 프로젝트 메타데이터
             metadata: ${JSON.stringify(metadata)},
+            // ✅ 프로젝트 점수
+            scores: {
+              overall: ${scores.overall},
+              average: ${scores.average},
+              tier: '${tier}',
+              distribution: ${JSON.stringify(scores.distribution)}
+            },
             excellentReasons: ${JSON.stringify(metadata.excellentFiles.flatMap(f => f.reasons))}
           },
-          tags: ${JSON.stringify([...metadata.frameworks, ...metadata.patterns, metadata.apiType])}
+          tags: ['tier-${tier.toLowerCase()}', 'score-${Math.floor(scores.overall / 10) * 10}',
+                 ...${JSON.stringify([...metadata.frameworks, ...metadata.patterns, metadata.apiType])}]
         });
       `
     });
 
-    console.log(`✅ Saved ${metadata.excellentFiles.length} excellent files`);
+    console.log(`✅ Saved ${highQualityFiles.length} high-quality files (score >= 70)`);
+    console.log(`   Overall: ${scores.overall}/100 (Tier ${tier})`);
   }
 }
 ```
