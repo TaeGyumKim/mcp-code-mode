@@ -351,17 +351,31 @@ yarn scan:all
 
 MIT License - 자세한 내용은 [LICENSE](./LICENSE) 파일을 참조하세요.
 
-## 문서
+## 📚 문서
 
-- **[docs/GUIDES_MCP_INTEGRATION.md](./docs/GUIDES_MCP_INTEGRATION.md)** - Guides MCP 통합 완료 문서 ⭐ NEW
-- **[docs/AI_QUICK_START.md](./docs/AI_QUICK_START.md)** - AI 기반 코드 분석 빠른 시작
-- **[docs/AI_CODE_ANALYZER.md](./docs/AI_CODE_ANALYZER.md)** - AI 분석 시스템 상세 설계
-- **[docs/SCORING_SYSTEM.md](./docs/SCORING_SYSTEM.md)** - 점수 시스템 상세 가이드
-- **[docs/AUTO_UPDATE_GUIDE.md](./docs/AUTO_UPDATE_GUIDE.md)** - 자동 BestCase 업데이트 가이드
+### 🌟 핵심 문서 (Anthropic MCP Code Mode 기반)
+
+- **[docs/PROCESS_SUMMARY.md](./docs/PROCESS_SUMMARY.md)** - 📋 전체 프로세스 요약 ⭐ **시작하기 좋음**
+- **[docs/WORKFLOW_CORRECT.md](./docs/WORKFLOW_CORRECT.md)** - 🎯 올바른 워크플로우 (5단계 상세 설명)
+- **[docs/METADATA_SYSTEM.md](./docs/METADATA_SYSTEM.md)** - 🔑 메타데이터 추출 시스템
+- **[docs/GUIDES_MCP_INTEGRATION.md](./docs/GUIDES_MCP_INTEGRATION.md)** - 📖 가이드 시스템 Sandbox API 통합
+
+### 설정 가이드
+
 - **[docs/MCP_SETUP_GUIDE.md](./docs/MCP_SETUP_GUIDE.md)** - Docker 및 VS Code MCP 설정
 - **[docs/DOCKER_SETUP_COMPLETE.md](./docs/DOCKER_SETUP_COMPLETE.md)** - Docker 설정 완료 가이드
 - **[docs/VSCODE_MCP_GUIDE.md](./docs/VSCODE_MCP_GUIDE.md)** - VS Code 통합 상세 가이드
+
+### 기타 문서
+
+- **[docs/AI_QUICK_START.md](./docs/AI_QUICK_START.md)** - AI 기반 코드 분석 빠른 시작
+- **[docs/AUTO_UPDATE_GUIDE.md](./docs/AUTO_UPDATE_GUIDE.md)** - 자동 BestCase 업데이트 가이드
 - **[docs/COMPLETION_SUMMARY.md](./docs/COMPLETION_SUMMARY.md)** - 구현 요약
+
+### Deprecated (참고용)
+
+- **[docs/deprecated/SCORING_SYSTEM.md](./docs/deprecated/SCORING_SYSTEM.md)** - 점수 시스템 (메타데이터 시스템으로 대체됨)
+- **[docs/deprecated/AI_CODE_ANALYZER.md](./docs/deprecated/AI_CODE_ANALYZER.md)** - CodeAnalyzer (MetadataAnalyzer로 대체됨)
 - **[.github/instructions/default.instructions.md](./.github/instructions/default.instructions.md)** - AI 코딩 가이드라인
 
 ## 📚 참고

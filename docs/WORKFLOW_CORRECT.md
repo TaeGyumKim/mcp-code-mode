@@ -585,13 +585,14 @@ tools/list 응답:
 
 ---
 
-## 🔄 다음 단계
+## ✅ 완료된 작업
 
-1. ✅ **문서 작성** (현재 문서)
-2. BestCase 구조 변경 (`patterns.metadata` 추가)
-3. Sandbox API에 `guides`, `metadata` 통합
-4. Preflight 단순화 (선택적)
-5. cron job 스크립트 수정 (MetadataAnalyzer 사용)
+1. ✅ **문서 작성** - WORKFLOW_CORRECT.md, GUIDES_MCP_INTEGRATION.md, METADATA_SYSTEM.md
+2. ✅ **BestCase 구조 변경** - `patterns.metadata` 필드 추가 (packages/bestcase-db/src/storage.ts)
+3. ✅ **Sandbox API 통합** - guides, metadata API 추가 (packages/ai-runner/src/sandbox.ts)
+4. ✅ **MCP 도구 최소화** - 7개 → 1개 (execute만), 87% 토큰 절감 (mcp-stdio-server.ts)
+5. ✅ **Preflight 단순화** - 826줄 → 240줄 (71% 축소), deprecated 표시 (mcp-servers/guides/preflight.ts)
+6. ✅ **cron job 메타데이터 전환** - CodeAnalyzer → MetadataAnalyzer (scripts/scan/auto-scan-projects-ai.ts)
 
 ---
 
