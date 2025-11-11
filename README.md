@@ -94,7 +94,9 @@ Code Mode는 LLM이 직접 tool calling을 하는 대신, **TypeScript 코드를
 
 ### 5. 자동화
 
-- **주간 스캔**: 매주 일요일 02:00 AM (66개 Nuxt 프로젝트)
+- **Docker 시작 시 자동 검증**: 기존 BestCase 양식 체크 및 오래된 데이터 삭제
+- **초기 AI 스캔**: 문제 있는 BestCase 발견 시 자동으로 전체 스캔 실행
+- **주간 스캔**: 매주 일요일 02:00 AM 정기 스캔
 - **중복 제거**: 프로젝트별 최신 BestCase만 유지
 - **Docker 배포**: GPU 지원 + 자동 스케줄러
 
@@ -141,7 +143,23 @@ docker-compose down
 **실행되는 서비스:**
 - **ollama**: LLM 서버 (qwen2.5-coder:7b)
 - **mcp-code-mode**: MCP STDIO 서버 (VSCode 연동)
-- **cron-scheduler**: 주간 자동 스캔 (일요일 02:00)
+- **cron-scheduler**:
+  - 시작 시 BestCase 검증 및 초기 AI 스캔
+  - 주간 자동 스캔 (일요일 02:00)
+
+**초기화 프로세스:**
+1. 🔍 BestCase 검증: 양식 체크, 30일 이상 오래된 데이터 삭제
+2. 🤖 AI 스캔: 문제 발견 시 자동으로 전체 프로젝트 재스캔
+3. ⏰ Cron 시작: 주간 자동 스캔 스케줄 등록
+
+**로그 확인:**
+```bash
+# 초기화 로그 확인
+docker-compose logs cron-scheduler
+
+# 실시간 로그
+docker-compose logs -f cron-scheduler
+```
 
 ### VS Code MCP 연동
 
