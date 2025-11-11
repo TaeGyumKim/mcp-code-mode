@@ -454,4 +454,147 @@ export class MetadataAnalyzer {
   async listModels(): Promise<string[]> {
     return this.llm.listModels();
   }
+
+  /**
+   * 메타데이터 기반 파일 점수 계산 (0-100)
+   *
+   * 메타데이터를 먼저 추출한 후, 그 메타데이터 기반으로 점수를 산출합니다.
+   * 이 방식은 객관적이고 재현 가능하며, 메타데이터를 다른 용도로도 활용할 수 있습니다.
+   *
+   * 점수 계산 로직:
+   * - complexity: trivial(20), low(40), medium(60), high(80), very-high(100)
+   * - errorHandling: none(0), basic(50), comprehensive(100)
+   * - typeDefinitions: poor(25), basic(50), good(75), excellent(100)
+   * - reusability: low(33), medium(66), high(100)
+   * - 평균 점수 = (complexity + errorHandling + typeDefinitions + reusability) / 4
+   * - isExcellent 보너스: +10점
+   * - 최종 점수: 0-100 범위로 조정
+   */
+  calculateFileScore(metadata: FileMetadata | ComponentMetadata): number {
+    // 1. Complexity 점수
+    const complexityScores: Record<ComplexityLevel, number> = {
+      'trivial': 20,
+      'low': 40,
+      'medium': 60,
+      'high': 80,
+      'very-high': 100
+    };
+    const complexityScore = complexityScores[metadata.complexity];
+
+    // 2. Error Handling 점수
+    const errorHandlingScores: Record<string, number> = {
+      'none': 0,
+      'basic': 50,
+      'comprehensive': 100
+    };
+    const errorHandlingScore = errorHandlingScores[metadata.errorHandling];
+
+    // 3. Type Definitions 점수
+    const typeDefinitionsScores: Record<string, number> = {
+      'poor': 25,
+      'basic': 50,
+      'good': 75,
+      'excellent': 100
+    };
+    const typeDefinitionsScore = typeDefinitionsScores[metadata.typeDefinitions];
+
+    // 4. Reusability 점수
+    const reusabilityScores: Record<string, number> = {
+      'low': 33,
+      'medium': 66,
+      'high': 100
+    };
+    const reusabilityScore = reusabilityScores[metadata.reusability];
+
+    // 5. 평균 점수 계산
+    const baseScore = (
+      complexityScore +
+      errorHandlingScore +
+      typeDefinitionsScore +
+      reusabilityScore
+    ) / 4;
+
+    // 6. Excellent 보너스
+    const excellentBonus = metadata.isExcellent ? 10 : 0;
+
+    // 7. 최종 점수 (0-100 범위)
+    const finalScore = Math.min(100, Math.max(0, baseScore + excellentBonus));
+
+    return Math.round(finalScore);
+  }
+
+  /**
+   * 메타데이터 기반 프로젝트 점수 계산 (0-100)
+   *
+   * 프로젝트의 모든 파일 점수를 집계하여 프로젝트 전체 점수를 산출합니다.
+   *
+   * 점수 계산 로직:
+   * - 파일 점수의 평균
+   * - 우수 파일 비율 보너스: (excellentFiles / totalFiles) * 20
+   * - 에러 처리 품질 보너스: (goodErrorHandling / totalFiles) * 10
+   * - 타입 품질 보너스: (goodTypes / totalFiles) * 10
+   */
+  calculateProjectScore(
+    metadata: ProjectMetadata,
+    fileResults: Array<FileMetadata | ComponentMetadata>
+  ): {
+    overall: number;
+    average: number;
+    excellent: number;
+    errorHandling: number;
+    typeQuality: number;
+    distribution: Record<string, number>;
+  } {
+    // 1. 파일별 점수 계산
+    const fileScores = fileResults.map(file => this.calculateFileScore(file));
+
+    // 2. 평균 점수
+    const average = fileScores.reduce((sum, score) => sum + score, 0) / fileScores.length;
+
+    // 3. 우수 파일 비율 보너스
+    const excellentRatio = metadata.excellentFiles.length / metadata.totalFiles;
+    const excellentBonus = excellentRatio * 20;
+
+    // 4. 에러 처리 품질 보너스
+    const errorHandlingRatio = metadata.filesWithGoodErrorHandling / metadata.totalFiles;
+    const errorHandlingBonus = errorHandlingRatio * 10;
+
+    // 5. 타입 품질 보너스
+    const typeQualityRatio = metadata.filesWithGoodTypes / metadata.totalFiles;
+    const typeQualityBonus = typeQualityRatio * 10;
+
+    // 6. 전체 점수
+    const overall = Math.min(100, Math.max(0,
+      average + excellentBonus + errorHandlingBonus + typeQualityBonus
+    ));
+
+    // 7. 점수 분포 계산 (티어)
+    const distribution: Record<string, number> = {
+      'S': fileScores.filter(s => s >= 90).length,   // 90-100
+      'A': fileScores.filter(s => s >= 70 && s < 90).length,  // 70-89
+      'B': fileScores.filter(s => s >= 50 && s < 70).length,  // 50-69
+      'C': fileScores.filter(s => s >= 30 && s < 50).length,  // 30-49
+      'D': fileScores.filter(s => s < 30).length      // 0-29
+    };
+
+    return {
+      overall: Math.round(overall),
+      average: Math.round(average),
+      excellent: Math.round(excellentBonus),
+      errorHandling: Math.round(errorHandlingBonus),
+      typeQuality: Math.round(typeQualityBonus),
+      distribution
+    };
+  }
+
+  /**
+   * 점수 기반 티어 결정
+   */
+  getTierFromScore(score: number): 'S' | 'A' | 'B' | 'C' | 'D' {
+    if (score >= 90) return 'S';
+    if (score >= 70) return 'A';
+    if (score >= 50) return 'B';
+    if (score >= 30) return 'C';
+    return 'D';
+  }
 }
