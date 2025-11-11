@@ -39,8 +39,8 @@ echo ""
 # 2. BestCase 검증 및 정리
 echo "🔍 BestCase 검증 시작..."
 
-# npx tsx 사용 (컨테이너에 tsx가 전역 설치되어 있지 않을 수 있음)
-npx tsx /app/scripts/scan/validate-bestcases.ts
+# 빌드된 스크립트 사용
+node /app/scripts/dist/scan/validate-bestcases.js
 VALIDATION_EXIT_CODE=$?
 
 echo ""
@@ -56,8 +56,7 @@ if [ $VALIDATION_EXIT_CODE -eq 1 ]; then
   echo ""
 
   # 전체 AI 스캔 실행
-  cd /app/scripts/scan || exit 1
-  npx tsx auto-scan-projects-ai.ts
+  node /app/scripts/dist/scan/auto-scan-projects-ai.js
 
   if [ $? -eq 0 ]; then
     echo ""

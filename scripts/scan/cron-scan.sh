@@ -27,8 +27,7 @@ echo ""
 
 # AI 기반 자동 스캔 실행
 echo "🔍 Running AI-enhanced scan..."
-cd /app/scripts/scan
-tsx auto-scan-projects-ai.ts
+node /app/scripts/dist/scan/auto-scan-projects-ai.js
 
 echo ""
 echo "✨ Weekly AI scan completed at $(date)"

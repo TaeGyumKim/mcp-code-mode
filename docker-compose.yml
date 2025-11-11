@@ -104,7 +104,7 @@ services:
       touch /var/log/cron.log &&
       chmod +x /app/scripts/scan/init-scan.sh &&
       chmod +x /app/cron-scan.sh &&
-      /app/scripts/scan/init-scan.sh >> /var/log/cron.log 2>&1 &&
+      sh /app/scripts/scan/init-scan.sh >> /var/log/cron.log 2>&1 &&
       echo '0 2 * * 0 /app/cron-scan.sh >> /var/log/cron.log 2>&1' | crontab - &&
       cron &&
       echo 'Initialization complete. Weekly cron scheduler started (Every Sunday at 2:00 AM)' &&
