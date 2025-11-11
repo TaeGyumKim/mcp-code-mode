@@ -1,5 +1,22 @@
 # VSCode Copilot (Claude) 사용 가이드
 
+> ⚠️ **중요: 코드 생성 전 필수 단계**
+>
+> Claude는 코드 생성 전에 **반드시 다음 순서**를 따라야 합니다:
+> 1. **프로젝트 분석** → gRPC/OpenAPI 클라이언트 자동 감지
+> 2. **타입 정의 추출** → 기존 Request/Response 구조 파악
+> 3. **BestCase 참고** → 우수 사례 패턴 로드
+> 4. **코드 생성** → 실제 타입과 API 사용
+>
+> **절대 하지 말 것**:
+> - ❌ 프로젝트 분석 없이 코드 생성
+> - ❌ 타입을 임의로 새로 정의 (`interface Member { ... }`)
+> - ❌ API를 추측으로 작성 (`fetch('/api/members')`)
+>
+> 자세한 내용: [🔌 프로젝트 API 및 타입 자동 감지](#-프로젝트-api-및-타입-자동-감지-중요)
+
+---
+
 ## 🎯 이 시스템을 사용하는 이유
 
 이 시스템은 **메타데이터 기반 자동 작업 분류 및 코드 생성**을 제공합니다:
@@ -507,6 +524,285 @@ export const useGrpcClient = () => {
 
 ---
 
+## 🔌 프로젝트 API 및 타입 자동 감지 (중요!)
+
+### ⚠️ 코드 생성 전 필수 단계
+
+**잘못된 방법** ❌:
+```typescript
+// Claude가 임의로 타입과 API 정의
+interface Member {
+  id: string;
+  email: string;
+  // ...
+}
+
+async function fetchMembers() {
+  // 추측으로 작성한 API 호출
+  const response = await fetch('/api/members');
+  return response.json();
+}
+```
+
+**올바른 방법** ✅:
+```
+1. 프로젝트 분석 → gRPC/OpenAPI 클라이언트 감지
+2. 실제 타입 정의 추출 → Request/Response 구조 파악
+3. BestCase 참고 파일 로드 → 우수 사례 확인
+4. 실제 API와 타입을 사용하여 코드 생성
+```
+
+---
+
+### Step 1: 프로젝트 API 클라이언트 자동 감지
+
+**사용자 요청**:
+```
+memberManagement.vue 페이지를 완성해줘
+```
+
+**Copilot이 먼저 해야 할 일 (자동)**:
+
+```typescript
+await mcp.callTool('execute', {
+  code: `
+    // 1. package.json에서 API 패키지 확인
+    const packageJson = await filesystem.readFile({
+      path: '/workspace/myapp/package.json'
+    });
+
+    const pkg = JSON.parse(packageJson.content);
+    const hasGrpc = pkg.dependencies['@grpc/grpc-js'] ||
+                    pkg.dependencies['@connectrpc/connect'];
+    const hasOpenApi = pkg.dependencies['openapi-typescript'] ||
+                       pkg.dependencies['swagger-client'];
+
+    // 2. composables 디렉토리에서 API 클라이언트 검색
+    const composables = await filesystem.searchFiles({
+      path: '/workspace/myapp/composables',
+      pattern: '**/use*Client.{ts,js}'
+    });
+
+    // 3. member 관련 API 검색
+    const memberApis = await filesystem.searchFiles({
+      path: '/workspace/myapp',
+      pattern: '**/*member*.{ts,proto,yaml}'
+    });
+
+    return {
+      apiType: hasGrpc ? 'grpc' : hasOpenApi ? 'openapi' : 'rest',
+      clientFiles: composables.files.map(f => f.path),
+      memberApiFiles: memberApis.files.map(f => f.path)
+    };
+  `
+});
+```
+
+**결과**:
+```json
+{
+  "apiType": "grpc",
+  "clientFiles": [
+    "composables/useGrpcClient.ts",
+    "composables/useAuthClient.ts"
+  ],
+  "memberApiFiles": [
+    "proto/member.proto",
+    "types/member.types.ts"
+  ]
+}
+```
+
+---
+
+### Step 2: 타입 정의 추출 (원본 유지!)
+
+**중요**: 프로젝트에 이미 정의된 타입을 **절대 수정하지 말고 그대로 사용**해야 합니다.
+
+```typescript
+await mcp.callTool('execute', {
+  code: `
+    // 1. Member 타입 파일 읽기
+    const memberTypes = await filesystem.readFile({
+      path: '/workspace/myapp/types/member.types.ts'
+    });
+
+    // 2. gRPC proto 파일 읽기 (있는 경우)
+    const memberProto = await filesystem.readFile({
+      path: '/workspace/myapp/proto/member.proto'
+    });
+
+    // 3. API 클라이언트 파일 읽기
+    const grpcClient = await filesystem.readFile({
+      path: '/workspace/myapp/composables/useGrpcClient.ts'
+    });
+
+    return {
+      types: memberTypes.content,
+      proto: memberProto.content,
+      client: grpcClient.content.substring(0, 1000)
+    };
+  `
+});
+```
+
+**결과 (실제 타입 정의)**:
+```typescript
+// types/member.types.ts (실제 프로젝트 타입)
+export interface MemberListRequest {
+  page: number;
+  pageSize: number;
+  searchType?: 'email' | 'nickname' | 'phone' | 'country';
+  searchKeyword?: string;
+  startDate?: string;
+  endDate?: string;
+}
+
+export interface MemberListResponse {
+  members: Member[];
+  totalCount: number;
+  page: number;
+  pageSize: number;
+}
+
+export interface Member {
+  memberId: string;
+  email: string;
+  nickname: string;
+  phone: string;
+  country: string;
+  registeredAt: string;
+  status: 'active' | 'inactive' | 'banned';
+  orderCount: number;
+}
+```
+
+**API 클라이언트 (실제 프로젝트 메서드)**:
+```typescript
+// composables/useGrpcClient.ts
+export const useGrpcClient = () => {
+  const client = createClient(MemberService, transport);
+
+  return {
+    // 실제 존재하는 메서드
+    getMemberList: (req: MemberListRequest) => client.getMemberList(req),
+    getMemberDetail: (memberId: string) => client.getMemberDetail({ memberId }),
+    updateMemberStatus: (req: UpdateMemberStatusRequest) => client.updateMemberStatus(req),
+    // ...
+  };
+};
+```
+
+---
+
+### Step 3: BestCase 참고 파일 로드
+
+```typescript
+await mcp.callTool('execute', {
+  code: `
+    // 1. 현재 프로젝트 메타데이터 추출
+    const analyzer = metadata.createAnalyzer({
+      ollamaUrl: 'http://localhost:11434',
+      model: 'qwen2.5-coder:7b'
+    });
+
+    const projectMeta = await analyzer.analyzeProject('/workspace/myapp', files, 3);
+
+    // 2. BestCase 로드
+    const bestCase = await bestcase.load({
+      projectName: 'myapp',
+      category: 'auto-scan-metadata'
+    });
+
+    // 3. member 관련 우수 참고 파일 검색 (70점 이상)
+    const referenceFiles = bestCase.bestCases[0].files
+      .filter(f => f.path.toLowerCase().includes('member'))
+      .filter(f => f.score >= 70)
+      .sort((a, b) => b.score - a.score);
+
+    return {
+      apiType: projectMeta.apiType,
+      referenceFiles: referenceFiles.slice(0, 3).map(f => ({
+        path: f.path,
+        score: f.score,
+        patterns: f.metadata?.patterns
+      }))
+    };
+  `
+});
+```
+
+**결과**:
+```json
+{
+  "apiType": "grpc",
+  "referenceFiles": [
+    {
+      "path": "pages/admin/userManagement.vue",
+      "score": 88,
+      "patterns": ["grpc-api-call", "pagination", "search-filter"]
+    },
+    {
+      "path": "composables/useGrpcClient.ts",
+      "score": 92,
+      "patterns": ["interceptor", "error-handling"]
+    }
+  ]
+}
+```
+
+---
+
+### Step 4: 실제 API와 타입을 사용한 코드 생성
+
+이제 Claude는 다음 정보를 모두 가지고 있습니다:
+1. ✅ 프로젝트의 실제 타입 정의 (`MemberListRequest`, `MemberListResponse`, `Member`)
+2. ✅ 실제 API 클라이언트 메서드 (`useGrpcClient().getMemberList()`)
+3. ✅ BestCase 참고 파일 (88점, 92점 우수 사례)
+4. ✅ 프로젝트 메타데이터 (apiType: grpc, frameworks: nuxt3, vue)
+
+**생성된 코드 (실제 타입 사용)**:
+```vue
+<script setup lang="ts">
+// ✅ 실제 프로젝트 타입 import
+import type {
+  MemberListRequest,
+  MemberListResponse,
+  Member
+} from '~/types/member.types';
+
+// ✅ 실제 API 클라이언트 사용
+const { getMemberList } = useGrpcClient();
+
+// ✅ 실제 Request 구조체 사용 (원본 유지)
+const filters = reactive<MemberListRequest>({
+  page: 1,
+  pageSize: 20,
+  searchType: 'email',
+  searchKeyword: '',
+  startDate: '',
+  endDate: ''
+});
+
+// ✅ 실제 Response 구조체 사용 (원본 유지)
+const { data: memberData, pending: isLoading } = await useAsyncData<MemberListResponse>(
+  'member-list',
+  () => getMemberList(filters)  // ✅ 실제 gRPC 메서드 호출
+);
+
+const members = computed(() => memberData.value?.members || []);
+const totalCount = computed(() => memberData.value?.totalCount || 0);
+</script>
+```
+
+**핵심 포인트**:
+- ❌ `interface Member { ... }` 새로 정의하지 않음
+- ✅ `import type { Member } from '~/types/member.types'` 기존 타입 사용
+- ❌ `async function fetchMembers() { ... }` 추측으로 작성하지 않음
+- ✅ `getMemberList(filters)` 실제 gRPC 메서드 사용
+
+---
+
 ## 🔥 실전 예시
 
 ### 예시 1: "gRPC 클라이언트를 개선해줘"
@@ -581,6 +877,204 @@ export const useGrpcClient = () => {
 
    [코드 생성...]
 ```
+
+---
+
+### 예시 3: "memberManagement.vue 페이지를 완성해줘"
+
+**전체 워크플로우 (올바른 방법)**:
+
+```
+👤 memberManagement.vue 페이지를 완성해줘
+
+🤖 페이지를 완성하기 전에 프로젝트를 먼저 분석하겠습니다.
+
+   📋 Step 1: API 클라이언트 감지
+   ├─ package.json 확인 → gRPC 패키지 발견
+   ├─ composables 검색 → useGrpcClient.ts 발견
+   └─ member 관련 파일 검색 → types/member.types.ts 발견
+
+   📋 Step 2: 타입 정의 추출
+   ├─ MemberListRequest 발견
+   ├─ MemberListResponse 발견
+   ├─ Member 인터페이스 발견
+   └─ API 메서드: getMemberList(req) 발견
+
+   📋 Step 3: BestCase 참고 파일 로드
+   ├─ pages/admin/userManagement.vue (88점) - 유사 패턴
+   └─ composables/useGrpcClient.ts (92점) - API 패턴
+
+   ✅ 이제 실제 타입과 API를 사용하여 코드를 생성하겠습니다.
+```
+
+**생성된 코드 (실제 프로젝트 타입 및 API 사용)**:
+
+```vue
+<script setup lang="ts">
+// ✅ 1. 실제 프로젝트 타입 import (원본 유지)
+import type {
+  MemberListRequest,
+  MemberListResponse,
+  Member
+} from '~/types/member.types';
+
+// ✅ 2. 실제 gRPC 클라이언트 사용
+const { getMemberList, updateMemberStatus } = useGrpcClient();
+
+// ✅ 3. 실제 Request 구조체 사용 (필드 원본 유지)
+const filters = reactive<MemberListRequest>({
+  page: 1,
+  pageSize: 20,
+  searchType: 'email',      // ✅ 실제 타입에 정의된 값
+  searchKeyword: '',
+  startDate: '',
+  endDate: ''
+});
+
+// ✅ 4. 로딩 상태
+const isLoading = ref(false);
+const error = ref<string | null>(null);
+
+// ✅ 5. 실제 gRPC API 호출
+const fetchMembers = async () => {
+  isLoading.value = true;
+  error.value = null;
+
+  try {
+    // ✅ 실제 getMemberList 메서드 호출
+    const response = await getMemberList(filters);
+
+    // ✅ 실제 Response 구조체 사용
+    members.value = response.members;
+    totalCount.value = response.totalCount;
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : '데이터를 불러오는데 실패했습니다';
+  } finally {
+    isLoading.value = false;
+  }
+};
+
+// ✅ 6. 실제 Member 타입 사용
+const members = ref<Member[]>([]);
+const totalCount = ref(0);
+
+// 초기 로드
+onMounted(() => {
+  fetchMembers();
+});
+
+// 검색 처리
+const handleSearch = () => {
+  filters.page = 1;
+  fetchMembers();
+};
+
+// 페이지 변경
+const handlePageChange = (newPage: number) => {
+  filters.page = newPage;
+  fetchMembers();
+};
+</script>
+
+<template>
+  <div class="member-management">
+    <!-- 검색 필터 -->
+    <div class="filters">
+      <select v-model="filters.searchType">
+        <!-- ✅ 실제 타입에 정의된 값만 사용 -->
+        <option value="email">이메일</option>
+        <option value="nickname">닉네임</option>
+        <option value="phone">전화번호</option>
+        <option value="country">국적</option>
+      </select>
+
+      <input
+        v-model="filters.searchKeyword"
+        type="text"
+        placeholder="검색어 입력"
+        @keyup.enter="handleSearch"
+      />
+
+      <button @click="handleSearch">검색</button>
+    </div>
+
+    <!-- 로딩 -->
+    <div v-if="isLoading" class="loading">
+      데이터를 불러오는 중...
+    </div>
+
+    <!-- 에러 -->
+    <div v-else-if="error" class="error">
+      {{ error }}
+      <button @click="fetchMembers">재시도</button>
+    </div>
+
+    <!-- 테이블 -->
+    <table v-else>
+      <thead>
+        <tr>
+          <th>회원 ID</th>
+          <th>이메일</th>
+          <th>닉네임</th>
+          <th>전화번호</th>
+          <th>국적</th>
+          <th>가입일</th>
+          <th>상태</th>
+          <th>주문수</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr v-for="member in members" :key="member.memberId">
+          <!-- ✅ 실제 Member 타입의 필드 사용 -->
+          <td>{{ member.memberId }}</td>
+          <td>{{ member.email }}</td>
+          <td>{{ member.nickname }}</td>
+          <td>{{ member.phone }}</td>
+          <td>{{ member.country }}</td>
+          <td>{{ member.registeredAt }}</td>
+          <td>{{ member.status }}</td>
+          <td>{{ member.orderCount }}</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <!-- 페이지네이션 -->
+    <div class="pagination">
+      <button
+        :disabled="filters.page === 1"
+        @click="handlePageChange(filters.page - 1)"
+      >
+        이전
+      </button>
+
+      <span>{{ filters.page }} / {{ Math.ceil(totalCount / filters.pageSize) }}</span>
+
+      <button
+        :disabled="filters.page >= Math.ceil(totalCount / filters.pageSize)"
+        @click="handlePageChange(filters.page + 1)"
+      >
+        다음
+      </button>
+    </div>
+  </div>
+</template>
+```
+
+**핵심 차이점 비교**:
+
+| 항목 | ❌ 잘못된 방법 | ✅ 올바른 방법 |
+|------|--------------|--------------|
+| **타입 정의** | `interface Member { ... }` 새로 작성 | `import type { Member } from '~/types/member.types'` |
+| **API 호출** | `fetch('/api/members')` 추측 | `getMemberList(filters)` 실제 메서드 |
+| **Request 구조** | `{ page, limit, query }` 추측 | `MemberListRequest` 실제 구조체 |
+| **Response 구조** | `{ data, total }` 추측 | `MemberListResponse` 실제 구조체 |
+| **필드 이름** | `id`, `name` 추측 | `memberId`, `nickname` 실제 필드 |
+
+**결과**:
+- ✅ TypeScript 에러 0개
+- ✅ 실제 gRPC API와 완벽 호환
+- ✅ 프로젝트 타입 정의 원본 유지
+- ✅ BestCase 패턴 적용 (88점, 92점 참고)
 
 ---
 
