@@ -1,0 +1,31 @@
+{
+  "name": "@mcp-code-mode/guides",
+  "version": "1.0.0",
+  "description": "Dynamic guideline loading system for MCP Code Mode",
+  "type": "module",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./preflight": {
+      "import": "./dist/preflight.js",
+      "types": "./dist/preflight.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "clean": "rm -rf dist",
+    "prebuild": "yarn clean"
+  },
+  "dependencies": {
+    "yaml": "^2.3.4"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.5",
+    "typescript": "^5.9.3"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

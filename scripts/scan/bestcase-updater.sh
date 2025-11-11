@@ -1,20 +1,23 @@
 #!/bin/bash
-# BestCase 자동 업데이트 스크립트
-# 컨테이너 시작 시 및 주기적으로 실행됩니다.
+# BestCase 수동 업데이트 스크립트
+# 사용자가 직접 실행하거나 크론잡에서 호출됩니다.
 
 set -e
 
-echo "🔄 Starting BestCase Auto Update Service"
+echo "🔄 Starting BestCase Update"
+echo "📅 $(date)"
 
-# 초기 스캔 실행 (컨테이너 시작 시)
-echo "📊 Running initial scan..."
-node /app/auto-scan-projects.js
+# AI 분석 실행 (Ollama 사용)
+if [ -n "$OLLAMA_URL" ]; then
+  echo "🤖 Running AI-enhanced scan with Ollama..."
+  cd /app/scripts/scan
+  tsx auto-scan-projects-ai.ts
+else
+  echo "📊 Running basic scan (no AI)..."
+  cd /app/scripts/scan
+  tsx auto-scan-projects.ts
+fi
 
-# 주기적 업데이트 (6시간마다)
-while true; do
-  echo "⏰ Next scan in 6 hours..."
-  sleep 21600  # 6시간 = 21600초
-  
-  echo "📊 Running scheduled scan..."
-  node /app/auto-scan-projects.js
-done
+echo "✅ BestCase Update Completed"
+echo "📅 $(date)"
+

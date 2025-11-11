@@ -87,7 +87,64 @@ AI: [MCP 서버에 요청]
 - OpenAPI 사용: ✓
 ```
 
-### 5. 사용 가능한 메서드
+### 5. 사용 가능한 MCP 서버들
+
+#### 🆕 guides - 동적 지침 로딩 (2025.11.10)
+
+**토큰 절감**: 필요한 지침만 런타임에 로드하여 77% 토큰 절감
+
+```json
+{
+  "method": "guides.searchGuides",
+  "params": {
+    "keywords": ["grpc", "pagination", "error"],
+    "apiType": "grpc",
+    "limit": 3
+  }
+}
+```
+
+**반환**: 상위 3개 지침 ID만 반환 (내용은 로드 안함)
+
+```json
+{
+  "method": "guides.loadGuide",
+  "params": {
+    "id": "api/grpc-connection"
+  }
+}
+```
+
+**반환**: 특정 지침의 전체 내용 로드
+
+```json
+{
+  "method": "guides.combineGuides",
+  "params": {
+    "ids": ["api/grpc-connection", "error/handling", "ui/pagination"],
+    "context": {
+      "project": "my-app",
+      "apiType": "grpc"
+    }
+  }
+}
+```
+
+**반환**: 우선순위 기반 병합된 지침 (scope > priority > version)
+
+**지침 구조**:
+```text
+.github/instructions/guides/
+  api/                      # API 연동
+    grpc-connection.md
+    openapi-validation.md
+  ui/                       # UI 컴포넌트
+    openerd-components.md
+    pagination.md
+  workflow/                 # 워크플로우
+    core.md
+  high-risk.md              # 리스크 ≥40 전용
+```
 
 #### execute - 코드 실행
 

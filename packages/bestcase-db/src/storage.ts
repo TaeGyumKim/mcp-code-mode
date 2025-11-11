@@ -51,23 +51,62 @@ export class BestCaseStorage {
 
   async search(query: { projectName?: string; category?: string; tags?: string[] }): Promise<BestCase[]> {
     await this.initialize();
-    const files = await fs.readdir(this.storagePath);
+    
+    console.error('[BestCaseStorage] Search query:', JSON.stringify(query, null, 2));
+    console.error('[BestCaseStorage] Storage path:', this.storagePath);
+    
+    let files: string[] = [];
+    try {
+      files = await fs.readdir(this.storagePath);
+      console.error('[BestCaseStorage] Files in storage:', files.length);
+    } catch (error: any) {
+      console.error('[BestCaseStorage] Failed to read directory:', error.message);
+      return [];
+    }
+    
     const results: BestCase[] = [];
 
     for (const file of files) {
       if (!file.endsWith('.json')) continue;
       
-      const content = await fs.readFile(join(this.storagePath, file), 'utf-8');
-      const bestCase: BestCase = JSON.parse(content);
+      try {
+        const content = await fs.readFile(join(this.storagePath, file), 'utf-8');
+        const bestCase: BestCase = JSON.parse(content);
+        
+        console.error('[BestCaseStorage] Checking file:', file, {
+          projectName: bestCase.projectName,
+          category: bestCase.category,
+        });
 
-      let matches = true;
-      if (query.projectName && bestCase.projectName !== query.projectName) matches = false;
-      if (query.category && bestCase.category !== query.category) matches = false;
-      if (query.tags && !query.tags.some(tag => bestCase.metadata.tags.includes(tag))) matches = false;
+        let matches = true;
+        if (query.projectName && bestCase.projectName !== query.projectName) {
+          console.error('[BestCaseStorage] Project name mismatch:', {
+            query: query.projectName,
+            actual: bestCase.projectName,
+          });
+          matches = false;
+        }
+        if (query.category && bestCase.category !== query.category) {
+          console.error('[BestCaseStorage] Category mismatch:', {
+            query: query.category,
+            actual: bestCase.category,
+          });
+          matches = false;
+        }
+        if (query.tags && !query.tags.some(tag => bestCase.metadata.tags.includes(tag))) {
+          matches = false;
+        }
 
-      if (matches) results.push(bestCase);
+        if (matches) {
+          console.error('[BestCaseStorage] Match found:', file);
+          results.push(bestCase);
+        }
+      } catch (error: any) {
+        console.error('[BestCaseStorage] Failed to read/parse file:', file, error.message);
+      }
     }
-
+    
+    console.error('[BestCaseStorage] Total matches:', results.length);
     return results;
   }
 

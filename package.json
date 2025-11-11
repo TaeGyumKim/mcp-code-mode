@@ -30,30 +30,21 @@
   ],
   "workspaces": [
     "apps/*",
-    "packages/*"
+    "packages/*",
+    "mcp-servers/*"
   ],
   "scripts": {
     "dev": "yarn workspace web run dev",
     "build:all": "yarn workspace bestcase-db run build && yarn workspace ai-bindings run build && yarn workspace ai-runner run build && yarn workspace llm-analyzer run build",
-    "build:scripts": "cd scripts && yarn build",
-    "build:root": "tsup mcp-stdio-server.ts update-mcp-tool-names.ts --format esm --dts --clean",
-    "scan": "tsx scripts/tests/run-scan.ts",
-    "scan:target": "tsx scripts/tests/run-target-scan.ts",
-    "scan:advanced": "tsx scripts/tests/run-advanced-scan.ts",
-    "scan:score": "tsx scripts/tests/run-advanced-score.ts",
-    "scan:ai": "tsx scripts/scan/scan-ai-powered.ts",
-    "scan:all": "tsx scripts/tests/run-scan-all.ts",
+    "build:root": "tsup mcp-stdio-server.ts --format esm --clean --no-dts --external vm2 --external vm --shims",
     "scan:auto": "tsx scripts/scan/auto-scan-projects.ts",
     "scan:auto-ai": "tsx scripts/scan/auto-scan-projects-ai.ts",
-    "test:simple": "tsx scripts/tests/run-simple-test.ts",
-    "test:bestcase": "tsx scripts/tests/run-test.ts",
-    "test:scores": "tsx scripts/tests/test-list-scores.ts",
-    "test:ai": "tsx scripts/tests/run-ai-analysis.ts",
     "ollama:init": "powershell -ExecutionPolicy Bypass -File ./init-ollama.ps1",
     "ollama:test": "docker exec ollama-code-analyzer ollama list",
-    "docker:up": "docker-compose up -d",
-    "docker:down": "docker-compose down",
-    "docker:logs": "docker-compose logs -f"
+    "docker:up": "docker-compose -f docker-compose.ai.yml up -d",
+    "docker:down": "docker-compose -f docker-compose.ai.yml down",
+    "docker:logs": "docker-compose -f docker-compose.ai.yml logs -f",
+    "docker:build": "docker-compose -f docker-compose.ai.yml build"
   },
   "devDependencies": {
     "@types/node": "^24.10.0",

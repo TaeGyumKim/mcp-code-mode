@@ -25,17 +25,10 @@ echo "🧠 LLM Model: $LLM_MODEL"
 echo "⚡ Concurrency: $CONCURRENCY"
 echo ""
 
-# 1단계: 오래된 BestCase 정리
-echo "🧹 Step 1: Cleaning up old BestCase files..."
-node cleanup-old-bestcases.js
-
-# 2단계: AI 기반 자동 스캔 실행
-echo "🔍 Step 2: Running AI-enhanced scan..."
-node auto-scan-projects-ai.js
-
-# 3단계: 다시 정리 (중복 방지)
-echo "🧹 Step 3: Final cleanup..."
-node cleanup-old-bestcases.js
+# AI 기반 자동 스캔 실행
+echo "🔍 Running AI-enhanced scan..."
+cd /app/scripts/scan
+tsx auto-scan-projects-ai.ts
 
 echo ""
 echo "✨ Weekly AI scan completed at $(date)"

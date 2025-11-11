@@ -5,31 +5,113 @@
 이 프로젝트는 **Anthropic의 Code Execution with MCP**와 **Cloudflare의 Code Mode** 개념을 구현하여:
 1. 로컬 프로젝트 파일(`D:\01.Work\01.Projects`)에 접근
 2. 프로젝트별 BestCase를 저장
-3. LLM이 TypeScript 코드로 작업을 수행하여 **토큰을 98% 절감**
+3. **동적 지침 로딩 시스템**으로 필요한 지침만 런타임에 로드
+4. LLM이 TypeScript 코드로 작업을 수행하여 **토큰을 98% 절감**
 
 ## 🔑 핵심 개념
 
-### 기존 MCP 방식의 문제점
+### 기존 MCP 방식의 문제점 (2가지)
+
+#### 1. 도구 정의가 컨텍스트 잡아먹음
 ```
-사용자: "프로젝트 파일 읽어서 분석해줘"
-→ LLM: 도구 호출 (파일 읽기)
-→ 50,000 토큰의 파일 내용이 LLM 컨텍스트로 전송
-→ LLM: 분석 후 또 다른 도구 호출
-→ 또 50,000 토큰이 컨텍스트를 통과
+모든 도구 설명을 처음부터 로드
+→ 수천 개 도구 × 상세 설명 = 수십만 토큰
+→ 사용자 요청 읽기도 전에 컨텍스트 고갈 💸
+```
+
+#### 2. 중간 결과가 모델을 계속 왕복
+```
+사용자: "구글 드라이브에서 회의록 다운로드해서 Salesforce에 첨부해줘"
+→ LLM: 도구 호출 (드라이브에서 문서 가져오기)
+→ 50,000 토큰의 회의록이 LLM 컨텍스트로 전송
+→ LLM: 분석 후 또 다른 도구 호출 (Salesforce 업데이트)
+→ 또 50,000 토큰이 파라미터에 복사됨
 총 100,000+ 토큰 소비 💸
 ```
 
-### Code Mode 방식
+### Code Mode 방식 (Anthropic 제안)
+
+#### 1. 도구를 파일시스템의 코드로 변환
 ```
-사용자: "프로젝트 파일 읽어서 분석해줘"
+servers/
+├── google-drive/
+│   ├── getDocument.ts
+│   └── index.ts
+├── salesforce/
+│   ├── updateRecord.ts
+│   └── index.ts
+```
+
+#### 2. 필요한 도구만 동적 로드 + 데이터는 코드에서만 처리
+```
+사용자: "구글 드라이브에서 회의록 다운로드해서 Salesforce에 첨부해줘"
 → LLM: TypeScript 코드 생성 (2,000 토큰)
 → 샌드박스에서 코드 실행:
-   - 파일 읽기 (컨텍스트 우회)
-   - 데이터 처리 (컨텍스트 우회)
-   - 결과만 로그 출력
+   const transcript = (await gdrive.getDocument({ documentId: 'abc' })).content;
+   await salesforce.updateRecord({
+     recordId: '00Q5f',
+     data: { Notes: transcript }
+   });
+   // 회의록은 변수에만 존재, LLM 컨텍스트 우회!
 → LLM: 최종 결과만 확인 (100 토큰)
 총 2,100 토큰 소비 ✨ (98% 절감!)
 ```
+
+## ⭐ 동적 지침 로딩 시스템 (2025.11.10 추가)
+
+### 기존 문제: 지침도 토큰을 잡아먹음
+
+```
+기존 방식: 모든 지침을 항상 메모리에 로드
+→ 워크플로우 상세 설명 (~1500 토큰)
+→ API 연동 가이드 (~800 토큰)
+→ UI 컴포넌트 사용법 (~600 토큰)
+총 2,900 토큰이 항상 컨텍스트에 존재
+```
+
+### 해결책: 지침을 파일시스템으로 분리
+
+```
+.github/instructions/
+  guides/
+    api/grpc-connection.md       # 필요할 때만 로드
+    ui/pagination.md             # 필요할 때만 로드
+    workflow/core.md             # 필요할 때만 로드
+    high-risk.md                 # 리스크 ≥40일 때만
+```
+
+### 워크플로우
+
+```typescript
+// 1. BestCase 로드
+const bestCase = await bestcase.loadBestCase({ projectName: 'my-app' });
+
+// 2. 리스크 분석
+const { risk, keywords } = await analyzeMeta(userRequest, bestCase);
+if (risk >= 40) {
+  // 고위험: high-risk.md 1개만 로드 (~50 토큰)
+  return await guides.loadGuide({ id: 'high-risk' });
+}
+
+// 3. 필수 지침 + 동적 검색 (상위 3개만)
+const mandatory = ['grpc.api.connection', 'api.validation', 'error.handling'];
+const searched = await guides.searchGuides({ keywords, apiType: 'grpc' });
+const top3 = searched.slice(0, 3).map(g => g.id);
+
+// 4. 필요한 시점에만 개별 로드
+const combined = await guides.combineGuides({ 
+  ids: [...mandatory, ...top3] 
+});
+// → 총 ~350 토큰 (기존 1500 → 77% 절감!)
+```
+
+### 토큰 절감 효과
+
+| 케이스 | 기존 | 동적 로딩 | 절감률 |
+|--------|------|----------|--------|
+| **일반 케이스** | 1500 토큰 | 350 토큰 | **77%** |
+| **고위험 케이스** | 1500 토큰 | 50 토큰 | **97%** |
+| **외부 프로젝트** | 500 토큰 | 100 토큰 | **80%** |
 
 ## 📁 프로젝트 구조
 

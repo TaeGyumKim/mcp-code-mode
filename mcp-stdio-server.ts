@@ -38,7 +38,16 @@ const rl = readline.createInterface({
   terminal: false
 });
 
+function log(message: string, data?: any): void {
+  const timestamp = new Date().toISOString();
+  const logMessage = data 
+    ? `[${timestamp}] ${message}: ${JSON.stringify(data)}`
+    : `[${timestamp}] ${message}`;
+  process.stderr.write(logMessage + '\n');
+}
+
 function sendResponse(response: JsonRpcResponse): void {
+  log('Sending response', { id: response.id, method: response.result ? 'success' : 'error' });
   process.stdout.write(JSON.stringify(response) + '\n');
 }
 
@@ -46,9 +55,11 @@ function sendResponse(response: JsonRpcResponse): void {
 rl.on('line', async (line: string) => {
   try {
     const request = JSON.parse(line) as JsonRpcRequest;
+    log('Received request', { method: request.method, id: request.id });
     
     // initialize 메서드: MCP 프로토콜 초기화
     if (request.method === 'initialize') {
+      log('Initialize MCP server');
       sendResponse({
         jsonrpc: '2.0',
         id: request.id,
@@ -117,12 +128,15 @@ rl.on('line', async (line: string) => {
     // tools/call 메서드: 도구 실행
     else if (request.method === 'tools/call') {
       const { name, arguments: args } = request.params as ToolCallParams;
+      log('Tool call', { tool: name, args });
       
       if (name === 'execute') {
+        log('Executing code', { codeLength: args.code?.length });
         const result = await runAgentScript({
           code: args.code,
           timeoutMs: args.timeoutMs || 30000
         });
+        log('Execution result', { success: !result.error });
         
         sendResponse({
           jsonrpc: '2.0',
@@ -138,8 +152,10 @@ rl.on('line', async (line: string) => {
         });
       }
       else if (name === 'list_bestcases') {
+        log('Listing BestCases');
         const code = 'await bestcase.listBestCases()';
         const result = await runAgentScript({ code, timeoutMs: 10000 });
+        log('BestCases listed', { count: result.output?.bestcases?.length });
         
         sendResponse({
           jsonrpc: '2.0',
@@ -156,8 +172,10 @@ rl.on('line', async (line: string) => {
       }
       else if (name === 'load_bestcase') {
         const { projectName, category } = args;
+        log('Loading BestCase', { projectName, category });
         const code = `await bestcase.loadBestCase({ projectName: '${projectName}', category: '${category}' })`;
         const result = await runAgentScript({ code, timeoutMs: 10000 });
+        log('BestCase loaded', { success: !result.error });
         
         sendResponse({
           jsonrpc: '2.0',
