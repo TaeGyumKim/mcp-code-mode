@@ -4,8 +4,8 @@
   "description": "TypeScript scripts for MCP code mode",
   "type": "module",
   "scripts": {
-    "build": "tsup scan/**/*.ts tests/**/*.ts --format esm --dts --clean",
-    "build:watch": "tsup scan/**/*.ts tests/**/*.ts --format esm --dts --watch"
+    "build": "tsup types.ts scan/**/*.ts test/**/*.ts --format esm --no-dts --clean --external vm2 --external vm",
+    "build:watch": "tsup types.ts scan/**/*.ts test/**/*.ts --format esm --no-dts --watch --external vm2 --external vm"
   },
   "devDependencies": {
     "@types/node": "^24.10.0",

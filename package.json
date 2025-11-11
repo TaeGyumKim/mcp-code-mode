@@ -31,7 +31,8 @@
   "workspaces": [
     "apps/*",
     "packages/*",
-    "mcp-servers/*"
+    "mcp-servers/*",
+    "scripts"
   ],
   "scripts": {
     "dev": "yarn workspace web run dev",

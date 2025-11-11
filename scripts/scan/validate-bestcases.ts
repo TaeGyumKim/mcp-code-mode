@@ -70,7 +70,7 @@ function validateBestCase(filePath: string): BestCaseValidation {
 
     return { isValid: true };
   } catch (error) {
-    return { isValid: false, reason: `JSON 파싱 에러: ${error.message}` };
+    return { isValid: false, reason: `JSON 파싱 에러: ${error instanceof Error ? error.message : String(error)}` };
   }
 }
 
@@ -114,7 +114,7 @@ async function cleanBestCases(bestcasePath: string) {
         deletedCount++;
         deletedFiles.push({ file, reason: validation.reason || '알 수 없음' });
       } catch (error) {
-        console.log(`   ⚠️ 삭제 실패: ${error.message}`);
+        console.log(`   ⚠️ 삭제 실패: ${error instanceof Error ? error.message : String(error)}`);
       }
     } else {
       validCount++;

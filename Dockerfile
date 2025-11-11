@@ -40,6 +40,7 @@ RUN yarn workspace bestcase-db run build && \
     yarn workspace ai-bindings run build && \
     yarn workspace ai-runner run build && \
     yarn workspace llm-analyzer run build && \
+    yarn workspace mcp-scripts run build && \
     yarn build:root
 
 # 빌드된 파일 심볼릭 링크 생성
