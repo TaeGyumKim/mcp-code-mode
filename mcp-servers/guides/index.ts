@@ -389,6 +389,25 @@ export async function combineGuides(input: CombineGuidesInput): Promise<CombineG
 
 /**
  * 워크플로우 실행 (Ultra Compact 메인 지침용)
+ *
+ * ⚠️ DEPRECATED: 이 함수는 더 이상 사용되지 않습니다.
+ *
+ * **Anthropic MCP Code Mode 방식으로 전환**:
+ * - 클라이언트가 Sandbox API를 통해 직접 guides를 사용
+ * - preflight 로직은 클라이언트에서 처리 (MetadataAnalyzer 사용)
+ * - MCP 도구 'execute_workflow'가 제거됨
+ *
+ * **새로운 워크플로우**:
+ * 1. 클라이언트: MetadataAnalyzer로 프로젝트 메타데이터 추출
+ * 2. 클라이언트: BestCase 검색 및 비교 (metadata 필드 사용)
+ * 3. 클라이언트: TODO 생성 (메타데이터 비교 기반)
+ * 4. 클라이언트: guides.search() 호출
+ * 5. 클라이언트: guides.combine() 호출
+ * 6. 클라이언트: 코드 생성 및 실행
+ *
+ * 📖 참고: docs/WORKFLOW_CORRECT.md
+ *
+ * @deprecated Use Sandbox APIs in client instead (guides.search, guides.load, guides.combine)
  */
 export interface ExecuteWorkflowInput {
   workflowGuide: Guide;
@@ -411,93 +430,19 @@ export interface ExecuteWorkflowOutput {
   changeSummary: any;
 }
 
+/**
+ * @deprecated
+ */
 export async function executeWorkflow(input: ExecuteWorkflowInput): Promise<ExecuteWorkflowOutput> {
-  // preflight.ts 함수들을 동적으로 import
-  const { 
-    buildRequestMetadata, 
-    synthesizeTodoList, 
-    preflightCheck, 
-    extractKeywords 
-  } = await import('./preflight.js');
-  
-  // 1단계: 메타데이터 변환
-  const metadata = await buildRequestMetadata(input.userRequest, input.workspacePath);
-  
-  // BestCase에서 API 타입 확정
-  if (input.bestCase?.patterns?.apiInfo?.apiType) {
-    metadata.apiTypeHint = input.bestCase.patterns.apiInfo.apiType.toLowerCase() as any;
-  }
-  
-  // 2단계: TODO 합성 + 프리플라이트 검수
-  const todos = await synthesizeTodoList(metadata, input.bestCase, input.workspacePath);
-  const preflight = await preflightCheck(metadata, todos, input.bestCase);
-  
-  // risk >= 40 → 스캐폴딩만
-  if (!preflight.ok) {
-    return {
-      success: false,
-      metadata,
-      preflight,
-      usedGuides: [],
-      combinedContent: '',
-      changeSummary: {
-        mode: 'scaffold-only',
-        reason: `Risk ${preflight.risk} >= ${metadata.riskThreshold}`,
-        reasons: preflight.reasons,
-      }
-    };
-  }
-  
-  // 3단계: 키워드 추출 (이미 preflight.keywords에 포함)
-  const keywords = preflight.keywords;
-  
-  // 4단계: 지침 검색/병합 (⚠️ 필수 지침 강제 포함)
-  const apiTypeForSearch = metadata.apiTypeHint === 'auto' ? undefined : metadata.apiTypeHint;
-  
-  // 필수 지침 ID 구성
-  const mandatoryGuides = [
-    `${metadata.apiTypeHint}.api.connection`,  // API 연결 체크
-    'api.validation',                          // API 시그니처 검증
-    'error.handling'                           // 에러 처리 패턴
-  ];
-  
-  console.error('[executeWorkflow] Mandatory guides:', mandatoryGuides);
-  
-  const searchResult = await searchGuides({
-    keywords,
-    apiType: apiTypeForSearch,
-    mandatoryIds: mandatoryGuides,  // 🔑 필수 지침 강제 포함
-  });
-  
-  const topGuideIds = searchResult.guides.slice(0, 5).map(g => g.id);
-  
-  const apiTypeForCombine = metadata.apiTypeHint === 'auto' ? 'any' as const : metadata.apiTypeHint;
-  
-  const combined = await combineGuides({
-    ids: topGuideIds,
-    context: {
-      project: metadata.projectName,
-      apiType: apiTypeForCombine,
-    }
-  });
-  
-  // 5단계: 변경 요약
-  const changeSummary = {
-    mode: 'auto-apply',
-    usedGuides: combined.usedGuides,
-    changedFiles: metadata.targets,
-    totalLoc: todos.reduce((sum: number, t: any) => sum + t.loc, 0),
-    risk: preflight.risk,
-    keywords,
-    timestamp: new Date().toISOString(),
-  };
-  
-  return {
-    success: true,
-    metadata,
-    preflight,
-    usedGuides: combined.usedGuides,
-    combinedContent: combined.combined,
-    changeSummary,
-  };
+  throw new Error(
+    'DEPRECATED: executeWorkflow() is no longer used.\n\n' +
+    'Anthropic MCP Code Mode approach:\n' +
+    '1. Client: Extract metadata with MetadataAnalyzer\n' +
+    '2. Client: Search and compare BestCase (metadata field)\n' +
+    '3. Client: Generate TODOs from metadata comparison\n' +
+    '4. Client: Call guides.search() with keywords\n' +
+    '5. Client: Call guides.combine() to merge guides\n' +
+    '6. Client: Generate and execute code\n\n' +
+    'See docs/WORKFLOW_CORRECT.md for details.'
+  );
 }
