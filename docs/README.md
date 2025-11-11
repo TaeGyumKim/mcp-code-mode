@@ -1,40 +1,46 @@
 # MCP Code Mode Starter - 프로젝트 가이드
 
-> **Code Mode 패턴 기반 MCP 서버 - 종합 가이드**
+> **Anthropic Code Mode 패턴 기반 메타데이터 분석 및 자동 가이드 시스템**
 
 ## 📚 문서 구조
 
-이 프로젝트는 다음 핵심 문서들로 구성되어 있습니다:
+### 🚀 시작하기 (필수!)
 
-### 시작하기
+1. **[VSCODE_COPILOT_USAGE.md](./VSCODE_COPILOT_USAGE.md)** ⭐ - VSCode Copilot (Claude) 사용 가이드 (메인)
+   - 프로젝트 API/타입 자동 감지
+   - 메타데이터 기반 워크플로우
+   - 실제 예시: memberManagement.vue 완성
+2. **[VSCODE_MCP_GUIDE.md](./VSCODE_MCP_GUIDE.md)** - VSCode MCP 연동 설정
+3. **[WEEKLY_SCAN_GUIDE.md](./WEEKLY_SCAN_GUIDE.md)** - 주간 자동 스캔 설정
 
-- **[README.md](../README.md)** - 프로젝트 개요, 빠른 시작, 주요 기능
-- **[TYPESCRIPT_MIGRATION.md](../TYPESCRIPT_MIGRATION.md)** - TypeScript 마이그레이션 완료 가이드
-- **[.github/instructions/default.instructions.md](../.github/instructions/default.instructions.md)** - AI 코딩 가이드라인
+### 📖 시스템 이해
 
-### 시스템 설계
+1. **[USAGE_GUIDE.md](./USAGE_GUIDE.md)** - Code Mode 개념 및 원리
+   - 토큰 98% 절감 원리
+   - 동적 가이드 로딩 시스템
+2. **[METADATA_SYSTEM.md](./METADATA_SYSTEM.md)** - 메타데이터 시스템 상세
+   - 메타데이터 추출 프로세스
+   - 점수 계산 알고리즘 (S/A/B/C/D)
+3. **[WORKFLOW_CORRECT.md](./WORKFLOW_CORRECT.md)** - 올바른 워크플로우
+   - 사용자 요청 → 코드 생성 전체 과정
+   - Sandbox API 사용법
 
-1. **[AI_CODE_ANALYZER.md](./AI_CODE_ANALYZER.md)** - Ollama LLM + GPU 기반 AI 분석 시스템
-2. **[SCORING_SYSTEM.md](./SCORING_SYSTEM.md)** - BestCase 점수 시스템 (S/A/B/C/D 티어)
-3. **[PROJECT_STRUCTURE.md](./PROJECT_STRUCTURE.md)** - 프로젝트 구조 상세 설명
+### 🔧 설정 및 운영
 
-### 배포 및 운영
+1. **[MCP_SETUP_GUIDE.md](./MCP_SETUP_GUIDE.md)** - MCP 서버 설정
+2. **[PRODUCTION_GUIDE.md](./PRODUCTION_GUIDE.md)** - 프로덕션 배포 가이드
+3. **[PROJECT_STRUCTURE.md](./PROJECT_STRUCTURE.md)** - 프로젝트 구조 설명
 
-1. **[DOCKER_SETUP_COMPLETE.md](./DOCKER_SETUP_COMPLETE.md)** - Docker 배포 가이드
-2. **[MCP_SETUP_GUIDE.md](./MCP_SETUP_GUIDE.md)** - MCP 서버 설정
-3. **[VSCODE_MCP_GUIDE.md](./VSCODE_MCP_GUIDE.md)** - VS Code 통합 가이드
+### 📚 참고 문서
 
-### 자동화
+1. **[BESTCASE_PRIORITY_GUIDE.md](./BESTCASE_PRIORITY_GUIDE.md)** - BestCase 우선순위 전략
+2. **[BESTCASE_RULES_SUMMARY.md](./BESTCASE_RULES_SUMMARY.md)** - BestCase 규칙 요약
+3. **[GUIDES_MCP_INTEGRATION.md](./GUIDES_MCP_INTEGRATION.md)** - 가이드 MCP 통합 설명
 
-1. **[AUTO_UPDATE_GUIDE.md](./AUTO_UPDATE_GUIDE.md)** - BestCase 자동 업데이트
-2. **[WEEKLY_SCAN_GUIDE.md](./WEEKLY_SCAN_GUIDE.md)** - 주간 자동 스캔 설정
-3. **[AI_AUTO_SCAN_GUIDE.md](./AI_AUTO_SCAN_GUIDE.md)** - AI 기반 자동 스캔
+### 📂 기타
 
-### 사용 가이드
-
-1. **[USAGE_GUIDE.md](./USAGE_GUIDE.md)** - 기본 사용법
-2. **[BESTCASE_PRIORITY_GUIDE.md](./BESTCASE_PRIORITY_GUIDE.md)** - BestCase 우선순위 전략
-3. **[AI_QUICK_START.md](./AI_QUICK_START.md)** - AI 분석 빠른 시작
+- **[PROJECT_PLAN.md](./PROJECT_PLAN.md)** - 프로젝트 계획 (초기 버전)
+- **[deprecated/](./deprecated/)** - 구 버전 문서들
 
 ## 🎯 핵심 개념
 
