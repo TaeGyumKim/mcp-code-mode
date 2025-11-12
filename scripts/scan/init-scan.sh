@@ -47,7 +47,7 @@ echo ""
 
 # 3. 검증 결과에 따라 처리
 if [ $VALIDATION_EXIT_CODE -eq 1 ]; then
-  echo "⚠️ 오래되거나 잘못된 BestCase가 삭제되었습니다."
+  # 유효한 BestCase가 없거나 삭제된 파일이 있음 → AI 스캔 필요
   echo "🔄 전체 프로젝트 AI 스캔을 실행합니다..."
   echo ""
   echo "🧠 LLM Model: $LLM_MODEL"
@@ -67,10 +67,10 @@ if [ $VALIDATION_EXIT_CODE -eq 1 ]; then
     echo "⚠️ 다음 주간 스캔 때 재시도됩니다."
   fi
 elif [ $VALIDATION_EXIT_CODE -eq 0 ]; then
-  echo "✅ 모든 BestCase가 유효합니다."
-  echo "ℹ️ 초기 AI 스캔을 건너뜁니다."
+  # 유효한 BestCase가 있고 삭제된 파일 없음 → 스캔 불필요
   echo "💡 주간 스캔은 매주 일요일 02:00에 실행됩니다."
 else
+  # 검증 중 에러 발생
   echo "❌ BestCase 검증 중 에러 발생 (exit code: $VALIDATION_EXIT_CODE)"
   echo "⚠️ 초기 AI 스캔을 건너뜁니다."
 fi

@@ -159,9 +159,24 @@ async function main() {
   console.log('='.repeat(60));
   console.log('');
 
-  // 삭제된 파일이 있으면 exit code 1 (재스캔 필요)
-  // 없으면 exit code 0 (정상)
-  process.exit(result.deleted > 0 ? 1 : 0);
+  // Exit Code 규칙:
+  // - 0: 유효한 BestCase가 있고 삭제된 파일 없음 → 스캔 불필요
+  // - 1: 유효한 BestCase가 없거나 삭제된 파일 있음 → AI 스캔 필요
+  // - 2: 실행 중 에러 발생
+  const needsScan = result.valid === 0 || result.deleted > 0;
+
+  if (needsScan) {
+    if (result.valid === 0) {
+      console.log('ℹ️ 유효한 BestCase가 없습니다. AI 스캔이 필요합니다.');
+    } else if (result.deleted > 0) {
+      console.log('ℹ️ 삭제된 BestCase가 있습니다. AI 재스캔이 필요합니다.');
+    }
+  } else {
+    console.log('ℹ️ 모든 BestCase가 유효합니다. AI 스캔을 건너뜁니다.');
+  }
+  console.log('');
+
+  process.exit(needsScan ? 1 : 0);
 }
 
 main().catch(error => {
