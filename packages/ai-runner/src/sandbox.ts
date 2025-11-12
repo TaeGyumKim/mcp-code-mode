@@ -62,10 +62,28 @@ export async function runInSandbox(code: string, timeoutMs: number = 30000): Pro
         // Console API
         console: {
           log: (...args: any[]) => {
-            logs.push(args.map(a => String(a)).join(' '));
+            logs.push(args.map(a => {
+              if (typeof a === 'object' && a !== null) {
+                try {
+                  return JSON.stringify(a, null, 2);
+                } catch (err) {
+                  return String(a);
+                }
+              }
+              return String(a);
+            }).join(' '));
           },
           error: (...args: any[]) => {
-            logs.push('[ERROR] ' + args.map(a => String(a)).join(' '));
+            logs.push('[ERROR] ' + args.map(a => {
+              if (typeof a === 'object' && a !== null) {
+                try {
+                  return JSON.stringify(a, null, 2);
+                } catch (err) {
+                  return String(a);
+                }
+              }
+              return String(a);
+            }).join(' '));
           }
         }
       }
