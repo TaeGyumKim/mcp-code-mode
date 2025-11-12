@@ -27,8 +27,9 @@ export interface Guide extends GuideMetadata {
  * 지침 파일 디렉토리 스캔 및 메타데이터 추출
  */
 export async function indexGuides(): Promise<Guide[]> {
-  const guidesDir = join(__dirname, '../../.github/instructions/guides');
-  
+  // Docker 컨테이너에서 실행 시: /app/mcp-servers/guides/dist/ → /app/.github/instructions/guides
+  const guidesDir = join(__dirname, '../../../.github/instructions/guides');
+
   console.error('[indexGuides] Scanning directory:', guidesDir);
   
   try {
