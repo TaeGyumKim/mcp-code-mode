@@ -15,6 +15,7 @@ export interface GuideMetadata {
   requires?: string[];
   excludes?: string[];
   summary: string;
+  mandatory?: boolean;  // 🔑 필수 가이드 (자동으로 항상 로드됨)
 }
 
 export interface Guide extends GuideMetadata {
@@ -112,8 +113,14 @@ function parseYamlMetadata(yaml: string): GuideMetadata {
     const key = line.substring(0, colonIdx).trim();
     let value: any = line.substring(colonIdx + 1).trim();
     
+    // Boolean 처리
+    if (value === 'true') {
+      value = true;
+    } else if (value === 'false') {
+      value = false;
+    }
     // 배열 처리 [a, b, c]
-    if (value.startsWith('[') && value.endsWith(']')) {
+    else if (value.startsWith('[') && value.endsWith(']')) {
       value = value
         .slice(1, -1)
         .split(',')
@@ -125,7 +132,7 @@ function parseYamlMetadata(yaml: string): GuideMetadata {
       value = parseInt(value, 10);
     }
     // 문자열 따옴표 제거
-    else if ((value.startsWith('"') && value.endsWith('"')) || 
+    else if ((value.startsWith('"') && value.endsWith('"')) ||
              (value.startsWith("'") && value.endsWith("'"))) {
       value = value.slice(1, -1);
     }
@@ -163,19 +170,38 @@ export interface SearchGuidesOutput {
  */
 export async function searchGuides(input: SearchGuidesInput): Promise<SearchGuidesOutput> {
   console.error('[searchGuides] Input:', JSON.stringify(input, null, 2));
-  
+
   const allGuides = await indexGuides();
-  
+
+  // 🔑 mandatory: true인 가이드를 자동으로 mandatoryIds에 추가
+  const autoMandatoryIds = allGuides
+    .filter(g => g.mandatory === true)
+    .map(g => g.id);
+
+  if (autoMandatoryIds.length > 0) {
+    console.error('[searchGuides] Auto-detected mandatory guides:', autoMandatoryIds);
+  }
+
+  // mandatoryIds와 auto-detected mandatory 병합
+  const allMandatoryIds = [
+    ...(input.mandatoryIds || []),
+    ...autoMandatoryIds
+  ];
+
+  // 중복 제거
+  const uniqueMandatoryIds = [...new Set(allMandatoryIds)];
+
   // 🔑 필수 지침 먼저 확보 (키워드 매칭 무관)
   const mandatoryGuides: any[] = [];
-  if (input.mandatoryIds && input.mandatoryIds.length > 0) {
-    for (const id of input.mandatoryIds) {
+  if (uniqueMandatoryIds.length > 0) {
+    for (const id of uniqueMandatoryIds) {
       const guide = allGuides.find(g => g.id === id);
       if (guide) {
         console.error('[searchGuides] Mandatory guide loaded:', {
           id: guide.id,
           summary: guide.summary,
-          priority: guide.priority
+          priority: guide.priority,
+          autoDetected: guide.mandatory === true
         });
         mandatoryGuides.push({
           id: guide.id,
@@ -323,7 +349,26 @@ export interface CombineGuidesOutput {
 
 export async function combineGuides(input: CombineGuidesInput): Promise<CombineGuidesOutput> {
   const allGuides = await indexGuides();
-  const requestedGuides = input.ids
+
+  // 🔑 mandatory: true인 가이드를 자동으로 추가
+  const autoMandatoryIds = allGuides
+    .filter(g => g.mandatory === true)
+    .map(g => g.id);
+
+  if (autoMandatoryIds.length > 0) {
+    console.error('[combineGuides] Auto-detected mandatory guides:', autoMandatoryIds);
+  }
+
+  // input.ids와 auto-detected mandatory 병합
+  const allIds = [
+    ...autoMandatoryIds,  // mandatory 가이드를 먼저
+    ...input.ids
+  ];
+
+  // 중복 제거
+  const uniqueIds = [...new Set(allIds)];
+
+  const requestedGuides = uniqueIds
     .map(id => allGuides.find(g => g.id === id))
     .filter(Boolean) as Guide[];
   
