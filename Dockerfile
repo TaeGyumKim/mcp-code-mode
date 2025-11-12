@@ -24,12 +24,10 @@ COPY tsconfig.base.json ./
 COPY mcp-stdio-server.ts ./
 
 # 스크립트 파일 복사 (scripts 디렉토리는 이미 위에서 복사됨)
-COPY scripts/scan/bestcase-updater.sh ./bestcase-updater.sh
 COPY scripts/scan/cron-scan.sh ./cron-scan.sh
 
 # 실행 권한 부여
-RUN chmod +x /app/bestcase-updater.sh \
-             /app/cron-scan.sh \
+RUN chmod +x /app/cron-scan.sh \
              /app/scripts/scan/init-scan.sh \
              /app/scripts/scan/validate-bestcases.ts
 
