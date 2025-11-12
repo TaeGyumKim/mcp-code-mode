@@ -16,6 +16,7 @@ WORKDIR /app
 # 의존성 파일 복사
 COPY package.json yarn.lock .yarnrc.yml ./
 COPY .yarn ./.yarn
+COPY .github ./.github
 COPY packages ./packages
 COPY mcp-servers ./mcp-servers
 COPY scripts ./scripts
@@ -40,6 +41,7 @@ RUN yarn workspace bestcase-db run build && \
     yarn workspace ai-bindings run build && \
     yarn workspace ai-runner run build && \
     yarn workspace llm-analyzer run build && \
+    yarn workspace @mcp-code-mode/guides run build && \
     yarn workspace mcp-scripts run build && \
     yarn build:root
 
