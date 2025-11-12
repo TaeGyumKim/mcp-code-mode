@@ -159,6 +159,166 @@ await mcp.callTool('execute', {
 
 ---
 
+## 📋 Sandbox API Reference
+
+### filesystem API
+
+#### readFile
+
+**파일 내용 읽기**:
+
+```typescript
+// ❌ 잘못된 사용법
+const content = await filesystem.readFile('path/to/file.ts');  // 에러 발생!
+
+// ✅ 올바른 사용법
+const result = await filesystem.readFile({
+  path: '/projects/myapp/src/App.tsx'
+});
+
+console.log('Content:', result.content);
+console.log('Size:', result.size);
+```
+
+**Docker 환경에서 경로 주의**:
+```typescript
+// ❌ Windows 경로 (Docker에서 작동 안 함)
+const result = await filesystem.readFile({
+  path: 'D:/01.Work/01.Projects/myapp/src/App.tsx'
+});
+
+// ✅ Docker 마운트 경로 (docker-compose.yml volumes 참고)
+const result = await filesystem.readFile({
+  path: '/projects/myapp/src/App.tsx'
+});
+```
+
+#### searchFiles
+
+**파일 검색**:
+
+```typescript
+// ✅ 올바른 사용법
+const result = await filesystem.searchFiles({
+  path: '/projects/myapp',
+  pattern: '**/*.{ts,tsx,vue}',
+  recursive: true
+});
+
+console.log('Total files:', result.files.length);
+result.files.forEach(file => {
+  console.log('Path:', file.path);
+  console.log('Name:', file.name);
+});
+```
+
+#### writeFile
+
+**파일 쓰기**:
+
+```typescript
+// ✅ 올바른 사용법
+await filesystem.writeFile({
+  path: '/projects/myapp/src/generated.ts',
+  content: 'export const data = [];'
+});
+```
+
+### bestcase API
+
+**BestCase 검색**:
+
+```typescript
+const result = await bestcase.listBestCases({
+  category: 'member-management',
+  projectName: 'my-project'
+});
+
+result.bestcases.forEach(bc => {
+  console.log('Category:', bc.category);
+  console.log('Score:', bc.patterns.scores.overall);
+  console.log('Files:', bc.files.length);
+});
+```
+
+### guides API
+
+**가이드 검색**:
+
+```typescript
+const result = await guides.searchGuides({
+  keywords: ['api', 'grpc'],
+  scope: 'project',
+  apiType: 'grpc'
+});
+
+// mandatoryReminders 자동 포함됨
+if (result.mandatoryReminders) {
+  console.log('⚠️ 필수 가이드:');
+  result.mandatoryReminders.forEach(msg => console.log(msg));
+}
+
+console.log('Guides:', result.guides.length);
+```
+
+**가이드 병합**:
+
+```typescript
+const result = await guides.combineGuides({
+  ids: ['grpc.api.integration', 'error.handling'],
+  context: {
+    project: 'myapp',
+    apiType: 'grpc'
+  }
+});
+
+console.log('Combined content:', result.combined);
+console.log('Used guides:', result.usedGuides);
+
+// mandatoryReminders 자동 포함됨
+if (result.mandatoryReminders) {
+  result.mandatoryReminders.forEach(msg => console.log(msg));
+}
+```
+
+### metadata API
+
+**MetadataAnalyzer 생성**:
+
+```typescript
+const analyzer = metadata.createAnalyzer({
+  ollamaUrl: 'http://ollama:11434',
+  model: 'qwen2.5-coder:7b'
+});
+
+// 프로젝트 분석
+const projectMeta = await analyzer.analyzeProject(
+  '/projects/myapp',
+  filesWithContent,
+  3  // concurrency
+);
+
+console.log('Features:', projectMeta.features);
+console.log('APIs:', projectMeta.apis);
+console.log('Patterns:', projectMeta.patterns);
+```
+
+### console API
+
+**로그 출력**:
+
+```typescript
+// Sandbox 내부에서만 사용 가능
+console.log('일반 로그');
+console.error('에러 로그');
+
+// 로그는 execute 도구 응답의 logs 배열에 포함됨
+```
+
+**주의**: `console.log`의 출력은 execute 응답의 `logs` 배열에 포함되며, Claude가 이를 확인합니다.
+
+---
+
 ## 🔍 메타데이터 추출
 
 ### 자동 메타데이터 추출
