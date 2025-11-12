@@ -164,6 +164,7 @@ export interface SearchGuidesOutput {
     tags: string[];
     priority: number;
   }>;
+  mandatoryReminders?: string[];  // 🔑 필수 가이드 경고 메시지
 }
 
 /**
@@ -287,11 +288,27 @@ export async function searchGuides(input: SearchGuidesInput): Promise<SearchGuid
     summary: g.summary,
     mandatory: g.score === 1000
   })));
-  
+
+  // 🔑 mandatory 가이드 경고 메시지 생성
+  const mandatoryReminders: string[] = [];
+  if (mandatoryGuides.length > 0) {
+    mandatoryReminders.push('⚠️ 필수 가이드 적용 필요:');
+    mandatoryGuides.forEach(mg => {
+      if (mg.id === 'mandatory-api-detection') {
+        mandatoryReminders.push('  - API 자동 감지 필수: 하드코딩된 데이터 사용 금지');
+        mandatoryReminders.push('  - 기존 gRPC/OpenAPI 타입 사용 필수');
+        mandatoryReminders.push('  - useBackendClient 같은 API 클라이언트 사용 필수');
+      } else {
+        mandatoryReminders.push(`  - ${mg.id}: ${mg.summary}`);
+      }
+    });
+  }
+
   return {
     guides: allResults.slice(0, 10).map(({ id, score, summary, filePath, tags, priority }) => ({
       id, score, summary, filePath, tags, priority
     })),
+    mandatoryReminders: mandatoryReminders.length > 0 ? mandatoryReminders : undefined
   };
 }
 
@@ -346,6 +363,7 @@ export interface CombineGuidesOutput {
     version: string;
     scope: string;
   }>;
+  mandatoryReminders?: string[];  // 🔑 필수 가이드 경고 메시지
 }
 
 export async function combineGuides(input: CombineGuidesInput): Promise<CombineGuidesOutput> {
@@ -422,15 +440,35 @@ export async function combineGuides(input: CombineGuidesInput): Promise<CombineG
   const combined = filteredGuides
     .map(guide => `# ${guide.summary}\n\n${guide.content}`)
     .join('\n\n---\n\n');
-  
+
   const usedGuides = filteredGuides.map(g => ({
     id: g.id,
     priority: g.priority,
     version: g.version,
     scope: g.scope,
   }));
-  
-  return { combined, usedGuides };
+
+  // 🔑 mandatory 가이드 경고 메시지 생성
+  const mandatoryReminders: string[] = [];
+  const mandatoryGuides = filteredGuides.filter(g => g.mandatory === true);
+  if (mandatoryGuides.length > 0) {
+    mandatoryReminders.push('⚠️ 필수 가이드 적용 필요:');
+    mandatoryGuides.forEach(mg => {
+      if (mg.id === 'mandatory-api-detection') {
+        mandatoryReminders.push('  - API 자동 감지 필수: 하드코딩된 데이터 사용 금지');
+        mandatoryReminders.push('  - 기존 gRPC/OpenAPI 타입 사용 필수');
+        mandatoryReminders.push('  - useBackendClient 같은 API 클라이언트 사용 필수');
+      } else {
+        mandatoryReminders.push(`  - ${mg.id}: ${mg.summary}`);
+      }
+    });
+  }
+
+  return {
+    combined,
+    usedGuides,
+    mandatoryReminders: mandatoryReminders.length > 0 ? mandatoryReminders : undefined
+  };
 }
 
 /**
