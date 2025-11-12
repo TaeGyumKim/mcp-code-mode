@@ -72,6 +72,45 @@ VSCode에서:
 
 ---
 
+## ✅ 해결된 문제
+
+### ✅ 문제 0: guides 경로 오류 (커밋 26ca137)
+
+**증상**:
+```
+[indexGuides] Scanning directory: /app/mcp-servers/.github/instructions/guides
+ENOENT: no such file or directory, scandir '/app/mcp-servers/.github/instructions/guides'
+```
+
+**원인**: guides/index.ts가 잘못된 상대 경로 사용
+- 기존: `../../.github` → `/app/mcp-servers/.github` (존재 안 함)
+- 실제: `/app/.github` (여기에 있음)
+
+**해결**: 커밋 26ca137에서 수정됨
+```typescript
+// 수정 전
+const guidesDir = join(__dirname, '../../.github/instructions/guides');
+
+// 수정 후
+const guidesDir = join(__dirname, '../../../.github/instructions/guides');
+```
+
+**검증**:
+```bash
+docker exec -it mcp-code-mode-server node --input-type=module -e "
+import('./mcp-servers/guides/dist/index.js')
+  .then(m => m.indexGuides())
+  .then(guides => {
+    const mandatory = guides.filter(g => g.mandatory === true);
+    console.log('✅ Mandatory guides found:', mandatory.map(g => g.id));
+  });
+"
+```
+
+**예상 출력**: `✅ Mandatory guides found: [ 'mandatory-api-detection' ]`
+
+---
+
 ## 🚨 가능한 문제와 해결책
 
 ### 문제 1: Docker 캐시 문제
