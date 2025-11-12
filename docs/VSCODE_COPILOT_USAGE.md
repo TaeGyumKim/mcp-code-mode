@@ -1,17 +1,37 @@
 # VSCode Copilot (Claude) 사용 가이드
 
-> ⚠️ **중요: 코드 생성 전 필수 단계**
+> 🚨 **필수: mandatory-api-detection 가이드 사용**
 >
-> Claude는 코드 생성 전에 **반드시 다음 순서**를 따라야 합니다:
-> 1. **프로젝트 분석** → gRPC/OpenAPI 클라이언트 자동 감지
-> 2. **타입 정의 추출** → 기존 Request/Response 구조 파악
-> 3. **BestCase 참고** → 우수 사례 패턴 로드
-> 4. **코드 생성** → 실제 타입과 API 사용
+> **모든 코드 생성 작업 전에** 다음 가이드를 **반드시** 로드하세요:
+>
+> ```typescript
+> const guidelines = await guides.combine({
+>   ids: [...],
+>   mandatoryIds: ['mandatory-api-detection'],  // ✅ 필수!
+>   context: { ... }
+> });
+> ```
+>
+> 또는 검색 시:
+> ```typescript
+> const searchResult = await guides.search({
+>   keywords: [...],
+>   mandatoryIds: ['mandatory-api-detection'],  // ✅ 필수!
+>   apiType: 'grpc'
+> });
+> ```
+>
+> **이 가이드가 하는 일**:
+> 1. ✅ **API 클라이언트 자동 감지** (gRPC, OpenAPI, REST)
+> 2. ✅ **타입 정의 추출** (기존 Request/Response 사용)
+> 3. ✅ **하드코딩 방지** (샘플 데이터 대신 실제 API 강제)
+> 4. ✅ **자동 검증** (API 미사용 시 에러)
 >
 > **절대 하지 말 것**:
+> - ❌ mandatory-api-detection 가이드 생략
 > - ❌ 프로젝트 분석 없이 코드 생성
 > - ❌ 타입을 임의로 새로 정의 (`interface Member { ... }`)
-> - ❌ API를 추측으로 작성 (`fetch('/api/members')`)
+> - ❌ API를 추측으로 작성 (`const data = ref([...])`)
 >
 > 자세한 내용: [🔌 프로젝트 API 및 타입 자동 감지](#-프로젝트-api-및-타입-자동-감지-중요)
 
@@ -554,14 +574,44 @@ async function fetchMembers() {
 
 ---
 
-### Step 1: 프로젝트 API 클라이언트 자동 감지
+### Step 0: mandatory-api-detection 가이드 로드 (필수!)
 
 **사용자 요청**:
 ```
 memberManagement.vue 페이지를 완성해줘
 ```
 
-**Copilot이 먼저 해야 할 일 (자동)**:
+**Copilot이 제일 먼저 해야 할 일**:
+```typescript
+// ✅ 필수: mandatory-api-detection 가이드 로드
+await mcp.callTool('execute', {
+  code: `
+    const guidelines = await guides.combine({
+      ids: [],
+      mandatoryIds: ['mandatory-api-detection'],  // 필수 가이드
+      context: {
+        task: 'page-completion',
+        entity: 'member'
+      }
+    });
+
+    // 가이드가 제공하는 API 감지 및 검증 로직 실행
+    return guidelines.combined;
+  `
+});
+```
+
+이 가이드는 다음을 **자동으로 강제**합니다:
+- ✅ API 클라이언트 감지
+- ✅ 타입 정의 추출
+- ✅ 하드코딩 방지
+- ✅ 검증 자동 실행
+
+---
+
+### Step 1: 프로젝트 API 클라이언트 자동 감지
+
+**가이드 로드 후**, 실제 API 감지를 수행합니다:
 
 ```typescript
 await mcp.callTool('execute', {
