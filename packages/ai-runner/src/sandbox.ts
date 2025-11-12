@@ -1,7 +1,7 @@
 import { VM } from 'vm2';
 import * as filesystem from '../../../mcp-servers/filesystem/index.js';
 import * as bestcase from '../../../mcp-servers/bestcase/index.js';
-import * as guides from '../../../mcp-servers/guides/index.js';
+import * as guides from '../../../mcp-servers/guides/dist/index.js';
 import { MetadataAnalyzer } from '../../llm-analyzer/src/metadataAnalyzer.js';
 
 export interface SandboxResult {
