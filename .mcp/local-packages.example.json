@@ -6,7 +6,9 @@
       "type": "hybrid",
       "name": "OpenERD Nuxt3",
       "packageName": "@openerd/nuxt3",
-      "sourcePath": "/projects/openerd-nuxt3/src",
+      "sourceType": "git",
+      "gitUrl": "git+https://git.dev.opnd.io/common/openerd-nuxt3.git#commit=9b400392ace86d10b3efaeddfdf961fe3c9436cf",
+      "gitCommit": "9b400392ace86d10b3efaeddfdf961fe3c9436cf",
       "analyzed": true,
       "analyzedAt": "2025-01-13T12:00:00Z",
       "version": "1.0.0",
@@ -25,7 +27,7 @@
             "category": "table",
             "props": ["data", "columns", "loading", "total", "page", "pageSize"],
             "usage": "<CommonTable :data=\"items\" :columns=\"columns\" @row-click=\"handleClick\" />",
-            "filePath": "/projects/openerd-nuxt3/src/components/CommonTable.vue"
+            "filePath": "/tmp/mcp-local-packages-openerd-nuxt3-xxx/src/components/CommonTable.vue"
           },
           "CommonButton": {
             "name": "CommonButton",
@@ -33,26 +35,9 @@
             "category": "button",
             "props": ["type", "size", "loading", "disabled"],
             "usage": "<CommonButton type=\"primary\" @click=\"handleClick\">Submit</CommonButton>",
-            "filePath": "/projects/openerd-nuxt3/src/components/CommonButton.vue"
-          },
-          "CommonInput": {
-            "name": "CommonInput",
-            "description": "Input field component with validation",
-            "category": "input",
-            "props": ["modelValue", "placeholder", "type", "disabled", "rules"],
-            "usage": "<CommonInput v-model=\"value\" placeholder=\"Enter text\" />",
-            "filePath": "/projects/openerd-nuxt3/src/components/CommonInput.vue"
-          },
-          "CommonModal": {
-            "name": "CommonModal",
-            "description": "Modal dialog component",
-            "category": "modal",
-            "props": ["visible", "title", "width", "closable"],
-            "usage": "<CommonModal v-model:visible=\"showModal\" title=\"Dialog\">Content</CommonModal>",
-            "filePath": "/projects/openerd-nuxt3/src/components/CommonModal.vue"
+            "filePath": "/tmp/mcp-local-packages-openerd-nuxt3-xxx/src/components/CommonButton.vue"
           }
-        },
-        "docsUrl": "https://openerd.com/docs"
+        }
       },
 
       "utilityLibrary": {
@@ -69,25 +54,7 @@
             "usage": "const { data, loading, refresh } = useTable(fetchFunction)",
             "params": ["fetchFunction", "options"],
             "returnType": "{ data, loading, refresh, error }",
-            "filePath": "/projects/openerd-nuxt3/src/composables/useTable.ts"
-          },
-          "useForm": {
-            "name": "useForm",
-            "category": "state",
-            "description": "Form state management composable",
-            "usage": "const { values, errors, handleSubmit } = useForm(schema)",
-            "params": ["schema", "options"],
-            "returnType": "{ values, errors, handleSubmit, reset }",
-            "filePath": "/projects/openerd-nuxt3/src/composables/useForm.ts"
-          },
-          "useModal": {
-            "name": "useModal",
-            "category": "state",
-            "description": "Modal state management composable",
-            "usage": "const { isOpen, open, close } = useModal()",
-            "params": ["options"],
-            "returnType": "{ isOpen, open, close, toggle }",
-            "filePath": "/projects/openerd-nuxt3/src/composables/useModal.ts"
+            "filePath": "/tmp/mcp-local-packages-openerd-nuxt3-xxx/src/composables/useTable.ts"
           },
           "useAlert": {
             "name": "useAlert",
@@ -96,29 +63,33 @@
             "usage": "const { success, error, warning, info } = useAlert()",
             "params": [],
             "returnType": "{ success, error, warning, info }",
-            "filePath": "/projects/openerd-nuxt3/src/composables/useAlert.ts"
-          },
-          "formatDate": {
-            "name": "formatDate",
-            "category": "utility",
-            "description": "Date formatting utility",
-            "usage": "formatDate(date, 'YYYY-MM-DD')",
-            "params": ["date", "format"],
-            "returnType": "string",
-            "filePath": "/projects/openerd-nuxt3/src/utils/format.ts"
-          },
-          "formatNumber": {
-            "name": "formatNumber",
-            "category": "utility",
-            "description": "Number formatting utility",
-            "usage": "formatNumber(1234.56, { decimals: 2 })",
-            "params": ["number", "options"],
-            "returnType": "string",
-            "filePath": "/projects/openerd-nuxt3/src/utils/format.ts"
+            "filePath": "/tmp/mcp-local-packages-openerd-nuxt3-xxx/src/composables/useAlert.ts"
           }
-        },
-        "docsUrl": "https://openerd.com/docs"
+        }
       }
+    },
+    {
+      "id": "my-custom-ui",
+      "type": "design-system",
+      "name": "My Custom UI Library",
+      "packageName": "@myorg/custom-ui",
+      "sourceType": "node_modules",
+      "analyzed": false,
+      "version": "2.5.0",
+      "description": "Custom UI library installed via npm/yarn",
+      "tags": ["design-system", "custom", "node_modules"]
+    },
+    {
+      "id": "local-components",
+      "type": "hybrid",
+      "name": "Local Components Library",
+      "packageName": "@myorg/local-components",
+      "sourceType": "local",
+      "sourcePath": "/projects/my-design-system/src",
+      "analyzed": false,
+      "version": "1.5.0",
+      "description": "Local design system on file system",
+      "tags": ["design-system", "utility", "local"]
     }
   ]
 }

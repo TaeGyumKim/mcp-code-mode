@@ -6,7 +6,9 @@
  */
 
 import { promises as fs } from 'fs';
-import { join } from 'path';
+import { join, resolve } from 'path';
+import { tmpdir } from 'os';
+import { execSync } from 'child_process';
 import { MetadataAnalyzer } from './metadataAnalyzer.js';
 import { LocalPackageManager } from './localPackageManager.js';
 import type {
@@ -39,41 +41,180 @@ export class LocalPackageAnalyzer {
     }
 
     console.log(`📦 Package: ${pkg.name} (${pkg.type})`);
-    console.log(`📂 Source path: ${pkg.sourcePath}`);
+    console.log(`🔗 Source type: ${pkg.sourceType}`);
 
-    // 소스 파일 스캔
-    const files = await this.scanSourceFiles(pkg.sourcePath);
-    console.log(`📄 Found ${files.length} files`);
+    // 소스 경로 확인
+    const sourcePath = await this.resolveSourcePath(pkg);
+    console.log(`📂 Source path: ${sourcePath}`);
 
-    if (files.length === 0) {
-      console.warn(`⚠️  No files found in ${pkg.sourcePath}`);
-      return;
+    let tempDir: string | null = null;
+
+    try {
+      // 소스 파일 스캔
+      const files = await this.scanSourceFiles(sourcePath);
+      console.log(`📄 Found ${files.length} files`);
+
+      if (files.length === 0) {
+        console.warn(`⚠️  No files found in ${sourcePath}`);
+        return;
+      }
+
+      // AI 분석 실행
+      const results = await this.analyzer.analyzeFilesParallel(files, 3);
+
+      // 결과 집계
+      let designSystem: LocalDesignSystemInfo | undefined;
+      let utilityLibrary: LocalUtilityLibraryInfo | undefined;
+
+      if (pkg.type === 'design-system' || pkg.type === 'hybrid') {
+        designSystem = await this.extractDesignSystemInfo(pkg, results);
+      }
+
+      if (pkg.type === 'utility' || pkg.type === 'hybrid') {
+        utilityLibrary = await this.extractUtilityLibraryInfo(pkg, results);
+      }
+
+      // 분석 결과 저장
+      await this.manager.markAsAnalyzed(packageId, designSystem, utilityLibrary);
+
+      console.log(`\n✅ Analysis completed for ${packageId}`);
+      if (designSystem) {
+        console.log(`   🎨 Components found: ${Object.keys(designSystem.components).length}`);
+      }
+      if (utilityLibrary) {
+        console.log(`   🔧 Functions found: ${Object.keys(utilityLibrary.functions).length}`);
+      }
+    } finally {
+      // git clone한 임시 디렉토리 정리
+      if (pkg.sourceType === 'git' && sourcePath.includes(tmpdir())) {
+        await this.cleanupTempDirectory(sourcePath);
+      }
+    }
+  }
+
+  /**
+   * 소스 경로 확인 (sourceType에 따라 다르게 처리)
+   */
+  private async resolveSourcePath(pkg: LocalPackage): Promise<string> {
+    switch (pkg.sourceType) {
+      case 'local':
+        if (!pkg.sourcePath) {
+          throw new Error(`Local package ${pkg.id} must have sourcePath`);
+        }
+        return pkg.sourcePath;
+
+      case 'git':
+        return await this.cloneGitRepository(pkg);
+
+      case 'node_modules':
+        return await this.findInNodeModules(pkg);
+
+      default:
+        throw new Error(`Unknown sourceType: ${pkg.sourceType}`);
+    }
+  }
+
+  /**
+   * Git 저장소 클론
+   */
+  private async cloneGitRepository(pkg: LocalPackage): Promise<string> {
+    if (!pkg.gitUrl) {
+      throw new Error(`Git package ${pkg.id} must have gitUrl`);
     }
 
-    // AI 분석 실행
-    const results = await this.analyzer.analyzeFilesParallel(files, 3);
+    console.log(`📥 Cloning git repository: ${pkg.gitUrl}`);
 
-    // 결과 집계
-    let designSystem: LocalDesignSystemInfo | undefined;
-    let utilityLibrary: LocalUtilityLibraryInfo | undefined;
+    // 임시 디렉토리 생성
+    const tempDir = join(tmpdir(), `mcp-local-packages-${pkg.id}-${Date.now()}`);
+    await fs.mkdir(tempDir, { recursive: true });
 
-    if (pkg.type === 'design-system' || pkg.type === 'hybrid') {
-      designSystem = await this.extractDesignSystemInfo(pkg, results);
+    try {
+      // git URL 파싱 (git+https://... 형식)
+      let gitUrl = pkg.gitUrl;
+      if (gitUrl.startsWith('git+')) {
+        gitUrl = gitUrl.substring(4);
+      }
+
+      // URL에서 #commit= 파라미터 제거
+      const [repoUrl, params] = gitUrl.split('#');
+
+      // git clone 실행
+      console.log(`   Cloning ${repoUrl}...`);
+      execSync(`git clone "${repoUrl}" "${tempDir}"`, { stdio: 'inherit' });
+
+      // 특정 커밋/브랜치 체크아웃
+      if (pkg.gitCommit || params) {
+        const commit = pkg.gitCommit || params.replace('commit=', '');
+        console.log(`   Checking out commit: ${commit}`);
+        execSync(`git checkout ${commit}`, { cwd: tempDir, stdio: 'inherit' });
+      } else if (pkg.gitBranch) {
+        console.log(`   Checking out branch: ${pkg.gitBranch}`);
+        execSync(`git checkout ${pkg.gitBranch}`, { cwd: tempDir, stdio: 'inherit' });
+      }
+
+      // 소스 디렉토리 경로 (src, lib, components 등)
+      const possiblePaths = ['src', 'lib', 'components', '.'];
+      for (const subPath of possiblePaths) {
+        const fullPath = join(tempDir, subPath);
+        try {
+          await fs.access(fullPath);
+          console.log(`   ✅ Found source directory: ${subPath}`);
+          return fullPath;
+        } catch {
+          // 디렉토리가 없으면 다음 시도
+        }
+      }
+
+      return tempDir;
+    } catch (error) {
+      // 에러 발생 시 임시 디렉토리 정리
+      await this.cleanupTempDirectory(tempDir);
+      throw error;
     }
+  }
 
-    if (pkg.type === 'utility' || pkg.type === 'hybrid') {
-      utilityLibrary = await this.extractUtilityLibraryInfo(pkg, results);
+  /**
+   * node_modules에서 패키지 찾기
+   */
+  private async findInNodeModules(pkg: LocalPackage): Promise<string> {
+    console.log(`📦 Looking for ${pkg.packageName} in node_modules`);
+
+    // 현재 프로젝트의 node_modules 경로
+    const cwd = process.cwd();
+    const nodeModulesPath = join(cwd, 'node_modules', pkg.packageName);
+
+    try {
+      await fs.access(nodeModulesPath);
+      console.log(`   ✅ Found in ${nodeModulesPath}`);
+
+      // 소스 디렉토리 경로
+      const possiblePaths = ['src', 'lib', 'dist', 'components', '.'];
+      for (const subPath of possiblePaths) {
+        const fullPath = join(nodeModulesPath, subPath);
+        try {
+          await fs.access(fullPath);
+          console.log(`   ✅ Found source directory: ${subPath}`);
+          return fullPath;
+        } catch {
+          // 디렉토리가 없으면 다음 시도
+        }
+      }
+
+      return nodeModulesPath;
+    } catch (error) {
+      throw new Error(`Package ${pkg.packageName} not found in node_modules. Please run 'npm install' or 'yarn install' first.`);
     }
+  }
 
-    // 분석 결과 저장
-    await this.manager.markAsAnalyzed(packageId, designSystem, utilityLibrary);
-
-    console.log(`\n✅ Analysis completed for ${packageId}`);
-    if (designSystem) {
-      console.log(`   🎨 Components found: ${Object.keys(designSystem.components).length}`);
-    }
-    if (utilityLibrary) {
-      console.log(`   🔧 Functions found: ${Object.keys(utilityLibrary.functions).length}`);
+  /**
+   * 임시 디렉토리 정리
+   */
+  private async cleanupTempDirectory(dirPath: string): Promise<void> {
+    try {
+      console.log(`🧹 Cleaning up temporary directory: ${dirPath}`);
+      await fs.rm(dirPath, { recursive: true, force: true });
+    } catch (error) {
+      console.error(`Warning: Failed to cleanup ${dirPath}:`, error);
     }
   }
 

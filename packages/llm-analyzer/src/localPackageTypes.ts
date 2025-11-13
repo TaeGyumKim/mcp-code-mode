@@ -6,6 +6,7 @@
  */
 
 export type LocalPackageType = 'design-system' | 'utility' | 'hybrid';
+export type LocalPackageSourceType = 'local' | 'git' | 'node_modules';
 
 export interface LocalComponentInfo {
   name: string;
@@ -43,7 +44,16 @@ export interface LocalPackage {
   type: LocalPackageType;        // design-system, utility, hybrid
   name: string;                  // 표시 이름
   packageName: string;           // npm 패키지명 (예: @openerd/nuxt3)
-  sourcePath: string;            // 분석할 소스 코드 경로
+
+  // 소스 타입 및 경로
+  sourceType: LocalPackageSourceType;  // local, git, node_modules
+  sourcePath?: string;           // local: 절대 경로, git: clone된 경로 (자동), node_modules: 자동 감지
+
+  // Git 저장소 정보 (sourceType이 'git'인 경우)
+  gitUrl?: string;               // git+https://git.dev.opnd.io/common/openerd-nuxt3.git
+  gitCommit?: string;            // 특정 커밋 해시
+  gitBranch?: string;            // 특정 브랜치
+
   analyzed: boolean;             // AI 분석 완료 여부
   analyzedAt?: string;           // 분석 완료 시각 (ISO 8601)
 

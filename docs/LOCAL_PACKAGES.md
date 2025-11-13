@@ -16,11 +16,23 @@
 | **utility** | 함수/composables만 제공 | 순수 유틸리티 라이브러리 |
 | **hybrid** | 컴포넌트 + 유틸리티 모두 제공 | openerd-nuxt3 |
 
+## 🔗 소스 타입
+
+로컬 패키지는 3가지 방식으로 소스 코드를 지정할 수 있습니다:
+
+| 소스 타입 | 설명 | 사용 시점 |
+|----------|------|----------|
+| **local** | 로컬 파일 시스템 경로 | 개발 중인 내부 라이브러리 |
+| **git** | Git 저장소 URL | Private git 저장소의 패키지 |
+| **node_modules** | node_modules에 설치된 패키지 | 이미 npm/yarn으로 설치된 패키지 |
+
 ## 🚀 빠른 시작
 
 ### 1. 로컬 패키지 등록
 
 `.mcp/local-packages.json` 파일을 생성합니다:
+
+#### 방법 1: Git 저장소 URL 사용 (추천)
 
 ```json
 {
@@ -31,13 +43,60 @@
       "type": "hybrid",
       "name": "OpenERD Nuxt3",
       "packageName": "@openerd/nuxt3",
-      "sourcePath": "/projects/openerd-nuxt3/src",
+      "sourceType": "git",
+      "gitUrl": "git+https://git.dev.opnd.io/common/openerd-nuxt3.git#commit=9b400392ace86d10b3efaeddfdf961fe3c9436cf",
+      "gitCommit": "9b400392ace86d10b3efaeddfdf961fe3c9436cf",
       "analyzed": false,
       "description": "OpenERD internal design system and utility library"
     }
   ]
 }
 ```
+
+**장점**: Private git 저장소에서 직접 분석 가능. 특정 커밋 고정 가능.
+
+#### 방법 2: node_modules에 설치된 패키지 사용
+
+```json
+{
+  "version": "1.0.0",
+  "localPackages": [
+    {
+      "id": "my-custom-ui",
+      "type": "design-system",
+      "name": "My Custom UI",
+      "packageName": "@myorg/custom-ui",
+      "sourceType": "node_modules",
+      "analyzed": false,
+      "description": "Custom UI library from node_modules"
+    }
+  ]
+}
+```
+
+**장점**: 이미 설치된 패키지를 그대로 사용. 별도 경로 설정 불필요.
+
+#### 방법 3: 로컬 파일 시스템 경로 사용
+
+```json
+{
+  "version": "1.0.0",
+  "localPackages": [
+    {
+      "id": "local-components",
+      "type": "hybrid",
+      "name": "Local Components",
+      "packageName": "@myorg/local-components",
+      "sourceType": "local",
+      "sourcePath": "/projects/my-design-system/src",
+      "analyzed": false,
+      "description": "Local design system on file system"
+    }
+  ]
+}
+```
+
+**장점**: 개발 중인 라이브러리 실시간 분석 가능.
 
 ### 2. AI로 자동 분석
 
@@ -73,15 +132,28 @@ console.log(projectMeta.utilityLibrary);   // "openerd-nuxt3"  ← 로컬 패키
 
 ## 📋 로컬 패키지 설정 구조
 
+### 필수 필드
+
 ```typescript
 {
   "id": "openerd-nuxt3",                    // 고유 ID
   "type": "hybrid",                         // design-system | utility | hybrid
   "name": "OpenERD Nuxt3",                  // 표시 이름
   "packageName": "@openerd/nuxt3",          // npm 패키지명
-  "sourcePath": "/projects/openerd-nuxt3/src",  // 분석할 소스 코드 경로
+
+  // 소스 타입 (필수)
+  "sourceType": "git",                      // local | git | node_modules
+
+  // sourceType별 필수 필드
+  // - local: sourcePath (필수)
+  // - git: gitUrl (필수), gitCommit/gitBranch (선택)
+  // - node_modules: 없음 (packageName으로 자동 감지)
+
+  "gitUrl": "git+https://git.dev.opnd.io/common/openerd-nuxt3.git#commit=...",
+  "gitCommit": "9b400392ace86d10b3efaeddfdf961fe3c9436cf",
+
   "analyzed": false,                        // AI 분석 완료 여부
-  "analyzedAt": "2025-01-13T12:00:00Z",     // 분석 완료 시각
+  "analyzedAt": "2025-01-13T12:00:00Z",     // 분석 완료 시각 (자동 생성)
 
   // AI 분석 후 자동 생성됨
   "designSystem": {
@@ -92,7 +164,7 @@ console.log(projectMeta.utilityLibrary);   // "openerd-nuxt3"  ← 로컬 패키
         "category": "table",
         "props": ["data", "columns", "loading"],
         "usage": "<CommonTable :data=\"items\" />",
-        "filePath": "/projects/openerd-nuxt3/src/components/CommonTable.vue"
+        "filePath": "/tmp/mcp-local-packages-openerd-nuxt3-xxx/src/components/CommonTable.vue"
       }
     }
   },
@@ -105,12 +177,53 @@ console.log(projectMeta.utilityLibrary);   // "openerd-nuxt3"  ← 로컬 패키
         "category": "state",
         "usage": "const { data, loading } = useTable(fetchFn)",
         "params": ["fetchFunction", "options"],
-        "filePath": "/projects/openerd-nuxt3/src/composables/useTable.ts"
+        "filePath": "/tmp/mcp-local-packages-openerd-nuxt3-xxx/src/composables/useTable.ts"
       }
     }
   }
 }
 ```
+
+### sourceType별 설정 가이드
+
+#### 1. Git 저장소 (sourceType: "git")
+
+```json
+{
+  "sourceType": "git",
+  "gitUrl": "git+https://git.dev.opnd.io/common/openerd-nuxt3.git#commit=9b400392...",
+  "gitCommit": "9b400392ace86d10b3efaeddfdf961fe3c9436cf"  // 선택사항
+}
+```
+
+- `gitUrl`: package.json의 dependencies에서 그대로 복사 가능
+- `gitCommit`: URL의 #commit= 파라미터 또는 별도 필드로 지정
+- `gitBranch`: 특정 브랜치 사용 시 (gitCommit과 함께 사용 불가)
+- 분석 시 자동으로 임시 디렉토리에 clone됨
+
+#### 2. node_modules (sourceType: "node_modules")
+
+```json
+{
+  "sourceType": "node_modules",
+  "packageName": "@myorg/custom-ui"
+}
+```
+
+- `packageName`만 있으면 자동으로 `node_modules/@myorg/custom-ui` 경로 감지
+- npm/yarn install로 패키지가 설치되어 있어야 함
+
+#### 3. 로컬 경로 (sourceType: "local")
+
+```json
+{
+  "sourceType": "local",
+  "sourcePath": "/projects/my-design-system/src"
+}
+```
+
+- 절대 경로 사용 권장
+- 개발 중인 라이브러리 분석에 유용
 
 ## 🤖 AI 자동 분석 동작 방식
 
