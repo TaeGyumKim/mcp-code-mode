@@ -1,7 +1,7 @@
 /**
- * 프로젝트 컨텍스트 자동 추출
+ * Automatic Project Context Extraction
  *
- * MCP execute 도구의 응답에 포함될 프로젝트 정보를 자동으로 생성
+ * Automatically generates project information to be included in MCP execute tool responses
  */
 
 import { promises as fs } from 'fs';
@@ -11,28 +11,28 @@ export interface ProjectContext {
   projectPath?: string;
   hasPackageJson: boolean;
 
-  // API 타입 정보
+  // API type information
   apiInfo: {
     type: 'grpc' | 'openapi' | 'rest' | 'mixed' | 'unknown';
     packages: string[];
     confidence: 'high' | 'medium' | 'low';
   };
 
-  // 디자인 시스템 정보
+  // Design system information
   designSystemInfo: {
-    detected: string[];  // 감지된 디자인 시스템들
+    detected: string[];  // Detected design systems
     confidence: 'high' | 'medium' | 'low';
-    recommended?: string;  // 가장 가능성 높은 것
+    recommended?: string;  // Most likely candidate
   };
 
-  // 유틸리티 라이브러리 정보
+  // Utility library information
   utilityLibraryInfo: {
     detected: string[];
     confidence: 'high' | 'medium' | 'low';
     recommended?: string;
   };
 
-  // 로컬 패키지 정보
+  // Local package information
   localPackagesInfo: {
     hasConfig: boolean;
     packages: Array<{
@@ -42,12 +42,12 @@ export interface ProjectContext {
     }>;
   };
 
-  // 권장 플랜
+  // Recommended action plan
   recommendedPlan: string[];
 }
 
 /**
- * package.json에서 프로젝트 컨텍스트 추출
+ * Extract project context from package.json
  */
 export async function extractProjectContext(projectPath?: string): Promise<ProjectContext> {
   const basePath = projectPath || process.env.PROJECTS_PATH || '/projects';
@@ -76,7 +76,7 @@ export async function extractProjectContext(projectPath?: string): Promise<Proje
   };
 
   try {
-    // package.json 읽기
+    // Read package.json
     const packageJsonPath = join(basePath, 'package.json');
     const packageJsonContent = await fs.readFile(packageJsonPath, 'utf-8');
     const packageJson = JSON.parse(packageJsonContent);
@@ -88,22 +88,22 @@ export async function extractProjectContext(projectPath?: string): Promise<Proje
       ...packageJson.devDependencies
     };
 
-    // API 타입 감지
+    // Detect API type
     context.apiInfo = detectApiType(allDeps);
 
-    // 디자인 시스템 감지
+    // Detect design system
     context.designSystemInfo = detectDesignSystem(allDeps);
 
-    // 유틸리티 라이브러리 감지
+    // Detect utility library
     context.utilityLibraryInfo = detectUtilityLibrary(allDeps);
 
   } catch (error) {
-    // package.json이 없거나 읽을 수 없음
+    // No package.json found or unable to read
     context.recommendedPlan.push('⚠️  No package.json found - manual project setup required');
   }
 
   try {
-    // 로컬 패키지 설정 체크
+    // Check local packages configuration
     const localPackagesPath = join(basePath, '.mcp/local-packages.json');
     const localPackagesContent = await fs.readFile(localPackagesPath, 'utf-8');
     const localPackages = JSON.parse(localPackagesContent);
@@ -123,17 +123,17 @@ export async function extractProjectContext(projectPath?: string): Promise<Proje
     }
 
   } catch (error) {
-    // 로컬 패키지 설정 없음 (정상)
+    // No local packages config (normal)
   }
 
-  // 권장 플랜 생성
+  // Generate recommended plan
   generateRecommendedPlan(context);
 
   return context;
 }
 
 /**
- * API 타입 감지
+ * Detect API type from dependencies
  */
 function detectApiType(dependencies: Record<string, string>): ProjectContext['apiInfo'] {
   const apiInfo: ProjectContext['apiInfo'] = {
@@ -165,7 +165,7 @@ function detectApiType(dependencies: Record<string, string>): ProjectContext['ap
     }
   }
 
-  // 타입 결정
+  // Determine type
   if (grpcCount > 0 && openapiCount > 0) {
     apiInfo.type = 'mixed';
     apiInfo.confidence = 'high';
@@ -184,7 +184,7 @@ function detectApiType(dependencies: Record<string, string>): ProjectContext['ap
 }
 
 /**
- * 디자인 시스템 감지
+ * Detect design system from dependencies
  */
 function detectDesignSystem(dependencies: Record<string, string>): ProjectContext['designSystemInfo'] {
   const designSystemInfo: ProjectContext['designSystemInfo'] = {
@@ -210,14 +210,14 @@ function detectDesignSystem(dependencies: Record<string, string>): ProjectContex
 
   if (designSystemInfo.detected.length > 0) {
     designSystemInfo.confidence = 'high';
-    designSystemInfo.recommended = designSystemInfo.detected[0];  // 첫 번째를 추천
+    designSystemInfo.recommended = designSystemInfo.detected[0];  // Recommend first one
   }
 
   return designSystemInfo;
 }
 
 /**
- * 유틸리티 라이브러리 감지
+ * Detect utility library from dependencies
  */
 function detectUtilityLibrary(dependencies: Record<string, string>): ProjectContext['utilityLibraryInfo'] {
   const utilityLibraryInfo: ProjectContext['utilityLibraryInfo'] = {
@@ -249,10 +249,10 @@ function detectUtilityLibrary(dependencies: Record<string, string>): ProjectCont
 }
 
 /**
- * 권장 플랜 생성
+ * Generate recommended action plan based on context
  */
 function generateRecommendedPlan(context: ProjectContext): void {
-  // API 타입 관련
+  // API type related
   if (context.apiInfo.type !== 'unknown') {
     context.recommendedPlan.push(
       `✅ API Type: ${context.apiInfo.type.toUpperCase()} (${context.apiInfo.packages.join(', ')})`
@@ -263,7 +263,7 @@ function generateRecommendedPlan(context: ProjectContext): void {
     );
   }
 
-  // 디자인 시스템 관련
+  // Design system related
   if (context.designSystemInfo.detected.length > 0) {
     context.recommendedPlan.push(
       `✅ Design System: ${context.designSystemInfo.detected.join(', ')} - Use these components for consistency`
@@ -274,7 +274,7 @@ function generateRecommendedPlan(context: ProjectContext): void {
     );
   }
 
-  // 유틸리티 라이브러리 관련
+  // Utility library related
   if (context.utilityLibraryInfo.detected.length > 0) {
     context.recommendedPlan.push(
       `✅ Utility Library: ${context.utilityLibraryInfo.detected.join(', ')} - Use these utilities for consistency`
@@ -285,7 +285,7 @@ function generateRecommendedPlan(context: ProjectContext): void {
     );
   }
 
-  // 다음 액션 제안
+  // Next action suggestions
   context.recommendedPlan.push('');
   context.recommendedPlan.push('📋 Recommended Next Steps:');
   context.recommendedPlan.push('1. Run project metadata analysis if needed');
