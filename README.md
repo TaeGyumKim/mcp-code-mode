@@ -17,6 +17,7 @@
 - 💎 **100% TypeScript**: 모든 소스 코드가 TypeScript 5.9.3 strict mode로 작성됨
 - 🤖 **AI 코드 분석**: Ollama LLM (qwen2.5-coder:1.5b) + GPU 기반 실시간 품질 측정
 - 💾 **BestCase 관리**: 프로젝트 패턴 자동 저장 및 로드
+- 🎨 **디자인 시스템 감지**: 7개 주요 UI 프레임워크 자동 감지 (openerd-nuxt3, element-plus, vuetify, quasar, primevue, ant-design-vue, naive-ui)
 - � **동적 지침 로딩**: 메타데이터 기반 지침 검색/병합 시스템 (클로드 스킬과 유사)
 - 🛡️ **프리플라이트 검수**: API/의존성/쓰기범위 검증 + 리스크 스코어링
 - �🔒 **안전한 실행**: vm2 샌드박스 격리
@@ -383,9 +384,14 @@ console.log(bc.patterns.componentUsage);
 
 | 변수 | 설명 | 기본값 |
 |------|------|--------|
-| `PROJECTS_PATH` | 프로젝트 디렉토리 경로 | `/projects` |
+| `HOST_PROJECTS_PATH` | 호스트 머신의 프로젝트 디렉토리 경로 (Docker 볼륨 마운트용) | `D:/01.Work/01.Projects` (Windows) |
+| `PROJECTS_PATH` | 컨테이너 내부 프로젝트 디렉토리 경로 | `/projects` |
 | `BESTCASE_STORAGE_PATH` | BestCase 저장 경로 | `/projects/.bestcases` |
+| `DESIGN_SYSTEMS` | 감지할 디자인 시스템 목록 (쉼표로 구분) | `openerd-nuxt3,element-plus,vuetify,quasar,primevue,ant-design-vue,naive-ui` |
 | `NODE_ENV` | 실행 환경 | `production` |
+| `OLLAMA_URL` | Ollama LLM 서버 URL | `http://ollama:11434` |
+| `LLM_MODEL` | 사용할 LLM 모델 | `qwen2.5-coder:7b` |
+| `CONCURRENCY` | 병렬 처리 동시성 수준 | `2` |
 
 ## 스캔 결과 예시
 

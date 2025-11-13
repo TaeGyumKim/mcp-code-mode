@@ -71,6 +71,7 @@ interface FileMetadata {
   // 패턴 및 기술 스택
   patterns: string[];                    // interceptor, queue, state-machine, etc
   frameworks: string[];                  // vue, nuxt3, pinia, @grpc/grpc-js, etc
+  designSystem?: string;                 // openerd-nuxt3, element-plus, vuetify, quasar, etc
   apiType?: 'grpc' | 'openapi' | 'rest' | 'none';
   apiMethods: string[];                  // getUserList, createUser, etc
 
@@ -137,6 +138,7 @@ interface ProjectMetadata {
   frameworks: string[];
   patterns: string[];
   dependencies: string[];
+  designSystem?: string;                 // 주로 사용되는 디자인 시스템 (가장 많이 사용된 시스템)
 
   // 컴포넌트 및 composable
   componentsUsed: string[];
@@ -479,6 +481,7 @@ npm run test:flow
   "category": "api",
   "patterns": ["interceptor", "error-recovery", "singleton"],
   "frameworks": ["@grpc/grpc-js", "nuxt3"],
+  "designSystem": "openerd-nuxt3",
   "apiType": "grpc",
   "apiMethods": ["getUserList", "createUser", "updateUser"],
   "complexity": "high",
@@ -509,6 +512,7 @@ npm run test:flow
   "category": "component",
   "patterns": ["slot-forwarding", "v-model", "composition-api"],
   "frameworks": ["tailwind", "openerd-nuxt3"],
+  "designSystem": "openerd-nuxt3",
   "componentsUsed": ["CommonTable", "CommonInput", "CommonPaging"],
   "composablesUsed": ["usePaging", "useAsyncData", "useRoute"],
   "vModelBindings": [
