@@ -256,14 +256,130 @@ export class LocalPackageAnalyzer {
   }
 
   /**
+   * module.ts/index.ts에서 컴포넌트 prefix 파싱
+   *
+   * Nuxt의 addComponentsDir({ path: ..., prefix: "Common" }) 패턴을 감지하여
+   * 디렉토리별 prefix를 추출합니다.
+   *
+   * 예: /components/common/ 디렉토리 → "Common" prefix
+   *     ToolTip.vue → CommonToolTip
+   */
+  private parseComponentPrefixes(files: Array<{ path: string; content: string }>): Map<string, string> {
+    const directoryPrefixes = new Map<string, string>();
+
+    // module.ts 파일 찾기
+    const moduleFiles = files.filter(file => {
+      const fileName = file.path.split(/[\\/]/).pop();
+      return fileName === 'module.ts' || fileName === 'index.ts';
+    });
+
+    for (const moduleFile of moduleFiles) {
+      try {
+        const content = moduleFile.content;
+
+        // Nuxt의 addComponentsDir 패턴 파싱
+        // 예: addComponentsDir({ path: resolve(..., "common"), prefix: "Common" })
+        const componentsDirPattern = /addComponentsDir\s*\(\s*{([^}]+)}\s*\)/g;
+        let match;
+
+        while ((match = componentsDirPattern.exec(content)) !== null) {
+          const configBlock = match[1];
+
+          // path와 prefix 추출
+          const pathMatch = configBlock.match(/path:\s*resolve\([^,]+,\s*["']([^"']+)["']\s*(?:,\s*["']([^"']+)["']\s*)*\)/);
+          const prefixMatch = configBlock.match(/prefix:\s*["'](\w+)["']/);
+
+          if (pathMatch && prefixMatch) {
+            // path의 마지막 부분을 키로 사용 (예: "common", "base", "error")
+            // resolve의 마지막 인자가 최종 디렉토리명
+            const pathParts = [];
+            for (let i = 1; i < pathMatch.length && pathMatch[i]; i++) {
+              pathParts.push(pathMatch[i]);
+            }
+
+            // 마지막 경로 세그먼트를 키로 사용 (common, base, error 등)
+            const lastPath = pathParts[pathParts.length - 1];
+            const prefix = prefixMatch[1];
+
+            if (lastPath) {
+              directoryPrefixes.set(lastPath.toLowerCase(), prefix);
+              console.log(`   📁 Directory prefix: ${lastPath}/ → ${prefix}`);
+            }
+          }
+        }
+
+        // 일반적인 export { X as Y } 패턴도 지원
+        const aliasPattern = /export\s*{([^}]+)}/g;
+        while ((match = aliasPattern.exec(content)) !== null) {
+          const exportBlock = match[1];
+          const items = exportBlock.split(',').map(item => item.trim());
+
+          for (const item of items) {
+            const asMatch = item.match(/(\w+)\s+as\s+(\w+)/);
+            if (asMatch) {
+              const [, originalName, aliasName] = asMatch;
+              // 직접 export alias는 파일명을 키로 저장
+              directoryPrefixes.set(`__direct__${originalName}`, aliasName);
+              console.log(`   🔄 Direct export: ${originalName} → ${aliasName}`);
+            }
+          }
+        }
+      } catch (error) {
+        console.warn(`   ⚠️  Failed to parse ${moduleFile.path}:`, error);
+      }
+    }
+
+    return directoryPrefixes;
+  }
+
+  /**
+   * 파일 경로에서 컴포넌트 이름과 prefix 결정
+   */
+  private getComponentNameWithPrefix(
+    filePath: string,
+    fileName: string,
+    directoryPrefixes: Map<string, string>
+  ): string {
+    // 직접 export alias 체크
+    const directAlias = directoryPrefixes.get(`__direct__${fileName}`);
+    if (directAlias) {
+      return directAlias;
+    }
+
+    // 파일 경로를 정규화 (windows/unix 경로 모두 지원)
+    const normalizedPath = filePath.replace(/\\/g, '/').toLowerCase();
+
+    // 경로를 세그먼트로 분리
+    const pathSegments = normalizedPath.split('/');
+
+    // 디렉토리 prefix 매칭 (가장 구체적인 매칭 우선)
+    for (const [dirName, prefix] of directoryPrefixes.entries()) {
+      if (dirName.startsWith('__direct__')) continue;
+
+      // 경로 세그먼트 중에 dirName이 있는지 확인
+      if (pathSegments.includes(dirName)) {
+        return `${prefix}${fileName}`;
+      }
+    }
+
+    // prefix가 없으면 원본 이름 사용
+    return fileName;
+  }
+
+  /**
    * 디자인 시스템 정보 추출
    */
   private async extractDesignSystemInfo(
     pkg: LocalPackage,
-    results: any[]
+    results: any[],
+    files: Array<{ path: string; content: string }>
   ): Promise<LocalDesignSystemInfo> {
     const components: Record<string, LocalComponentInfo> = {};
     const componentPatterns: string[] = [];
+
+    // module.ts에서 디렉토리별 component prefix 파싱
+    const directoryPrefixes = this.parseComponentPrefixes(files);
+    console.log(`   📝 Found ${directoryPrefixes.size} directory prefix configurations`);
 
     // 컴포넌트 추출
     for (const result of results) {
@@ -271,20 +387,23 @@ export class LocalPackageAnalyzer {
         const fileName = result.filePath.split(/[\\/]/).pop()?.replace(/\.(vue|tsx?)$/, '');
         if (!fileName) continue;
 
-        // 컴포넌트 카테고리 추론
-        const category = this.inferComponentCategory(fileName);
+        // 디렉토리 prefix를 적용하여 실제 컴포넌트 이름 결정
+        const exportedName = this.getComponentNameWithPrefix(result.filePath, fileName, directoryPrefixes);
 
-        components[fileName] = {
-          name: fileName,
+        // 컴포넌트 카테고리 추론
+        const category = this.inferComponentCategory(exportedName);
+
+        components[exportedName] = {
+          name: exportedName,
           description: result.features?.join(', '),
           props: result.props || [],
-          usage: `<${fileName} />`,
+          usage: `<${exportedName} />`,
           filePath: result.filePath,
           category
         };
 
         // 패턴 생성 (예: CommonTable -> /Common[A-Z]\w+/g)
-        const prefix = this.extractComponentPrefix(fileName);
+        const prefix = this.extractComponentPrefix(exportedName);
         if (prefix && !componentPatterns.includes(`/${prefix}[A-Z]\\w+/g`)) {
           componentPatterns.push(`/${prefix}[A-Z]\\w+/g`);
         }
