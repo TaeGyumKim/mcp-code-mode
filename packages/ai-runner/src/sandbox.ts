@@ -5,12 +5,14 @@ import * as guides from '../../../mcp-servers/guides/dist/index.js';
 import { MetadataAnalyzer } from '../../llm-analyzer/src/metadataAnalyzer.js';
 import * as designSystemMapping from '../../llm-analyzer/src/designSystemMapping.js';
 import * as utilityLibraryMapping from '../../llm-analyzer/src/utilityLibraryMapping.js';
+import { extractProjectContext, type ProjectContext } from './projectContext.js';
 
 export interface SandboxResult {
   ok: boolean;
   output?: any;
   logs?: string[];
   error?: string;
+  projectContext?: ProjectContext;  // 🎯 프로젝트 컨텍스트 추가
 }
 
 /**
@@ -190,10 +192,20 @@ export async function runInSandbox(code: string, timeoutMs: number = 30000): Pro
       })()
     `);
 
+    // 🎯 프로젝트 컨텍스트 자동 추출
+    let projectContext: ProjectContext | undefined;
+    try {
+      projectContext = await extractProjectContext();
+    } catch (error) {
+      // 컨텍스트 추출 실패는 무시 (선택적 기능)
+      logs.push('[INFO] Project context extraction skipped');
+    }
+
     return {
       ok: true,
       output: result,
-      logs
+      logs,
+      projectContext  // 🎯 프로젝트 컨텍스트 포함
     };
   } catch (error) {
     return {

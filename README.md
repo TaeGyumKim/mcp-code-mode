@@ -20,6 +20,7 @@
 - 🎨 **디자인 시스템 감지**: 7개 주요 UI 프레임워크 자동 감지 (openerd-nuxt3, element-plus, vuetify, quasar, primevue, ant-design-vue, naive-ui)
 - 🔧 **유틸리티 라이브러리 감지**: 9개 라이브러리 자동 감지 (vueuse, lodash, date-fns, axios, dayjs + 하이브리드 4개)
 - 📦 **로컬 패키지 시스템**: 내부 솔루션을 AI가 자동 분석하여 등록 (Git URL, node_modules, 로컬 경로 지원)
+- 🎯 **자동 프로젝트 컨텍스트**: execute 응답에 API 타입/디자인 시스템/유틸리티 정보 자동 포함
 - � **동적 지침 로딩**: 메타데이터 기반 지침 검색/병합 시스템 (클로드 스킬과 유사)
 - 🛡️ **프리플라이트 검수**: API/의존성/쓰기범위 검증 + 리스크 스코어링
 - �🔒 **안전한 실행**: vm2 샌드박스 격리
@@ -130,13 +131,49 @@ Code Mode는 LLM이 직접 tool calling을 하는 대신, **TypeScript 코드를
 
 **상세 가이드**: [docs/LOCAL_PACKAGES.md](./docs/LOCAL_PACKAGES.md)
 
-### 5. BestCase 관리
+### 5. 자동 프로젝트 컨텍스트 추출 ⭐ NEW
+
+**핵심**: MCP execute 응답에 프로젝트 정보를 자동으로 포함하여 매번 분석 필요 없이 즉시 활용
+
+- **자동 감지**: package.json에서 API 타입, 디자인 시스템, 유틸리티 라이브러리 자동 추출
+- **API 타입 감지**: gRPC, OpenAPI, REST, Mixed 자동 구분
+  - `@grpc/grpc-js` → gRPC
+  - `@openapi`, `swagger` → OpenAPI
+  - `axios`, `ky` → REST
+- **디자인 시스템 감지**: 7개 주요 UI 프레임워크 자동 인식
+- **로컬 패키지 상태**: 미분석 패키지 개수 자동 알림
+- **권장 플랜 생성**: 프로젝트 상태에 맞는 다음 단계 자동 제안
+- **자동 포함**: 모든 execute 도구 호출에 자동으로 포함됨
+
+**응답 예시**:
+```
+## 📋 Project Context
+
+**Project Path**: /projects/my-app
+
+### Recommended Plan
+
+✅ API Type: GRPC (@grpc/grpc-js, @grpc/proto-loader)
+✅ Design System: @openerd/nuxt3, element-plus - Use these components for consistency
+✅ Utility Library: @vueuse/core - Use these utilities for consistency
+
+📋 Recommended Next Steps:
+1. Run project metadata analysis if needed
+2. Check BestCase for similar projects
+3. Load relevant guides based on API type and design system
+
+---
+```
+
+> Claude는 이 정보를 매번 자동으로 받아서 프로젝트 특성에 맞는 코드를 생성합니다.
+
+### 6. BestCase 관리
 
 - **자동 저장**: 프로젝트 패턴, 샘플 코드, 점수 저장
 - **스마트 로드**: 현재 프로젝트의 BestCase 자동 로드
 - **버전 관리**: 타임스탬프 기반 버전 추적
 
-### 6. 동적 지침 로딩 시스템 (MCP 통합 완료) ⭐ NEW
+### 7. 동적 지침 로딩 시스템 (MCP 통합 완료)
 
 - **4가지 MCP 도구**: `search_guides`, `load_guide`, `combine_guides`, `execute_workflow`
 - **메타데이터 기반 검색**: scope/priority/version/tags로 관련 지침 자동 검색 (BM25-like)
@@ -147,14 +184,14 @@ Code Mode는 LLM이 직접 tool calling을 하는 대신, **TypeScript 코드를
 - **감사 추적**: 사용된 지침 id/version/scope 자동 로깅
 - **11개 지침 파일**: API, UI, 에러 처리, 워크플로우 등
 
-### 5. 점수 시스템
+### 8. 점수 시스템
 
 - **API 품질** (0-100점): gRPC/OpenAPI 사용도 평가
 - **컴포넌트 품질** (0-100점): openerd-nuxt3 활용도 평가
 - **종합 점수**: API 40% + 컴포넌트 20% + 패턴 40%
 - **티어 시스템**: S (90+), A (80-89), B (70-79), C (60-69), D (0-59)
 
-### 6. 자동화
+### 9. 자동화
 
 - **Docker 시작 시 자동 검증**: 기존 BestCase 양식 체크 및 오래된 데이터 삭제
 - **초기 AI 스캔**: 문제 있는 BestCase 발견 시 자동으로 전체 스캔 실행
