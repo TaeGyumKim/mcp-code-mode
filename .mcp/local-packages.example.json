@@ -8,12 +8,40 @@
       "packageName": "@openerd/nuxt3",
       "sourceType": "git",
       "gitUrl": "git+https://git.dev.opnd.io/common/openerd-nuxt3.git#commit=9b400392ace86d10b3efaeddfdf961fe3c9436cf",
-      "gitCommit": "9b400392ace86d10b3efaeddfdf961fe3c9436cf",
-      "analyzed": true,
-      "analyzedAt": "2025-01-13T12:00:00Z",
+      "analyzed": false,
       "version": "1.0.0",
       "description": "OpenERD internal design system and utility library for Nuxt3",
       "tags": ["design-system", "utility", "composables", "internal"]
+    },
+    {
+      "id": "internal-ui-kit",
+      "type": "design-system",
+      "name": "Internal UI Kit",
+      "packageName": "@myorg/ui-kit",
+      "sourceType": "git",
+      "gitUrl": "git+https://github.com/myorg/ui-kit.git",
+      "gitBranch": "main",
+      "analyzed": false,
+      "description": "Internal UI kit with custom components"
+    },
+    {
+      "id": "company-utils",
+      "type": "utility",
+      "name": "Company Utilities",
+      "packageName": "@company/utils",
+      "sourceType": "node_modules",
+      "analyzed": false,
+      "description": "Utility functions installed via npm/yarn"
+    },
+    {
+      "id": "local-design-system",
+      "type": "hybrid",
+      "name": "Local Design System",
+      "packageName": "@local/design-system",
+      "sourceType": "local",
+      "sourcePath": "D:/projects/design-system/src",
+      "analyzed": false,
+      "description": "Local design system under development"
     }
   ]
 }
