@@ -441,6 +441,68 @@ const handleDelete = async (id: string) => {
 }
 ```
 
+## 🐳 Docker로 자동 분석 (권장)
+
+### 독립 컨테이너로 실행
+
+로컬 패키지 분석은 무거운 작업(Git clone, AI 분석)이므로 **별도 Docker 컨테이너**에서 실행합니다.
+
+```bash
+# Docker Compose로 전체 스택 실행
+docker-compose up -d
+
+# 로컬 패키지 분석 서비스만 실행
+docker-compose up -d local-package-analyzer
+
+# 로그 확인
+docker-compose logs -f local-package-analyzer
+```
+
+### 자동 스케줄링
+
+`local-package-analyzer` 서비스는 자동으로 스케줄링됩니다:
+
+- **매일 자정 (00:00)**: 미분석 패키지만 분석 (`analyzed: false`)
+- **매주 일요일 03:00**: 전체 패키지 재분석 (최신 코드 반영)
+
+### 수동 분석 실행
+
+```bash
+# 컨테이너 내부에서 수동 실행
+docker exec local-package-analyzer tsx /app/scripts/analyze-local-packages.ts
+
+# 특정 모드로 실행
+docker exec -e ANALYSIS_MODE=all local-package-analyzer tsx /app/scripts/analyze-local-packages.ts
+```
+
+### 환경 변수 설정
+
+`.env` 파일 또는 `docker-compose.yml`에서 설정:
+
+```bash
+# 분석 모드 (unanalyzed | all | force)
+LOCAL_PACKAGE_ANALYSIS_MODE=unanalyzed
+
+# Git 인증 (Private 저장소)
+GIT_USERNAME=your-username
+GIT_PASSWORD=your-password
+GIT_TOKEN=your-token
+
+# Ollama 설정
+OLLAMA_URL=http://ollama:11434
+LLM_MODEL=qwen2.5-coder:7b
+```
+
+### 분석 결과 확인
+
+```bash
+# 실시간 로그
+docker-compose logs -f local-package-analyzer
+
+# 분석 결과 파일 확인
+cat .mcp/local-packages.json
+```
+
 ## 🔧 고급 사용법
 
 ### 1. 패키지 제거

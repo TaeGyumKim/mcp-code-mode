@@ -182,21 +182,26 @@ docker-compose down
 **실행되는 서비스:**
 - **ollama**: LLM 서버 (qwen2.5-coder:7b)
 - **mcp-code-mode**: MCP STDIO 서버 (VSCode 연동)
-- **cron-scheduler**:
+- **local-package-analyzer**: 로컬 패키지 자동 분석 (독립 컨테이너)
+  - 매일 자정: 미분석 패키지 자동 분석
+  - 매주 일요일 03:00: 전체 패키지 재분석
+  - Git 저장소 자동 clone 및 AI 분석
+- **cron-scheduler**: BestCase 자동 스캔
   - 시작 시 BestCase 검증 및 초기 AI 스캔
   - 주간 자동 스캔 (일요일 02:00)
 
 **초기화 프로세스:**
 1. 🔍 BestCase 검증: 양식 체크, 30일 이상 오래된 데이터 삭제
 2. 🤖 AI 스캔: 문제 발견 시 자동으로 전체 프로젝트 재스캔
-3. ⏰ Cron 시작: 주간 자동 스캔 스케줄 등록
+3. 🔧 로컬 패키지 분석: `.mcp/local-packages.json` 등록된 패키지 자동 분석
+4. ⏰ Cron 시작: 주간 자동 스캔 스케줄 등록
 
 **로그 확인:**
 ```bash
-# 초기화 로그 확인
-docker-compose logs cron-scheduler
+# 로컬 패키지 분석 로그
+docker-compose logs -f local-package-analyzer
 
-# 실시간 로그
+# BestCase 스캔 로그
 docker-compose logs -f cron-scheduler
 ```
 

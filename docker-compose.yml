@@ -73,6 +73,52 @@ services:
       retries: 3
       start_period: 40s
 
+  # Local Package Analyzer (독립 서비스)
+  local-package-analyzer:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: local-package-analyzer
+    volumes:
+      - ${HOST_PROJECTS_PATH}:/projects
+      - ./.mcp:/app/.mcp  # 로컬 패키지 설정 파일
+    environment:
+      - NODE_ENV=${NODE_ENV:-production}
+      - PROJECTS_PATH=${PROJECTS_PATH:-/projects}
+      - OLLAMA_URL=${OLLAMA_URL:-http://ollama:11434}
+      - LLM_MODEL=${LLM_MODEL:-qwen2.5-coder:7b}
+      - ANALYSIS_MODE=${LOCAL_PACKAGE_ANALYSIS_MODE:-unanalyzed}  # all | unanalyzed | force
+      - LOG_ERRORS=true
+      # Git 인증 (필요시)
+      - GIT_USERNAME=${GIT_USERNAME:-}
+      - GIT_PASSWORD=${GIT_PASSWORD:-}
+      - GIT_TOKEN=${GIT_TOKEN:-}
+    deploy:
+      resources:
+        limits:
+          memory: 6G
+    restart: unless-stopped
+    depends_on:
+      - ollama
+    networks:
+      - mcp-network
+    entrypoint: /bin/sh
+    command: >
+      -c "
+      echo '🔧 Local Package Analyzer starting...' &&
+      mkdir -p /var/log &&
+      touch /var/log/local-packages.log &&
+      echo '📅 Cron schedule: Daily at 00:00 (midnight) for unanalyzed packages' &&
+      echo '📅 Cron schedule: Weekly on Sunday at 03:00 AM for re-analysis (all packages)' &&
+      echo '0 0 * * * ANALYSIS_MODE=unanalyzed tsx /app/scripts/analyze-local-packages.ts >> /var/log/local-packages.log 2>&1' | crontab - &&
+      echo '0 3 * * 0 ANALYSIS_MODE=all tsx /app/scripts/analyze-local-packages.ts >> /var/log/local-packages.log 2>&1' | crontab - &&
+      cron &&
+      echo '✅ Local package analyzer ready' &&
+      echo '   - Daily scan (unanalyzed): 00:00' &&
+      echo '   - Weekly re-scan (all): Sunday 03:00' &&
+      tail -f /var/log/local-packages.log
+      "
+
   # Cron Scheduler for Auto Scan (Weekly)
   cron-scheduler:
     build:
