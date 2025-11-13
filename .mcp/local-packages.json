@@ -8,12 +8,468 @@
       "packageName": "@openerd/nuxt3",
       "sourceType": "git",
       "gitUrl": "git+https://git.dev.opnd.io/common/openerd-nuxt3.git#commit=9b400392ace86d10b3efaeddfdf961fe3c9436cf",
-      "gitCommit": "9b400392ace86d10b3efaeddfdf961fe3c9436cf",
       "analyzed": true,
-      "analyzedAt": "2025-01-13T12:00:00Z",
       "version": "1.0.0",
       "description": "OpenERD internal design system and utility library for Nuxt3",
-      "tags": ["design-system", "utility", "composables", "internal"]
+      "tags": [
+        "design-system",
+        "utility",
+        "composables",
+        "internal"
+      ],
+      "analyzedAt": "2025-11-13T11:43:43.038Z",
+      "designSystem": {
+        "componentPatterns": [
+          "/Base[A-Z]\\w+/g",
+          "/Common[A-Z]\\w+/g",
+          "/Error[A-Z]\\w+/g",
+          "/from ['\"]@openerd\\/nuxt3['\"]/g"
+        ],
+        "components": {
+          "BaseInput": {
+            "name": "BaseInput",
+            "description": "",
+            "props": [],
+            "usage": "<BaseInput />",
+            "filePath": "C:\\Users\\tgkim\\AppData\\Local\\Temp\\mcp-local-packages-openerd-nuxt3-1763034221175\\src\\runtime\\components\\default\\base\\Input.vue",
+            "category": "input"
+          },
+          "CommonAlert": {
+            "name": "CommonAlert",
+            "description": "",
+            "props": [],
+            "usage": "<CommonAlert />",
+            "filePath": "C:\\Users\\tgkim\\AppData\\Local\\Temp\\mcp-local-packages-openerd-nuxt3-1763034221175\\src\\runtime\\components\\tailwind\\common\\Alert.vue",
+            "category": "other"
+          },
+          "Error403": {
+            "name": "Error403",
+            "description": "",
+            "props": [],
+            "usage": "<Error403 />",
+            "filePath": "C:\\Users\\tgkim\\AppData\\Local\\Temp\\mcp-local-packages-openerd-nuxt3-1763034221175\\src\\runtime\\components\\tailwind\\error\\403.vue",
+            "category": "other"
+          },
+          "Error404": {
+            "name": "Error404",
+            "description": "",
+            "props": [],
+            "usage": "<Error404 />",
+            "filePath": "C:\\Users\\tgkim\\AppData\\Local\\Temp\\mcp-local-packages-openerd-nuxt3-1763034221175\\src\\runtime\\components\\tailwind\\error\\404.vue",
+            "category": "other"
+          },
+          "ErrorPage": {
+            "name": "ErrorPage",
+            "description": "",
+            "props": [],
+            "usage": "<ErrorPage />",
+            "filePath": "C:\\Users\\tgkim\\AppData\\Local\\Temp\\mcp-local-packages-openerd-nuxt3-1763034221175\\src\\runtime\\components\\tailwind\\error\\Page.vue",
+            "category": "other"
+          },
+          "BaseButton": {
+            "name": "BaseButton",
+            "description": "",
+            "props": [],
+            "usage": "<BaseButton />",
+            "filePath": "C:\\Users\\tgkim\\AppData\\Local\\Temp\\mcp-local-packages-openerd-nuxt3-1763034221175\\src\\runtime\\components\\default\\base\\Button.vue",
+            "category": "button"
+          },
+          "BaseCheckBox": {
+            "name": "BaseCheckBox",
+            "description": "",
+            "props": [],
+            "usage": "<BaseCheckBox />",
+            "filePath": "C:\\Users\\tgkim\\AppData\\Local\\Temp\\mcp-local-packages-openerd-nuxt3-1763034221175\\src\\runtime\\components\\default\\base\\CheckBox.vue",
+            "category": "other"
+          },
+          "BaseLoading": {
+            "name": "BaseLoading",
+            "description": "",
+            "props": [],
+            "usage": "<BaseLoading />",
+            "filePath": "C:\\Users\\tgkim\\AppData\\Local\\Temp\\mcp-local-packages-openerd-nuxt3-1763034221175\\src\\runtime\\components\\default\\base\\Loading.vue",
+            "category": "other"
+          },
+          "BaseRadioBox": {
+            "name": "BaseRadioBox",
+            "description": "",
+            "props": [],
+            "usage": "<BaseRadioBox />",
+            "filePath": "C:\\Users\\tgkim\\AppData\\Local\\Temp\\mcp-local-packages-openerd-nuxt3-1763034221175\\src\\runtime\\components\\default\\base\\RadioBox.vue",
+            "category": "other"
+          },
+          "BaseAlert": {
+            "name": "BaseAlert",
+            "description": "",
+            "props": [],
+            "usage": "<BaseAlert />",
+            "filePath": "C:\\Users\\tgkim\\AppData\\Local\\Temp\\mcp-local-packages-openerd-nuxt3-1763034221175\\src\\runtime\\components\\tailwind\\base\\Alert.vue",
+            "category": "other"
+          },
+          "CommonAsyncBoundary": {
+            "name": "CommonAsyncBoundary",
+            "description": "",
+            "props": [],
+            "usage": "<CommonAsyncBoundary />",
+            "filePath": "C:\\Users\\tgkim\\AppData\\Local\\Temp\\mcp-local-packages-openerd-nuxt3-1763034221175\\src\\runtime\\components\\tailwind\\common\\AsyncBoundary.vue",
+            "category": "other"
+          },
+          "CommonButton": {
+            "name": "CommonButton",
+            "description": "",
+            "props": [],
+            "usage": "<CommonButton />",
+            "filePath": "C:\\Users\\tgkim\\AppData\\Local\\Temp\\mcp-local-packages-openerd-nuxt3-1763034221175\\src\\runtime\\components\\tailwind\\common\\Button.vue",
+            "category": "button"
+          },
+          "CommonCard": {
+            "name": "CommonCard",
+            "description": "",
+            "props": [],
+            "usage": "<CommonCard />",
+            "filePath": "C:\\Users\\tgkim\\AppData\\Local\\Temp\\mcp-local-packages-openerd-nuxt3-1763034221175\\src\\runtime\\components\\tailwind\\common\\Card.vue",
+            "category": "card"
+          },
+          "CommonCardList": {
+            "name": "CommonCardList",
+            "description": "",
+            "props": [],
+            "usage": "<CommonCardList />",
+            "filePath": "C:\\Users\\tgkim\\AppData\\Local\\Temp\\mcp-local-packages-openerd-nuxt3-1763034221175\\src\\runtime\\components\\tailwind\\common\\CardList.vue",
+            "category": "table"
+          },
+          "CommonCheckAlert": {
+            "name": "CommonCheckAlert",
+            "description": "",
+            "props": [],
+            "usage": "<CommonCheckAlert />",
+            "filePath": "C:\\Users\\tgkim\\AppData\\Local\\Temp\\mcp-local-packages-openerd-nuxt3-1763034221175\\src\\runtime\\components\\tailwind\\common\\CheckAlert.vue",
+            "category": "other"
+          },
+          "CommonCheckBox": {
+            "name": "CommonCheckBox",
+            "description": "",
+            "props": [],
+            "usage": "<CommonCheckBox />",
+            "filePath": "C:\\Users\\tgkim\\AppData\\Local\\Temp\\mcp-local-packages-openerd-nuxt3-1763034221175\\src\\runtime\\components\\tailwind\\common\\CheckBox.vue",
+            "category": "other"
+          },
+          "CommonCommand": {
+            "name": "CommonCommand",
+            "description": "",
+            "props": [],
+            "usage": "<CommonCommand />",
+            "filePath": "C:\\Users\\tgkim\\AppData\\Local\\Temp\\mcp-local-packages-openerd-nuxt3-1763034221175\\src\\runtime\\components\\tailwind\\common\\Command.vue",
+            "category": "other"
+          },
+          "CommonCommandSearch": {
+            "name": "CommonCommandSearch",
+            "description": "",
+            "props": [],
+            "usage": "<CommonCommandSearch />",
+            "filePath": "C:\\Users\\tgkim\\AppData\\Local\\Temp\\mcp-local-packages-openerd-nuxt3-1763034221175\\src\\runtime\\components\\tailwind\\common\\CommandSearch.vue",
+            "category": "other"
+          },
+          "CommonDateTerm": {
+            "name": "CommonDateTerm",
+            "description": "",
+            "props": [],
+            "usage": "<CommonDateTerm />",
+            "filePath": "C:\\Users\\tgkim\\AppData\\Local\\Temp\\mcp-local-packages-openerd-nuxt3-1763034221175\\src\\runtime\\components\\tailwind\\common\\DateTerm.vue",
+            "category": "other"
+          },
+          "CommonDetailTable": {
+            "name": "CommonDetailTable",
+            "description": "",
+            "props": [],
+            "usage": "<CommonDetailTable />",
+            "filePath": "C:\\Users\\tgkim\\AppData\\Local\\Temp\\mcp-local-packages-openerd-nuxt3-1763034221175\\src\\runtime\\components\\tailwind\\common\\DetailTable.vue",
+            "category": "table"
+          },
+          "CommonDialog": {
+            "name": "CommonDialog",
+            "description": "",
+            "props": [],
+            "usage": "<CommonDialog />",
+            "filePath": "C:\\Users\\tgkim\\AppData\\Local\\Temp\\mcp-local-packages-openerd-nuxt3-1763034221175\\src\\runtime\\components\\tailwind\\common\\Dialog.vue",
+            "category": "modal"
+          },
+          "CommonEmail": {
+            "name": "CommonEmail",
+            "description": "",
+            "props": [],
+            "usage": "<CommonEmail />",
+            "filePath": "C:\\Users\\tgkim\\AppData\\Local\\Temp\\mcp-local-packages-openerd-nuxt3-1763034221175\\src\\runtime\\components\\tailwind\\common\\Email.vue",
+            "category": "other"
+          },
+          "CommonFromToPicker": {
+            "name": "CommonFromToPicker",
+            "description": "",
+            "props": [],
+            "usage": "<CommonFromToPicker />",
+            "filePath": "C:\\Users\\tgkim\\AppData\\Local\\Temp\\mcp-local-packages-openerd-nuxt3-1763034221175\\src\\runtime\\components\\tailwind\\common\\FromToPicker.vue",
+            "category": "other"
+          },
+          "CommonGroups": {
+            "name": "CommonGroups",
+            "description": "",
+            "props": [],
+            "usage": "<CommonGroups />",
+            "filePath": "C:\\Users\\tgkim\\AppData\\Local\\Temp\\mcp-local-packages-openerd-nuxt3-1763034221175\\src\\runtime\\components\\tailwind\\common\\Groups.vue",
+            "category": "other"
+          },
+          "CommonInput": {
+            "name": "CommonInput",
+            "description": "",
+            "props": [],
+            "usage": "<CommonInput />",
+            "filePath": "C:\\Users\\tgkim\\AppData\\Local\\Temp\\mcp-local-packages-openerd-nuxt3-1763034221175\\src\\runtime\\components\\tailwind\\common\\Input.vue",
+            "category": "input"
+          },
+          "CommonList": {
+            "name": "CommonList",
+            "description": "",
+            "props": [],
+            "usage": "<CommonList />",
+            "filePath": "C:\\Users\\tgkim\\AppData\\Local\\Temp\\mcp-local-packages-openerd-nuxt3-1763034221175\\src\\runtime\\components\\tailwind\\common\\List.vue",
+            "category": "table"
+          },
+          "CommonModalLayout": {
+            "name": "CommonModalLayout",
+            "description": "",
+            "props": [],
+            "usage": "<CommonModalLayout />",
+            "filePath": "C:\\Users\\tgkim\\AppData\\Local\\Temp\\mcp-local-packages-openerd-nuxt3-1763034221175\\src\\runtime\\components\\tailwind\\common\\ModalLayout.vue",
+            "category": "modal"
+          },
+          "CommonNumber": {
+            "name": "CommonNumber",
+            "description": "",
+            "props": [],
+            "usage": "<CommonNumber />",
+            "filePath": "C:\\Users\\tgkim\\AppData\\Local\\Temp\\mcp-local-packages-openerd-nuxt3-1763034221175\\src\\runtime\\components\\tailwind\\common\\Number.vue",
+            "category": "other"
+          },
+          "CommonPageIndicator": {
+            "name": "CommonPageIndicator",
+            "description": "",
+            "props": [],
+            "usage": "<CommonPageIndicator />",
+            "filePath": "C:\\Users\\tgkim\\AppData\\Local\\Temp\\mcp-local-packages-openerd-nuxt3-1763034221175\\src\\runtime\\components\\tailwind\\common\\PageIndicator.vue",
+            "category": "other"
+          },
+          "CommonPaginationTable": {
+            "name": "CommonPaginationTable",
+            "description": "",
+            "props": [],
+            "usage": "<CommonPaginationTable />",
+            "filePath": "C:\\Users\\tgkim\\AppData\\Local\\Temp\\mcp-local-packages-openerd-nuxt3-1763034221175\\src\\runtime\\components\\tailwind\\common\\PaginationTable.vue",
+            "category": "table"
+          },
+          "CommonPaging": {
+            "name": "CommonPaging",
+            "description": "",
+            "props": [],
+            "usage": "<CommonPaging />",
+            "filePath": "C:\\Users\\tgkim\\AppData\\Local\\Temp\\mcp-local-packages-openerd-nuxt3-1763034221175\\src\\runtime\\components\\tailwind\\common\\Paging.vue",
+            "category": "other"
+          },
+          "CommonPassword": {
+            "name": "CommonPassword",
+            "description": "",
+            "props": [],
+            "usage": "<CommonPassword />",
+            "filePath": "C:\\Users\\tgkim\\AppData\\Local\\Temp\\mcp-local-packages-openerd-nuxt3-1763034221175\\src\\runtime\\components\\tailwind\\common\\Password.vue",
+            "category": "other"
+          },
+          "CommonPhone": {
+            "name": "CommonPhone",
+            "description": "",
+            "props": [],
+            "usage": "<CommonPhone />",
+            "filePath": "C:\\Users\\tgkim\\AppData\\Local\\Temp\\mcp-local-packages-openerd-nuxt3-1763034221175\\src\\runtime\\components\\tailwind\\common\\Phone.vue",
+            "category": "other"
+          },
+          "CommonPromiseAlert": {
+            "name": "CommonPromiseAlert",
+            "description": "",
+            "props": [],
+            "usage": "<CommonPromiseAlert />",
+            "filePath": "C:\\Users\\tgkim\\AppData\\Local\\Temp\\mcp-local-packages-openerd-nuxt3-1763034221175\\src\\runtime\\components\\tailwind\\common\\PromiseAlert.vue",
+            "category": "other"
+          },
+          "CommonRadioBox": {
+            "name": "CommonRadioBox",
+            "description": "",
+            "props": [],
+            "usage": "<CommonRadioBox />",
+            "filePath": "C:\\Users\\tgkim\\AppData\\Local\\Temp\\mcp-local-packages-openerd-nuxt3-1763034221175\\src\\runtime\\components\\tailwind\\common\\RadioBox.vue",
+            "category": "other"
+          },
+          "CommonSearch": {
+            "name": "CommonSearch",
+            "description": "",
+            "props": [],
+            "usage": "<CommonSearch />",
+            "filePath": "C:\\Users\\tgkim\\AppData\\Local\\Temp\\mcp-local-packages-openerd-nuxt3-1763034221175\\src\\runtime\\components\\tailwind\\common\\Search.vue",
+            "category": "other"
+          },
+          "CommonSelect": {
+            "name": "CommonSelect",
+            "description": "",
+            "props": [],
+            "usage": "<CommonSelect />",
+            "filePath": "C:\\Users\\tgkim\\AppData\\Local\\Temp\\mcp-local-packages-openerd-nuxt3-1763034221175\\src\\runtime\\components\\tailwind\\common\\Select.vue",
+            "category": "select"
+          },
+          "CommonSocialSecurityNumber": {
+            "name": "CommonSocialSecurityNumber",
+            "description": "",
+            "props": [],
+            "usage": "<CommonSocialSecurityNumber />",
+            "filePath": "C:\\Users\\tgkim\\AppData\\Local\\Temp\\mcp-local-packages-openerd-nuxt3-1763034221175\\src\\runtime\\components\\tailwind\\common\\SocialSecurityNumber.vue",
+            "category": "other"
+          },
+          "CommonTable": {
+            "name": "CommonTable",
+            "description": "",
+            "props": [],
+            "usage": "<CommonTable />",
+            "filePath": "C:\\Users\\tgkim\\AppData\\Local\\Temp\\mcp-local-packages-openerd-nuxt3-1763034221175\\src\\runtime\\components\\tailwind\\common\\Table.vue",
+            "category": "table"
+          },
+          "CommonTipTapBoard": {
+            "name": "CommonTipTapBoard",
+            "description": "",
+            "props": [],
+            "usage": "<CommonTipTapBoard />",
+            "filePath": "C:\\Users\\tgkim\\AppData\\Local\\Temp\\mcp-local-packages-openerd-nuxt3-1763034221175\\src\\runtime\\components\\tailwind\\common\\TipTapBoard.vue",
+            "category": "other"
+          },
+          "CommonTipTapEditor": {
+            "name": "CommonTipTapEditor",
+            "description": "",
+            "props": [],
+            "usage": "<CommonTipTapEditor />",
+            "filePath": "C:\\Users\\tgkim\\AppData\\Local\\Temp\\mcp-local-packages-openerd-nuxt3-1763034221175\\src\\runtime\\components\\tailwind\\common\\TipTapEditor.vue",
+            "category": "other"
+          },
+          "CommonToolTip": {
+            "name": "CommonToolTip",
+            "description": "",
+            "props": [],
+            "usage": "<CommonToolTip />",
+            "filePath": "C:\\Users\\tgkim\\AppData\\Local\\Temp\\mcp-local-packages-openerd-nuxt3-1763034221175\\src\\runtime\\components\\tailwind\\common\\ToolTip.vue",
+            "category": "other"
+          },
+          "ErrorMessage": {
+            "name": "ErrorMessage",
+            "description": "",
+            "props": [],
+            "usage": "<ErrorMessage />",
+            "filePath": "C:\\Users\\tgkim\\AppData\\Local\\Temp\\mcp-local-packages-openerd-nuxt3-1763034221175\\src\\runtime\\components\\tailwind\\error\\Message.vue",
+            "category": "other"
+          }
+        },
+        "docsUrl": "OpenERD internal design system and utility library for Nuxt3"
+      },
+      "utilityLibrary": {
+        "functionPatterns": [
+          "/use[A-Z]\\w+/g",
+          "/from ['\"]@openerd\\/nuxt3['\"]/g"
+        ],
+        "functions": {
+          "useEmail": {
+            "name": "useEmail",
+            "category": "utility",
+            "description": "",
+            "usage": "const result = useEmail()",
+            "params": [],
+            "filePath": "C:\\Users\\tgkim\\AppData\\Local\\Temp\\mcp-local-packages-openerd-nuxt3-1763034221175\\src\\runtime\\composables\\input\\useEmail.ts"
+          },
+          "useInputState": {
+            "name": "useInputState",
+            "category": "state",
+            "description": "",
+            "usage": "const result = useInputState()",
+            "params": [],
+            "filePath": "C:\\Users\\tgkim\\AppData\\Local\\Temp\\mcp-local-packages-openerd-nuxt3-1763034221175\\src\\runtime\\composables\\input\\useInputState.ts"
+          },
+          "useNumber": {
+            "name": "useNumber",
+            "category": "utility",
+            "description": "",
+            "usage": "const result = useNumber()",
+            "params": [],
+            "filePath": "C:\\Users\\tgkim\\AppData\\Local\\Temp\\mcp-local-packages-openerd-nuxt3-1763034221175\\src\\runtime\\composables\\input\\useNumber.ts"
+          },
+          "usePassword": {
+            "name": "usePassword",
+            "category": "utility",
+            "description": "",
+            "usage": "const result = usePassword()",
+            "params": [],
+            "filePath": "C:\\Users\\tgkim\\AppData\\Local\\Temp\\mcp-local-packages-openerd-nuxt3-1763034221175\\src\\runtime\\composables\\input\\usePassword.ts"
+          },
+          "usePhone": {
+            "name": "usePhone",
+            "category": "utility",
+            "description": "",
+            "usage": "const result = usePhone()",
+            "params": [],
+            "filePath": "C:\\Users\\tgkim\\AppData\\Local\\Temp\\mcp-local-packages-openerd-nuxt3-1763034221175\\src\\runtime\\composables\\input\\usePhone.ts"
+          },
+          "useSocialSecurityNumber": {
+            "name": "useSocialSecurityNumber",
+            "category": "utility",
+            "description": "",
+            "usage": "const result = useSocialSecurityNumber()",
+            "params": [],
+            "filePath": "C:\\Users\\tgkim\\AppData\\Local\\Temp\\mcp-local-packages-openerd-nuxt3-1763034221175\\src\\runtime\\composables\\input\\useSocialSecurityNumber.ts"
+          },
+          "users": {
+            "name": "users",
+            "category": "utility",
+            "description": "",
+            "usage": "const result = users()",
+            "params": [],
+            "filePath": "C:\\Users\\tgkim\\AppData\\Local\\Temp\\mcp-local-packages-openerd-nuxt3-1763034221175\\src\\runtime\\composables\\store\\axios\\users.ts"
+          },
+          "useAlert": {
+            "name": "useAlert",
+            "category": "ui",
+            "description": "",
+            "usage": "const result = useAlert()",
+            "params": [],
+            "filePath": "C:\\Users\\tgkim\\AppData\\Local\\Temp\\mcp-local-packages-openerd-nuxt3-1763034221175\\src\\runtime\\composables\\useAlert.ts"
+          },
+          "useValidate": {
+            "name": "useValidate",
+            "category": "validation",
+            "description": "",
+            "usage": "const result = useValidate()",
+            "params": [],
+            "filePath": "C:\\Users\\tgkim\\AppData\\Local\\Temp\\mcp-local-packages-openerd-nuxt3-1763034221175\\src\\runtime\\composables\\useValidate.ts"
+          },
+          "useFloatingCore": {
+            "name": "useFloatingCore",
+            "category": "utility",
+            "description": "",
+            "usage": "const result = useFloatingCore()",
+            "params": [],
+            "filePath": "C:\\Users\\tgkim\\AppData\\Local\\Temp\\mcp-local-packages-openerd-nuxt3-1763034221175\\src\\runtime\\composables\\utils\\useFloatingCore.ts"
+          },
+          "useTeleportCore": {
+            "name": "useTeleportCore",
+            "category": "utility",
+            "description": "",
+            "usage": "const result = useTeleportCore()",
+            "params": [],
+            "filePath": "C:\\Users\\tgkim\\AppData\\Local\\Temp\\mcp-local-packages-openerd-nuxt3-1763034221175\\src\\runtime\\composables\\utils\\useTeleportCore.ts"
+          }
+        },
+        "docsUrl": "OpenERD internal design system and utility library for Nuxt3"
+      }
     }
   ]
 }
