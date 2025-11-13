@@ -75,11 +75,14 @@ Code Mode는 LLM이 직접 tool calling을 하는 대신, **TypeScript 코드를
 **핵심**: 프로젝트의 디자인 시스템을 자동 감지하여 일관된 코드 생성
 
 - **자동 감지**: 7개 주요 UI 프레임워크 지원 (openerd-nuxt3, element-plus, vuetify, quasar, primevue, ant-design-vue, naive-ui)
-- **가이드 자동 로드**: 감지된 디자인 시스템의 컴포넌트 사용법 가이드 자동 포함
+- **컴포넌트 매핑**: 디자인 시스템별 컴포넌트 정보 제공 (이름, 사용법, Props 등)
+- **가이드 우선순위**: 검색 시 디자인 시스템 관련 가이드 +25~40점 부스트
 - **일관성 유지**: 프로젝트의 기존 디자인 시스템에 맞는 컴포넌트 자동 선택
   - `openerd-nuxt3` → CommonTable, CommonButton 사용
   - `element-plus` → ElTable, ElButton 사용
   - `vuetify` → VDataTable, VBtn 사용
+
+**상세 가이드**: [docs/DESIGN_SYSTEM_USAGE.md](./docs/DESIGN_SYSTEM_USAGE.md)
 
 ### 3. BestCase 관리
 

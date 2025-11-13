@@ -153,6 +153,7 @@ export interface SearchGuidesInput {
   apiType?: 'grpc' | 'openapi' | 'any';
   scope?: 'project' | 'repo' | 'org' | 'global';
   mandatoryIds?: string[];  // 🔑 필수 지침 ID (키워드 매칭 무관)
+  designSystem?: string;     // 🎨 디자인 시스템 ID (검색 우선순위 부스트)
 }
 
 export interface SearchGuidesOutput {
@@ -242,27 +243,46 @@ export async function searchGuides(input: SearchGuidesInput): Promise<SearchGuid
       score += 20;
     }
     
-    // 3. 키워드 매칭 (태그 +15점, 요약/내용 +10점)
+    // 3. 디자인 시스템 매칭 (+40점) 🎨 NEW
+    if (input.designSystem) {
+      const lowerDesignSystem = input.designSystem.toLowerCase();
+
+      // ID 완전 매칭
+      if (guide.id === input.designSystem || guide.id === `${input.designSystem}-guide`) {
+        score += 40;
+      }
+      // 태그 매칭
+      else if (guide.tags.some(tag => tag.toLowerCase().includes(lowerDesignSystem))) {
+        score += 35;
+      }
+      // 요약/내용 매칭
+      else if (guide.summary.toLowerCase().includes(lowerDesignSystem) ||
+               guide.content.toLowerCase().includes(lowerDesignSystem)) {
+        score += 25;
+      }
+    }
+
+    // 4. 키워드 매칭 (태그 +15점, 요약/내용 +10점)
     for (const keyword of input.keywords) {
       const lowerKeyword = keyword.toLowerCase();
-      
+
       // 태그 매칭
       if (guide.tags.some(tag => tag.toLowerCase().includes(lowerKeyword))) {
         score += 15;
       }
-      
+
       // 요약 매칭
       if (guide.summary.toLowerCase().includes(lowerKeyword)) {
         score += 10;
       }
-      
+
       // 내용 매칭
       if (guide.content.toLowerCase().includes(lowerKeyword)) {
         score += 5;
       }
     }
     
-    // 4. Priority 반영 (+priority/10점)
+    // 5. Priority 반영 (+priority/10점)
     score += guide.priority / 10;
     
     return {

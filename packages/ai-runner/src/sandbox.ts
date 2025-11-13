@@ -3,6 +3,7 @@ import * as filesystem from '../../../mcp-servers/filesystem/index.js';
 import * as bestcase from '../../../mcp-servers/bestcase/index.js';
 import * as guides from '../../../mcp-servers/guides/dist/index.js';
 import { MetadataAnalyzer } from '../../llm-analyzer/src/metadataAnalyzer.js';
+import * as designSystemMapping from '../../llm-analyzer/src/designSystemMapping.js';
 
 export interface SandboxResult {
   ok: boolean;
@@ -56,7 +57,49 @@ export async function runInSandbox(code: string, timeoutMs: number = 30000): Pro
            */
           createAnalyzer: (config: { ollamaUrl: string; model: string }) => {
             return new MetadataAnalyzer(config);
-          }
+          },
+
+          /**
+           * 디자인 시스템 정보 가져오기
+           *
+           * @example
+           * const dsInfo = metadata.getDesignSystemInfo('openerd-nuxt3');
+           * console.log(dsInfo.components.table.name); // "CommonTable"
+           */
+          getDesignSystemInfo: designSystemMapping.getDesignSystemInfo,
+
+          /**
+           * 특정 컴포넌트 타입에 대한 디자인 시스템 컴포넌트 가져오기
+           *
+           * @example
+           * const tableComponent = metadata.getComponentForDesignSystem('openerd-nuxt3', 'table');
+           * console.log(tableComponent.name); // "CommonTable"
+           * console.log(tableComponent.usage); // "<CommonTable :data="items" ... />"
+           */
+          getComponentForDesignSystem: designSystemMapping.getComponentForDesignSystem,
+
+          /**
+           * 지원되는 모든 디자인 시스템 ID 목록
+           *
+           * @example
+           * const systems = metadata.getSupportedDesignSystems();
+           * // ['openerd-nuxt3', 'element-plus', 'vuetify', ...]
+           */
+          getSupportedDesignSystems: designSystemMapping.getSupportedDesignSystems,
+
+          /**
+           * 디자인 시스템의 컴포넌트 매핑 가져오기
+           *
+           * @example
+           * const components = metadata.getComponentMap('openerd-nuxt3');
+           * // { table: 'CommonTable', button: 'CommonButton', ... }
+           */
+          getComponentMap: designSystemMapping.getComponentMap,
+
+          /**
+           * 모든 디자인 시스템 정보
+           */
+          DESIGN_SYSTEMS: designSystemMapping.DESIGN_SYSTEMS
         },
 
         // Console API
