@@ -7,6 +7,7 @@
 
 import { OllamaClient } from './ollamaClient.js';
 import { MetadataPrompts } from './metadataPrompts.js';
+import { LocalPackageManager } from './localPackageManager.js';
 import type {
   FileMetadata,
   ComponentMetadata,
@@ -18,6 +19,9 @@ import type {
 export class MetadataAnalyzer {
   private llm: OllamaClient;
   private model: string;
+  private localPackageManager: LocalPackageManager;
+  private localDesignSystemPatterns: Record<string, RegExp[]> | null = null;
+  private localUtilityLibraryPatterns: Record<string, RegExp[]> | null = null;
 
   constructor(config?: { ollamaUrl?: string; model?: string; concurrency?: number }) {
     const ollamaUrl = config?.ollamaUrl || 'http://localhost:11434';
@@ -25,6 +29,19 @@ export class MetadataAnalyzer {
 
     this.llm = new OllamaClient(ollamaUrl);
     this.model = model;
+    this.localPackageManager = new LocalPackageManager();
+  }
+
+  /**
+   * 로컬 패키지 패턴 로드 (lazy loading)
+   */
+  private async loadLocalPackagePatterns(): Promise<void> {
+    if (this.localDesignSystemPatterns === null) {
+      this.localDesignSystemPatterns = await this.localPackageManager.getDesignSystemPatterns();
+    }
+    if (this.localUtilityLibraryPatterns === null) {
+      this.localUtilityLibraryPatterns = await this.localPackageManager.getUtilityLibraryPatterns();
+    }
   }
 
   /**
@@ -66,8 +83,8 @@ export class MetadataAnalyzer {
         category: this.inferCategory(filePath),
         patterns: result.patterns || [],
         frameworks: result.frameworks || [],
-        designSystem: result.designSystem || this.detectDesignSystem(content),
-        utilityLibrary: result.utilityLibrary || this.detectUtilityLibrary(content),
+        designSystem: result.designSystem || await this.detectDesignSystem(content),
+        utilityLibrary: result.utilityLibrary || await this.detectUtilityLibrary(content),
         apiType: result.apiType,
         apiMethods: result.apiMethods || [],
         complexity: result.complexity || 'medium',
@@ -85,7 +102,7 @@ export class MetadataAnalyzer {
       };
     } catch (error) {
       console.error(`File metadata extraction failed for ${filePath}:`, error);
-      return this.getDefaultFileMetadata(filePath, content);
+      return await this.getDefaultFileMetadata(filePath, content);
     }
   }
 
@@ -111,8 +128,8 @@ export class MetadataAnalyzer {
         category: 'component',
         patterns: result.patterns || [],
         frameworks: result.frameworks || [],
-        designSystem: result.designSystem || this.detectDesignSystem(fullContent),
-        utilityLibrary: result.utilityLibrary || this.detectUtilityLibrary(fullContent),
+        designSystem: result.designSystem || await this.detectDesignSystem(fullContent),
+        utilityLibrary: result.utilityLibrary || await this.detectUtilityLibrary(fullContent),
         componentsUsed: result.componentsUsed || [],
         composablesUsed: result.composablesUsed || [],
         vModelBindings: result.vModelBindings || [],
@@ -133,7 +150,7 @@ export class MetadataAnalyzer {
       };
     } catch (error) {
       console.error(`Component metadata extraction failed for ${filePath}:`, error);
-      return this.getDefaultComponentMetadata(filePath, templateContent, scriptContent);
+      return await this.getDefaultComponentMetadata(filePath, templateContent, scriptContent);
     }
   }
 
@@ -416,45 +433,44 @@ export class MetadataAnalyzer {
   /**
    * 디자인 시스템 감지
    * 환경 변수 DESIGN_SYSTEMS에서 목록을 가져와 코드에서 감지
+   * + 로컬 패키지도 함께 감지
    */
-  private detectDesignSystem(content: string): string | undefined {
-    const designSystemsStr = process.env.DESIGN_SYSTEMS || 'openerd-nuxt3,element-plus,vuetify,quasar,primevue,ant-design-vue,naive-ui';
-    const designSystems = designSystemsStr.split(',').map(ds => ds.trim());
+  private async detectDesignSystem(content: string): Promise<string | undefined> {
+    // 로컬 패키지 패턴 로드
+    await this.loadLocalPackagePatterns();
 
-    // 컴포넌트 사용 패턴 감지
-    const patterns: Record<string, RegExp[]> = {
-      'openerd-nuxt3': [
-        /Common[A-Z]\w+/g,  // CommonTable, CommonButton, etc
-        /from ['"]@openerd\/nuxt3['"]/g,
-        /openerd-nuxt3/g
-      ],
+    const designSystemsStr = process.env.DESIGN_SYSTEMS || 'element-plus,vuetify,quasar,primevue,ant-design-vue,naive-ui';
+    const publicDesignSystems = designSystemsStr.split(',').map(ds => ds.trim());
+
+    // 공개 패키지 패턴 감지
+    const publicPatterns: Record<string, RegExp[]> = {
       'element-plus': [
-        /El[A-Z]\w+/g,  // ElButton, ElTable, etc
+        /El[A-Z]\w+/g,
         /from ['"]element-plus['"]/g,
         /element-plus/g
       ],
       'vuetify': [
-        /V[A-Z]\w+/g,  // VBtn, VCard, etc
+        /V[A-Z]\w+/g,
         /from ['"]vuetify['"]/g,
         /vuetify/g
       ],
       'quasar': [
-        /Q[A-Z]\w+/g,  // QBtn, QCard, etc
+        /Q[A-Z]\w+/g,
         /from ['"]quasar['"]/g,
         /quasar/g
       ],
       'primevue': [
-        /Prime[A-Z]\w+/g,  // PrimeButton, etc
+        /Prime[A-Z]\w+/g,
         /from ['"]primevue['"]/g,
         /primevue/g
       ],
       'ant-design-vue': [
-        /A[A-Z]\w+/g,  // AButton, ATable, etc
+        /A[A-Z]\w+/g,
         /from ['"]ant-design-vue['"]/g,
         /ant-design-vue/g
       ],
       'naive-ui': [
-        /N[A-Z]\w+/g,  // NButton, NCard, etc
+        /N[A-Z]\w+/g,
         /from ['"]naive-ui['"]/g,
         /naive-ui/g
       ]
@@ -462,8 +478,10 @@ export class MetadataAnalyzer {
 
     // 각 디자인 시스템별로 매칭 점수 계산
     const scores: Record<string, number> = {};
-    for (const ds of designSystems) {
-      const dsPatterns = patterns[ds];
+
+    // 공개 패키지 감지
+    for (const ds of publicDesignSystems) {
+      const dsPatterns = publicPatterns[ds];
       if (!dsPatterns) continue;
 
       let score = 0;
@@ -474,6 +492,20 @@ export class MetadataAnalyzer {
         }
       }
       scores[ds] = score;
+    }
+
+    // 로컬 패키지 감지
+    if (this.localDesignSystemPatterns) {
+      for (const [localId, localPatterns] of Object.entries(this.localDesignSystemPatterns)) {
+        let score = 0;
+        for (const pattern of localPatterns) {
+          const matches = content.match(pattern);
+          if (matches) {
+            score += matches.length;
+          }
+        }
+        scores[localId] = score;
+      }
     }
 
     // 가장 높은 점수의 디자인 시스템 반환
@@ -487,21 +519,25 @@ export class MetadataAnalyzer {
   /**
    * 유틸리티 라이브러리 감지
    * 환경 변수 UTILITY_LIBRARIES에서 목록을 가져와 코드에서 감지
+   * + 로컬 패키지도 함께 감지
    */
-  private detectUtilityLibrary(content: string): string | undefined {
-    const utilityLibrariesStr = process.env.UTILITY_LIBRARIES || 'vueuse,lodash,date-fns,axios,dayjs';
-    const utilityLibraries = utilityLibrariesStr.split(',').map(lib => lib.trim());
+  private async detectUtilityLibrary(content: string): Promise<string | undefined> {
+    // 로컬 패키지 패턴 로드
+    await this.loadLocalPackagePatterns();
 
-    // 라이브러리 사용 패턴 감지
-    const patterns: Record<string, RegExp[]> = {
+    const utilityLibrariesStr = process.env.UTILITY_LIBRARIES || 'vueuse,lodash,date-fns,axios,dayjs,element-plus,vuetify,quasar';
+    const publicLibraries = utilityLibrariesStr.split(',').map(lib => lib.trim());
+
+    // 공개 라이브러리 패턴 감지
+    const publicPatterns: Record<string, RegExp[]> = {
       'vueuse': [
-        /use[A-Z]\w+/g,  // useLocalStorage, useMouse, useFetch, etc
+        /use[A-Z]\w+/g,
         /from ['"]@vueuse\/core['"]/g,
         /from ['"]@vueuse\/[^'"]+['"]/g,
         /@vueuse/g
       ],
       'lodash': [
-        /_\.[a-z]+/g,  // _.debounce, _.get, _.chunk, etc
+        /_\.[a-z]+/g,
         /from ['"]lodash['"]/g,
         /import .+ from ['"]lodash\/[^'"]+['"]/g,
         /lodash/g
@@ -516,7 +552,7 @@ export class MetadataAnalyzer {
         /differenceInDays\(/g
       ],
       'axios': [
-        /axios\./g,  // axios.get, axios.post, etc
+        /axios\./g,
         /from ['"]axios['"]/g,
         /import axios/g,
         /\.get\(/g,
@@ -525,19 +561,39 @@ export class MetadataAnalyzer {
         /\.delete\(/g
       ],
       'dayjs': [
-        /dayjs\(/g,  // dayjs(), dayjs().format(), etc
+        /dayjs\(/g,
         /from ['"]dayjs['"]/g,
         /import dayjs/g,
         /\.format\(/g,
         /\.add\(/g,
         /\.subtract\(/g
+      ],
+      // 하이브리드 패키지 (공개)
+      'element-plus': [
+        /useFormItem/g,
+        /useLocale/g,
+        /useSize/g,
+        /from ['"]element-plus['"]/g
+      ],
+      'vuetify': [
+        /useDisplay/g,
+        /useTheme/g,
+        /useLayout/g,
+        /from ['"]vuetify['"]/g
+      ],
+      'quasar': [
+        /useQuasar/g,
+        /useDialogPluginComponent/g,
+        /from ['"]quasar['"]/g
       ]
     };
 
     // 각 유틸리티 라이브러리별로 매칭 점수 계산
     const scores: Record<string, number> = {};
-    for (const lib of utilityLibraries) {
-      const libPatterns = patterns[lib];
+
+    // 공개 패키지 감지
+    for (const lib of publicLibraries) {
+      const libPatterns = publicPatterns[lib];
       if (!libPatterns) continue;
 
       let score = 0;
@@ -548,6 +604,20 @@ export class MetadataAnalyzer {
         }
       }
       scores[lib] = score;
+    }
+
+    // 로컬 패키지 감지
+    if (this.localUtilityLibraryPatterns) {
+      for (const [localId, localPatterns] of Object.entries(this.localUtilityLibraryPatterns)) {
+        let score = 0;
+        for (const pattern of localPatterns) {
+          const matches = content.match(pattern);
+          if (matches) {
+            score += matches.length;
+          }
+        }
+        scores[localId] = score;
+      }
     }
 
     // 가장 높은 점수의 유틸리티 라이브러리 반환
@@ -561,14 +631,14 @@ export class MetadataAnalyzer {
   /**
    * 기본 파일 메타데이터
    */
-  private getDefaultFileMetadata(filePath: string, content: string): FileMetadata {
+  private async getDefaultFileMetadata(filePath: string, content: string): Promise<FileMetadata> {
     return {
       filePath,
       category: this.inferCategory(filePath),
       patterns: [],
       frameworks: [],
-      designSystem: this.detectDesignSystem(content),
-      utilityLibrary: this.detectUtilityLibrary(content),
+      designSystem: await this.detectDesignSystem(content),
+      utilityLibrary: await this.detectUtilityLibrary(content),
       apiMethods: [],
       complexity: 'low',
       reusability: 'low',
@@ -587,19 +657,19 @@ export class MetadataAnalyzer {
   /**
    * 기본 컴포넌트 메타데이터
    */
-  private getDefaultComponentMetadata(
+  private async getDefaultComponentMetadata(
     filePath: string,
     templateContent: string,
     scriptContent: string
-  ): ComponentMetadata {
+  ): Promise<ComponentMetadata> {
     const fullContent = templateContent + scriptContent;
     return {
       filePath,
       category: 'component',
       patterns: [],
       frameworks: [],
-      designSystem: this.detectDesignSystem(fullContent),
-      utilityLibrary: this.detectUtilityLibrary(fullContent),
+      designSystem: await this.detectDesignSystem(fullContent),
+      utilityLibrary: await this.detectUtilityLibrary(fullContent),
       componentsUsed: [],
       composablesUsed: [],
       vModelBindings: [],

@@ -1,0 +1,124 @@
+{
+  "version": "1.0.0",
+  "localPackages": [
+    {
+      "id": "openerd-nuxt3",
+      "type": "hybrid",
+      "name": "OpenERD Nuxt3",
+      "packageName": "@openerd/nuxt3",
+      "sourcePath": "/projects/openerd-nuxt3/src",
+      "analyzed": true,
+      "analyzedAt": "2025-01-13T12:00:00Z",
+      "version": "1.0.0",
+      "description": "OpenERD internal design system and utility library for Nuxt3",
+      "tags": ["design-system", "utility", "composables", "internal"],
+
+      "designSystem": {
+        "componentPatterns": [
+          "/Common[A-Z]\\w+/g",
+          "/from ['\"]{@openerd\\/nuxt3}['\"]/g"
+        ],
+        "components": {
+          "CommonTable": {
+            "name": "CommonTable",
+            "description": "Data table component with sorting, filtering, and pagination",
+            "category": "table",
+            "props": ["data", "columns", "loading", "total", "page", "pageSize"],
+            "usage": "<CommonTable :data=\"items\" :columns=\"columns\" @row-click=\"handleClick\" />",
+            "filePath": "/projects/openerd-nuxt3/src/components/CommonTable.vue"
+          },
+          "CommonButton": {
+            "name": "CommonButton",
+            "description": "Button component with various styles and sizes",
+            "category": "button",
+            "props": ["type", "size", "loading", "disabled"],
+            "usage": "<CommonButton type=\"primary\" @click=\"handleClick\">Submit</CommonButton>",
+            "filePath": "/projects/openerd-nuxt3/src/components/CommonButton.vue"
+          },
+          "CommonInput": {
+            "name": "CommonInput",
+            "description": "Input field component with validation",
+            "category": "input",
+            "props": ["modelValue", "placeholder", "type", "disabled", "rules"],
+            "usage": "<CommonInput v-model=\"value\" placeholder=\"Enter text\" />",
+            "filePath": "/projects/openerd-nuxt3/src/components/CommonInput.vue"
+          },
+          "CommonModal": {
+            "name": "CommonModal",
+            "description": "Modal dialog component",
+            "category": "modal",
+            "props": ["visible", "title", "width", "closable"],
+            "usage": "<CommonModal v-model:visible=\"showModal\" title=\"Dialog\">Content</CommonModal>",
+            "filePath": "/projects/openerd-nuxt3/src/components/CommonModal.vue"
+          }
+        },
+        "docsUrl": "https://openerd.com/docs"
+      },
+
+      "utilityLibrary": {
+        "functionPatterns": [
+          "/use[A-Z]\\w+/g",
+          "/format[A-Z]\\w+/g",
+          "/from ['\"]{@openerd\\/nuxt3}['\"]/g"
+        ],
+        "functions": {
+          "useTable": {
+            "name": "useTable",
+            "category": "state",
+            "description": "Table state management composable",
+            "usage": "const { data, loading, refresh } = useTable(fetchFunction)",
+            "params": ["fetchFunction", "options"],
+            "returnType": "{ data, loading, refresh, error }",
+            "filePath": "/projects/openerd-nuxt3/src/composables/useTable.ts"
+          },
+          "useForm": {
+            "name": "useForm",
+            "category": "state",
+            "description": "Form state management composable",
+            "usage": "const { values, errors, handleSubmit } = useForm(schema)",
+            "params": ["schema", "options"],
+            "returnType": "{ values, errors, handleSubmit, reset }",
+            "filePath": "/projects/openerd-nuxt3/src/composables/useForm.ts"
+          },
+          "useModal": {
+            "name": "useModal",
+            "category": "state",
+            "description": "Modal state management composable",
+            "usage": "const { isOpen, open, close } = useModal()",
+            "params": ["options"],
+            "returnType": "{ isOpen, open, close, toggle }",
+            "filePath": "/projects/openerd-nuxt3/src/composables/useModal.ts"
+          },
+          "useAlert": {
+            "name": "useAlert",
+            "category": "ui",
+            "description": "Alert/Toast notification composable",
+            "usage": "const { success, error, warning, info } = useAlert()",
+            "params": [],
+            "returnType": "{ success, error, warning, info }",
+            "filePath": "/projects/openerd-nuxt3/src/composables/useAlert.ts"
+          },
+          "formatDate": {
+            "name": "formatDate",
+            "category": "utility",
+            "description": "Date formatting utility",
+            "usage": "formatDate(date, 'YYYY-MM-DD')",
+            "params": ["date", "format"],
+            "returnType": "string",
+            "filePath": "/projects/openerd-nuxt3/src/utils/format.ts"
+          },
+          "formatNumber": {
+            "name": "formatNumber",
+            "category": "utility",
+            "description": "Number formatting utility",
+            "usage": "formatNumber(1234.56, { decimals: 2 })",
+            "params": ["number", "options"],
+            "returnType": "string",
+            "filePath": "/projects/openerd-nuxt3/src/utils/format.ts"
+          }
+        },
+        "docsUrl": "https://openerd.com/docs"
+      }
+    }
+  ]
+}
