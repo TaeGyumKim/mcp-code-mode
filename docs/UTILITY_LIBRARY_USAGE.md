@@ -4,7 +4,9 @@
 
 MCP 작업 시 프로젝트의 유틸리티 라이브러리를 **자동 감지**하여, 해당 라이브러리가 제공하는 **함수, 컴포저블, API를 참고**하여 일관된 코드를 생성합니다.
 
-## 🔧 지원 유틸리티 라이브러리 (5개)
+## 🔧 지원 유틸리티 라이브러리 (9개)
+
+### 순수 유틸리티 라이브러리 (5개)
 
 | 유틸리티 라이브러리 | 패키지 | 주요 기능 | 문서 |
 |--------------|--------|----------|------|
@@ -13,6 +15,27 @@ MCP 작업 시 프로젝트의 유틸리티 라이브러리를 **자동 감지**
 | **date-fns** | `date-fns` | Date manipulation (format, parseISO, addDays) | [Docs](https://date-fns.org) |
 | **axios** | `axios` | HTTP client (get, post, put, delete) | [Docs](https://axios-http.com) |
 | **dayjs** | `dayjs` | Date library (format, add, subtract) | [Docs](https://day.js.org) |
+
+### 🎨 하이브리드 패키지 (4개) - 디자인 시스템 + 유틸리티
+
+**하나의 패키지가 컴포넌트(디자인 시스템)와 composables/utils(유틸리티)를 모두 제공하는 경우**
+
+| 패키지 | 컴포넌트 | Composables/Utils | 문서 |
+|--------|---------|-------------------|------|
+| **openerd-nuxt3** | CommonTable, CommonButton, CommonInput | useTable, useForm, useModal, usePagination, useAlert | [Docs](https://openerd.com/docs) |
+| **element-plus** | ElTable, ElButton, ElInput | useFormItem, useLocale, useSize, useZIndex | [Docs](https://element-plus.org) |
+| **vuetify** | VDataTable, VBtn, VTextField | useDisplay, useTheme, useLayout, useLocale | [Docs](https://vuetifyjs.com) |
+| **quasar** | QTable, QBtn, QInput | useQuasar, useDialogPluginComponent, useMeta | [Docs](https://quasar.dev) |
+
+**중요**: 하이브리드 패키지는 `designSystem`과 `utilityLibrary` 필드에 **동시에 감지**됩니다.
+
+```typescript
+// 예시: openerd-nuxt3 사용 프로젝트
+{
+  designSystem: "openerd-nuxt3",      // CommonTable, CommonButton 사용으로 감지
+  utilityLibrary: "openerd-nuxt3"     // useTable, useForm 사용으로 감지
+}
+```
 
 ## 📋 전체 워크플로우
 
@@ -414,6 +437,75 @@ const formatDate = (date: Date) => {
 </template>
 `;
 ```
+
+### 예시 4: 🎨 하이브리드 패키지 (openerd-nuxt3) - 컴포넌트 + Composables
+
+```typescript
+// 프로젝트가 openerd-nuxt3를 사용하는 경우
+// projectMeta.designSystem = "openerd-nuxt3"     ← CommonTable, CommonButton 사용
+// projectMeta.utilityLibrary = "openerd-nuxt3"   ← useTable, useForm 사용
+
+// Step 1: 디자인 시스템 컴포넌트 정보 조회
+const tableComponent = metadata.getComponentForDesignSystem('openerd-nuxt3', 'table');
+// → { name: 'CommonTable', usage: '<CommonTable :data="items" ... />' }
+
+// Step 2: 유틸리티 composable 정보 조회
+const useTableFunc = metadata.getFunctionForUtilityLibrary('openerd-nuxt3', 'useTable');
+// → { name: 'useTable', usage: 'const { data, loading, refresh } = useTable(fetchFunction)' }
+
+const useAlertFunc = metadata.getFunctionForUtilityLibrary('openerd-nuxt3', 'useAlert');
+// → { name: 'useAlert', usage: 'const { success, error, warning, info } = useAlert()' }
+
+// Step 3: 컴포넌트 + Composables를 함께 사용한 코드 생성
+const code = `
+<script setup lang="ts">
+import { ${tableComponent.name} } from '@openerd/nuxt3';
+import { ${useTableFunc.name}, ${useAlertFunc.name} } from '@openerd/nuxt3';
+
+// 🔧 유틸리티: 테이블 상태 관리
+const { data, loading, refresh } = ${useTableFunc.name}(async () => {
+  const response = await fetch('/api/users');
+  return response.json();
+});
+
+// 🔧 유틸리티: 알림 관리
+const { success, error } = ${useAlertFunc.name}();
+
+const handleDelete = async (id: string) => {
+  try {
+    await fetch(\`/api/users/\${id}\`, { method: 'DELETE' });
+    await refresh();
+    success('삭제되었습니다');
+  } catch (err) {
+    error('삭제 실패');
+  }
+};
+
+const columns = [
+  { key: 'id', label: 'ID' },
+  { key: 'name', label: '이름' },
+  { key: 'email', label: '이메일' }
+];
+</script>
+
+<template>
+  <!-- 🎨 디자인 시스템: 컴포넌트 -->
+  <${tableComponent.name}
+    :data="data"
+    :columns="columns"
+    :loading="loading"
+    @row-click="handleRowClick"
+  />
+</template>
+`;
+
+// 결과: 동일한 패키지(openerd-nuxt3)의 컴포넌트와 composables를 일관성 있게 사용
+```
+
+**핵심 장점:**
+- ✅ **일관성**: 동일 패키지의 컴포넌트와 composables를 함께 사용
+- ✅ **자동 감지**: designSystem과 utilityLibrary 모두 자동으로 감지
+- ✅ **통합 경험**: UI와 로직을 동일한 디자인 시스템으로 통일
 
 ## 📖 관련 문서
 

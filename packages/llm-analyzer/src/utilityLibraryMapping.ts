@@ -407,6 +407,276 @@ export const UTILITY_LIBRARIES: Record<string, UtilityLibraryInfo> = {
         params: ['date', 'unit']
       }
     }
+  },
+
+  // 🎨 하이브리드: 디자인 시스템 + 유틸리티 라이브러리
+  'openerd-nuxt3': {
+    id: 'openerd-nuxt3',
+    name: 'OpenERD Nuxt3',
+    description: 'OpenERD Nuxt3 Design System - Composables & Utilities',
+    packageName: '@openerd/nuxt3',
+    docsUrl: 'https://openerd.com/docs',
+    functions: {
+      // State Management Composables
+      useTable: {
+        name: 'useTable',
+        category: 'state',
+        description: 'Table state management composable',
+        usage: 'const { data, loading, refresh } = useTable(fetchFunction)',
+        params: ['fetchFunction', 'options']
+      },
+      useForm: {
+        name: 'useForm',
+        category: 'state',
+        description: 'Form state management composable',
+        usage: 'const { values, errors, handleSubmit } = useForm(schema)',
+        params: ['schema', 'options']
+      },
+      useModal: {
+        name: 'useModal',
+        category: 'state',
+        description: 'Modal state management composable',
+        usage: 'const { isOpen, open, close } = useModal()',
+        params: ['options']
+      },
+      usePagination: {
+        name: 'usePagination',
+        category: 'state',
+        description: 'Pagination state management',
+        usage: 'const { page, pageSize, total, setPage } = usePagination()',
+        params: ['initialPage', 'initialPageSize']
+      },
+      useAuth: {
+        name: 'useAuth',
+        category: 'state',
+        description: 'Authentication state management',
+        usage: 'const { user, isAuthenticated, login, logout } = useAuth()',
+        params: []
+      },
+
+      // UI Composables
+      useAlert: {
+        name: 'useAlert',
+        category: 'ui',
+        description: 'Alert/Toast notification composable',
+        usage: 'const { success, error, warning, info } = useAlert()',
+        params: []
+      },
+      useLoading: {
+        name: 'useLoading',
+        category: 'ui',
+        description: 'Loading state management',
+        usage: 'const { isLoading, startLoading, stopLoading } = useLoading()',
+        params: []
+      },
+      useDialog: {
+        name: 'useDialog',
+        category: 'ui',
+        description: 'Dialog state management',
+        usage: 'const { show, hide, confirm } = useDialog()',
+        params: ['options']
+      },
+
+      // Validation
+      useValidation: {
+        name: 'useValidation',
+        category: 'validation',
+        description: 'Form validation composable',
+        usage: 'const { validate, errors, isValid } = useValidation(rules)',
+        params: ['rules']
+      },
+
+      // API
+      useApi: {
+        name: 'useApi',
+        category: 'api',
+        description: 'API call wrapper composable',
+        usage: 'const { data, error, execute } = useApi(endpoint)',
+        params: ['endpoint', 'options']
+      },
+
+      // Utility Functions
+      formatDate: {
+        name: 'formatDate',
+        category: 'utility',
+        description: 'Date formatting utility',
+        usage: 'formatDate(date, "YYYY-MM-DD")',
+        params: ['date', 'format']
+      },
+      formatNumber: {
+        name: 'formatNumber',
+        category: 'utility',
+        description: 'Number formatting utility',
+        usage: 'formatNumber(1234.56, { decimals: 2 })',
+        params: ['number', 'options']
+      },
+      formatCurrency: {
+        name: 'formatCurrency',
+        category: 'utility',
+        description: 'Currency formatting utility',
+        usage: 'formatCurrency(1234.56, "KRW")',
+        params: ['amount', 'currency']
+      },
+      debounce: {
+        name: 'debounce',
+        category: 'utility',
+        description: 'Debounce utility function',
+        usage: 'const debouncedFn = debounce(fn, 300)',
+        params: ['function', 'delay']
+      },
+      throttle: {
+        name: 'throttle',
+        category: 'utility',
+        description: 'Throttle utility function',
+        usage: 'const throttledFn = throttle(fn, 300)',
+        params: ['function', 'delay']
+      }
+    }
+  },
+
+  // 🎨 하이브리드: Element Plus
+  'element-plus': {
+    id: 'element-plus',
+    name: 'Element Plus',
+    description: 'Element Plus - Vue 3 UI Library Composables',
+    packageName: 'element-plus',
+    docsUrl: 'https://element-plus.org',
+    functions: {
+      useFormItem: {
+        name: 'useFormItem',
+        category: 'form',
+        description: 'Form item context composable',
+        usage: 'const { size, disabled, validateState } = useFormItem()',
+        params: []
+      },
+      useNamespace: {
+        name: 'useNamespace',
+        category: 'style',
+        description: 'BEM namespace composable',
+        usage: 'const ns = useNamespace("button")',
+        params: ['block']
+      },
+      useLocale: {
+        name: 'useLocale',
+        category: 'i18n',
+        description: 'Locale/i18n composable',
+        usage: 'const { t, locale } = useLocale()',
+        params: []
+      },
+      useSize: {
+        name: 'useSize',
+        category: 'props',
+        description: 'Component size composable',
+        usage: 'const size = useSize(props)',
+        params: ['props', 'fallback']
+      },
+      useDisabled: {
+        name: 'useDisabled',
+        category: 'props',
+        description: 'Component disabled state composable',
+        usage: 'const disabled = useDisabled()',
+        params: []
+      },
+      useZIndex: {
+        name: 'useZIndex',
+        category: 'style',
+        description: 'Z-index management composable',
+        usage: 'const { currentZIndex, nextZIndex } = useZIndex()',
+        params: []
+      }
+    }
+  },
+
+  // 🎨 하이브리드: Vuetify
+  'vuetify': {
+    id: 'vuetify',
+    name: 'Vuetify',
+    description: 'Vuetify - Material Design Component Framework Composables',
+    packageName: 'vuetify',
+    docsUrl: 'https://vuetifyjs.com',
+    functions: {
+      useDisplay: {
+        name: 'useDisplay',
+        category: 'responsive',
+        description: 'Responsive display composable',
+        usage: 'const { mobile, xs, sm, md, lg, xl } = useDisplay()',
+        params: []
+      },
+      useTheme: {
+        name: 'useTheme',
+        category: 'theme',
+        description: 'Theme management composable',
+        usage: 'const { current, themes, global } = useTheme()',
+        params: []
+      },
+      useLayout: {
+        name: 'useLayout',
+        category: 'layout',
+        description: 'Layout dimensions composable',
+        usage: 'const { mainRect, mainStyles } = useLayout()',
+        params: []
+      },
+      useLocale: {
+        name: 'useLocale',
+        category: 'i18n',
+        description: 'Locale/i18n composable',
+        usage: 'const { t, current, isRtl } = useLocale()',
+        params: []
+      },
+      useRtl: {
+        name: 'useRtl',
+        category: 'i18n',
+        description: 'RTL (right-to-left) composable',
+        usage: 'const { isRtl } = useRtl()',
+        params: []
+      },
+      useDate: {
+        name: 'useDate',
+        category: 'utility',
+        description: 'Date adapter composable',
+        usage: 'const date = useDate()',
+        params: []
+      }
+    }
+  },
+
+  // 🎨 하이브리드: Quasar
+  'quasar': {
+    id: 'quasar',
+    name: 'Quasar',
+    description: 'Quasar Framework - Vue Composables',
+    packageName: 'quasar',
+    docsUrl: 'https://quasar.dev',
+    functions: {
+      useQuasar: {
+        name: 'useQuasar',
+        category: 'core',
+        description: 'Quasar instance composable',
+        usage: 'const $q = useQuasar()',
+        params: []
+      },
+      useDialogPluginComponent: {
+        name: 'useDialogPluginComponent',
+        category: 'dialog',
+        description: 'Dialog plugin component helper',
+        usage: 'const { dialogRef, onDialogHide, onDialogOK, onDialogCancel } = useDialogPluginComponent()',
+        params: []
+      },
+      useMeta: {
+        name: 'useMeta',
+        category: 'meta',
+        description: 'Meta tags management composable',
+        usage: 'useMeta({ title: "My Page" })',
+        params: ['metaOptions']
+      },
+      useFormChild: {
+        name: 'useFormChild',
+        category: 'form',
+        description: 'Form child registration composable',
+        usage: 'useFormChild({ validate, resetValidation, requiresQForm: true })',
+        params: ['options']
+      }
+    }
   }
 };
 

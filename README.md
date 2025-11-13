@@ -18,6 +18,7 @@
 - 🤖 **AI 코드 분석**: Ollama LLM (qwen2.5-coder:1.5b) + GPU 기반 실시간 품질 측정
 - 💾 **BestCase 관리**: 프로젝트 패턴 자동 저장 및 로드
 - 🎨 **디자인 시스템 감지**: 7개 주요 UI 프레임워크 자동 감지 (openerd-nuxt3, element-plus, vuetify, quasar, primevue, ant-design-vue, naive-ui)
+- 🔧 **유틸리티 라이브러리 감지**: 9개 라이브러리 자동 감지 (vueuse, lodash, date-fns, axios, dayjs + 하이브리드 4개)
 - � **동적 지침 로딩**: 메타데이터 기반 지침 검색/병합 시스템 (클로드 스킬과 유사)
 - 🛡️ **프리플라이트 검수**: API/의존성/쓰기범위 검증 + 리스크 스코어링
 - �🔒 **안전한 실행**: vm2 샌드박스 격리
@@ -84,7 +85,29 @@ Code Mode는 LLM이 직접 tool calling을 하는 대신, **TypeScript 코드를
 
 **상세 가이드**: [docs/DESIGN_SYSTEM_USAGE.md](./docs/DESIGN_SYSTEM_USAGE.md)
 
-### 3. BestCase 관리
+### 3. 유틸리티 라이브러리 활용 ⭐ NEW
+
+**핵심**: 프로젝트의 유틸리티 라이브러리를 자동 감지하여 일관된 함수/composables 사용
+
+- **자동 감지**: 9개 라이브러리 지원 (vueuse, lodash, date-fns, axios, dayjs + 하이브리드 패키지)
+- **함수 매핑**: 라이브러리별 함수/composables 정보 제공 (이름, 사용법, 파라미터 등)
+- **가이드 우선순위**: 검색 시 유틸리티 라이브러리 관련 가이드 +25~40점 부스트
+- **일관성 유지**: 프로젝트의 기존 유틸리티 라이브러리에 맞는 함수 자동 선택
+  - `vueuse` → useLocalStorage, useMouse, useFetch 사용
+  - `lodash` → debounce, get, chunk 사용
+  - `date-fns` → format, parseISO, addDays 사용
+
+**🎨 하이브리드 패키지** (컴포넌트 + 유틸리티):
+- **openerd-nuxt3**: CommonTable (디자인) + useTable (유틸)
+- **element-plus**: ElTable (디자인) + useFormItem (유틸)
+- **vuetify**: VDataTable (디자인) + useDisplay (유틸)
+- **quasar**: QTable (디자인) + useQuasar (유틸)
+
+> 하이브리드 패키지는 `designSystem`과 `utilityLibrary` 필드에 **동시에 감지**됩니다.
+
+**상세 가이드**: [docs/UTILITY_LIBRARY_USAGE.md](./docs/UTILITY_LIBRARY_USAGE.md)
+
+### 4. BestCase 관리
 
 - **자동 저장**: 프로젝트 패턴, 샘플 코드, 점수 저장
 - **스마트 로드**: 현재 프로젝트의 BestCase 자동 로드
@@ -403,6 +426,7 @@ console.log(bc.patterns.componentUsage);
 | `PROJECTS_PATH` | 컨테이너 내부 프로젝트 디렉토리 경로 | `/projects` |
 | `BESTCASE_STORAGE_PATH` | BestCase 저장 경로 | `/projects/.bestcases` |
 | `DESIGN_SYSTEMS` | 감지할 디자인 시스템 목록 (쉼표로 구분) | `openerd-nuxt3,element-plus,vuetify,quasar,primevue,ant-design-vue,naive-ui` |
+| `UTILITY_LIBRARIES` | 감지할 유틸리티 라이브러리 목록 (쉼표로 구분) | `vueuse,lodash,date-fns,axios,dayjs,openerd-nuxt3,element-plus,vuetify,quasar` |
 | `NODE_ENV` | 실행 환경 | `production` |
 | `OLLAMA_URL` | Ollama LLM 서버 URL | `http://ollama:11434` |
 | `LLM_MODEL` | 사용할 LLM 모델 | `qwen2.5-coder:7b` |
