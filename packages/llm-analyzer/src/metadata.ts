@@ -35,6 +35,7 @@ export interface FileMetadata {
   // 🔑 핵심 메타데이터
   patterns: string[];                    // 사용된 디자인 패턴 (interceptor, queue, state-machine, etc)
   frameworks: string[];                  // 프레임워크/라이브러리 (vue, nuxt3, pinia, etc)
+  designSystem?: string;                 // 디자인 시스템 (openerd-nuxt3, element-plus, vuetify, etc)
   apiType?: 'grpc' | 'openapi' | 'rest' | 'none';
   apiMethods: string[];                  // API 메서드 목록
 
@@ -71,6 +72,7 @@ export interface ComponentMetadata {
   // 🔑 핵심 메타데이터
   patterns: string[];                    // 컴포넌트 패턴 (slot-forwarding, v-model, provide-inject, etc)
   frameworks: string[];                  // UI 라이브러리 (tailwind, openerd-nuxt3, etc)
+  designSystem?: string;                 // 디자인 시스템 (openerd-nuxt3, element-plus, vuetify, etc)
 
   // 컴포넌트 사용 정보
   componentsUsed: string[];              // 사용된 자식 컴포넌트
@@ -145,6 +147,7 @@ export interface ProjectMetadata {
   frameworks: string[];                  // 중복 제거된 프레임워크 목록
   patterns: string[];                    // 중복 제거된 패턴 목록
   dependencies: string[];                // 외부 라이브러리
+  designSystem?: string;                 // 주로 사용되는 디자인 시스템 (openerd-nuxt3, element-plus, vuetify, etc)
 
   // 컴포넌트 및 composable
   componentsUsed: string[];

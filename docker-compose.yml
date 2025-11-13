@@ -44,16 +44,17 @@ services:
     ports:
       - "3000:3000"
     volumes:
-      - D:/01.Work/01.Projects:/projects
+      - ${HOST_PROJECTS_PATH}:/projects
     environment:
-      - NODE_ENV=production
-      - PROJECTS_PATH=/projects
-      - BESTCASE_STORAGE_PATH=/projects/.bestcases
-      - OLLAMA_URL=http://ollama:11434
-      - OLLAMA_HOST=http://ollama:11434
-      - LLM_PROVIDER=ollama
-      - LLM_MODEL=qwen2.5-coder:7b
-      - CONCURRENCY=2
+      - NODE_ENV=${NODE_ENV:-production}
+      - PROJECTS_PATH=${PROJECTS_PATH:-/projects}
+      - BESTCASE_STORAGE_PATH=${BESTCASE_STORAGE_PATH:-/projects/.bestcases}
+      - OLLAMA_URL=${OLLAMA_URL:-http://ollama:11434}
+      - OLLAMA_HOST=${OLLAMA_HOST:-http://ollama:11434}
+      - LLM_PROVIDER=${LLM_PROVIDER:-ollama}
+      - LLM_MODEL=${LLM_MODEL:-qwen2.5-coder:7b}
+      - CONCURRENCY=${CONCURRENCY:-2}
+      - DESIGN_SYSTEMS=${DESIGN_SYSTEMS:-openerd-nuxt3,element-plus,vuetify}
     deploy:
       resources:
         limits:
@@ -79,14 +80,15 @@ services:
       dockerfile: Dockerfile
     container_name: bestcase-cron-scheduler
     volumes:
-      - D:/01.Work/01.Projects:/projects
+      - ${HOST_PROJECTS_PATH}:/projects
     environment:
-      - NODE_ENV=production
-      - PROJECTS_PATH=/projects
-      - BESTCASE_STORAGE_PATH=/projects/.bestcases
-      - OLLAMA_URL=http://ollama:11434
-      - LLM_MODEL=qwen2.5-coder:7b
-      - CONCURRENCY=2
+      - NODE_ENV=${NODE_ENV:-production}
+      - PROJECTS_PATH=${PROJECTS_PATH:-/projects}
+      - BESTCASE_STORAGE_PATH=${BESTCASE_STORAGE_PATH:-/projects/.bestcases}
+      - OLLAMA_URL=${OLLAMA_URL:-http://ollama:11434}
+      - LLM_MODEL=${LLM_MODEL:-qwen2.5-coder:7b}
+      - CONCURRENCY=${CONCURRENCY:-2}
+      - DESIGN_SYSTEMS=${DESIGN_SYSTEMS:-openerd-nuxt3,element-plus,vuetify}
     deploy:
       resources:
         limits:
@@ -123,12 +125,13 @@ services:
     volumes:
       - .:/app
       - /app/node_modules
-      - D:/01.Work/01.Projects:/projects
+      - ${HOST_PROJECTS_PATH}:/projects
     environment:
       - NODE_ENV=development
-      - PROJECTS_PATH=/projects
-      - BESTCASE_STORAGE_PATH=/projects/.bestcases
-      - OLLAMA_URL=http://ollama:11434
+      - PROJECTS_PATH=${PROJECTS_PATH:-/projects}
+      - BESTCASE_STORAGE_PATH=${BESTCASE_STORAGE_PATH:-/projects/.bestcases}
+      - OLLAMA_URL=${OLLAMA_URL:-http://ollama:11434}
+      - DESIGN_SYSTEMS=${DESIGN_SYSTEMS:-openerd-nuxt3,element-plus,vuetify}
     command: yarn workspace web dev
     depends_on:
       - ollama

@@ -66,6 +66,7 @@ export class MetadataAnalyzer {
         category: this.inferCategory(filePath),
         patterns: result.patterns || [],
         frameworks: result.frameworks || [],
+        designSystem: result.designSystem || this.detectDesignSystem(content),
         apiType: result.apiType,
         apiMethods: result.apiMethods || [],
         complexity: result.complexity || 'medium',
@@ -108,6 +109,7 @@ export class MetadataAnalyzer {
         category: 'component',
         patterns: result.patterns || [],
         frameworks: result.frameworks || [],
+        designSystem: result.designSystem || this.detectDesignSystem(templateContent + scriptContent),
         componentsUsed: result.componentsUsed || [],
         composablesUsed: result.composablesUsed || [],
         vModelBindings: result.vModelBindings || [],
@@ -267,6 +269,7 @@ export class MetadataAnalyzer {
     const allComposablesUsed = new Set<string>();
     const allEntities = new Set<string>();
     const allApiMethods: string[] = [];
+    const designSystemCount: Record<string, number> = {};
 
     const filesByCategory: Record<string, number> = {};
     const complexityDistribution: Record<ComplexityLevel, number> = {
@@ -315,6 +318,11 @@ export class MetadataAnalyzer {
         apiTypeCount[result.apiType] = (apiTypeCount[result.apiType] || 0) + 1;
       }
 
+      // Design System
+      if ('designSystem' in result && result.designSystem) {
+        designSystemCount[result.designSystem] = (designSystemCount[result.designSystem] || 0) + 1;
+      }
+
       // Category
       filesByCategory[result.category] = (filesByCategory[result.category] || 0) + 1;
 
@@ -346,6 +354,10 @@ export class MetadataAnalyzer {
     const dominantApiType = Object.entries(apiTypeCount)
       .sort(([, a], [, b]) => b - a)[0]?.[0] || 'none';
 
+    // Design System 결정 (가장 많이 사용된 디자인 시스템)
+    const dominantDesignSystem = Object.entries(designSystemCount)
+      .sort(([, a], [, b]) => b - a)[0]?.[0];
+
     // Average complexity
     const complexityLevels: ComplexityLevel[] = ['trivial', 'low', 'medium', 'high', 'very-high'];
     const avgComplexityIndex = complexityLevels.reduce((sum, level, idx) => {
@@ -362,6 +374,7 @@ export class MetadataAnalyzer {
       frameworks: Array.from(allFrameworks),
       patterns: Array.from(allPatterns),
       dependencies: Array.from(allDependencies),
+      designSystem: dominantDesignSystem,
       componentsUsed: Array.from(allComponentsUsed),
       composablesUsed: Array.from(allComposablesUsed),
       entities: Array.from(allEntities),
@@ -387,6 +400,77 @@ export class MetadataAnalyzer {
   }
 
   /**
+   * 디자인 시스템 감지
+   * 환경 변수 DESIGN_SYSTEMS에서 목록을 가져와 코드에서 감지
+   */
+  private detectDesignSystem(content: string): string | undefined {
+    const designSystemsStr = process.env.DESIGN_SYSTEMS || 'openerd-nuxt3,element-plus,vuetify,quasar,primevue,ant-design-vue,naive-ui';
+    const designSystems = designSystemsStr.split(',').map(ds => ds.trim());
+
+    // 컴포넌트 사용 패턴 감지
+    const patterns: Record<string, RegExp[]> = {
+      'openerd-nuxt3': [
+        /Common[A-Z]\w+/g,  // CommonTable, CommonButton, etc
+        /from ['"]@openerd\/nuxt3['"]/g,
+        /openerd-nuxt3/g
+      ],
+      'element-plus': [
+        /El[A-Z]\w+/g,  // ElButton, ElTable, etc
+        /from ['"]element-plus['"]/g,
+        /element-plus/g
+      ],
+      'vuetify': [
+        /V[A-Z]\w+/g,  // VBtn, VCard, etc
+        /from ['"]vuetify['"]/g,
+        /vuetify/g
+      ],
+      'quasar': [
+        /Q[A-Z]\w+/g,  // QBtn, QCard, etc
+        /from ['"]quasar['"]/g,
+        /quasar/g
+      ],
+      'primevue': [
+        /Prime[A-Z]\w+/g,  // PrimeButton, etc
+        /from ['"]primevue['"]/g,
+        /primevue/g
+      ],
+      'ant-design-vue': [
+        /A[A-Z]\w+/g,  // AButton, ATable, etc
+        /from ['"]ant-design-vue['"]/g,
+        /ant-design-vue/g
+      ],
+      'naive-ui': [
+        /N[A-Z]\w+/g,  // NButton, NCard, etc
+        /from ['"]naive-ui['"]/g,
+        /naive-ui/g
+      ]
+    };
+
+    // 각 디자인 시스템별로 매칭 점수 계산
+    const scores: Record<string, number> = {};
+    for (const ds of designSystems) {
+      const dsPatterns = patterns[ds];
+      if (!dsPatterns) continue;
+
+      let score = 0;
+      for (const pattern of dsPatterns) {
+        const matches = content.match(pattern);
+        if (matches) {
+          score += matches.length;
+        }
+      }
+      scores[ds] = score;
+    }
+
+    // 가장 높은 점수의 디자인 시스템 반환
+    const entries = Object.entries(scores).filter(([_, score]) => score > 0);
+    if (entries.length === 0) return undefined;
+
+    entries.sort((a, b) => b[1] - a[1]);
+    return entries[0][0];
+  }
+
+  /**
    * 기본 파일 메타데이터
    */
   private getDefaultFileMetadata(filePath: string, content: string): FileMetadata {
@@ -395,6 +479,7 @@ export class MetadataAnalyzer {
       category: this.inferCategory(filePath),
       patterns: [],
       frameworks: [],
+      designSystem: this.detectDesignSystem(content),
       apiMethods: [],
       complexity: 'low',
       reusability: 'low',
@@ -423,6 +508,7 @@ export class MetadataAnalyzer {
       category: 'component',
       patterns: [],
       frameworks: [],
+      designSystem: this.detectDesignSystem(templateContent + scriptContent),
       componentsUsed: [],
       composablesUsed: [],
       vModelBindings: [],
