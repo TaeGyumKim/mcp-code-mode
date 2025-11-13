@@ -19,6 +19,7 @@
 - 💾 **BestCase 관리**: 프로젝트 패턴 자동 저장 및 로드
 - 🎨 **디자인 시스템 감지**: 7개 주요 UI 프레임워크 자동 감지 (openerd-nuxt3, element-plus, vuetify, quasar, primevue, ant-design-vue, naive-ui)
 - 🔧 **유틸리티 라이브러리 감지**: 9개 라이브러리 자동 감지 (vueuse, lodash, date-fns, axios, dayjs + 하이브리드 4개)
+- 📦 **로컬 패키지 시스템**: 내부 솔루션을 AI가 자동 분석하여 등록 (Git URL, node_modules, 로컬 경로 지원)
 - � **동적 지침 로딩**: 메타데이터 기반 지침 검색/병합 시스템 (클로드 스킬과 유사)
 - 🛡️ **프리플라이트 검수**: API/의존성/쓰기범위 검증 + 리스크 스코어링
 - �🔒 **안전한 실행**: vm2 샌드박스 격리
@@ -107,13 +108,35 @@ Code Mode는 LLM이 직접 tool calling을 하는 대신, **TypeScript 코드를
 
 **상세 가이드**: [docs/UTILITY_LIBRARY_USAGE.md](./docs/UTILITY_LIBRARY_USAGE.md)
 
-### 4. BestCase 관리
+### 4. 로컬 패키지 시스템 ⭐ NEW
+
+**핵심**: 조직 내부 디자인 시스템/유틸리티를 AI가 자동 분석하여 등록
+
+- **3가지 소스 타입**: Git URL, node_modules, 로컬 경로
+- **AI 자동 분석**: 소스 코드에서 컴포넌트/함수 자동 추출
+- **독립 Docker 서비스**: 별도 컨테이너에서 무거운 분석 작업 격리
+- **자동 스케줄링**: 매일 자정 미분석 패키지, 주간 재분석
+- **Git 지원**: Private 저장소 clone 및 특정 커밋 고정
+- **사용 예시**:
+  ```json
+  {
+    "id": "openerd-nuxt3",
+    "sourceType": "git",
+    "gitUrl": "git+https://git.dev.opnd.io/common/openerd-nuxt3.git#commit=9b400392...",
+    "analyzed": false
+  }
+  ```
+  → Docker 서비스가 자동으로 clone → AI 분석 → 컴포넌트/함수 추출 → 감지 패턴 생성
+
+**상세 가이드**: [docs/LOCAL_PACKAGES.md](./docs/LOCAL_PACKAGES.md)
+
+### 5. BestCase 관리
 
 - **자동 저장**: 프로젝트 패턴, 샘플 코드, 점수 저장
 - **스마트 로드**: 현재 프로젝트의 BestCase 자동 로드
 - **버전 관리**: 타임스탬프 기반 버전 추적
 
-### 4. 동적 지침 로딩 시스템 (MCP 통합 완료) ⭐ NEW
+### 6. 동적 지침 로딩 시스템 (MCP 통합 완료) ⭐ NEW
 
 - **4가지 MCP 도구**: `search_guides`, `load_guide`, `combine_guides`, `execute_workflow`
 - **메타데이터 기반 검색**: scope/priority/version/tags로 관련 지침 자동 검색 (BM25-like)
@@ -436,6 +459,11 @@ console.log(bc.patterns.componentUsage);
 | `OLLAMA_URL` | Ollama LLM 서버 URL | `http://ollama:11434` |
 | `LLM_MODEL` | 사용할 LLM 모델 | `qwen2.5-coder:7b` |
 | `CONCURRENCY` | 병렬 처리 동시성 수준 | `2` |
+| **로컬 패키지 분석** | | |
+| `LOCAL_PACKAGE_ANALYSIS_MODE` | 분석 모드 (unanalyzed, all, force) | `unanalyzed` |
+| `GIT_USERNAME` | Git 인증 사용자명 (Private 저장소) | `` |
+| `GIT_PASSWORD` | Git 인증 비밀번호 (Private 저장소) | `` |
+| `GIT_TOKEN` | Git 인증 토큰 (Private 저장소, 권장) | `` |
 
 ## 스캔 결과 예시
 
