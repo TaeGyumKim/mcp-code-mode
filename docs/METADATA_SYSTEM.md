@@ -7,16 +7,28 @@
 ```
 1. 사용자 요청 + 대상 프로젝트 분석
           ↓
-   메타데이터 추출 (patterns, frameworks, complexity 등)
+   메타데이터 추출 (patterns, frameworks, designSystem, complexity 등)
           ↓
 2. 서버의 BestCase 메타데이터와 비교
           ↓
 3. 작업 분류 (누락된 패턴, 개선 필요 영역 파악)
           ↓
 4. 필요한 가이드라인 로드 (메타데이터 키워드 기반)
+   → designSystem 감지 시 해당 시스템의 기능/컴포넌트 가이드 자동 로드
           ↓
-5. 코드 생성 (가이드 + BestCase 참고)
+5. 코드 생성 (가이드 + BestCase + 디자인 시스템 컴포넌트 참고)
 ```
+
+### 🎨 designSystem 필드의 특별한 목적
+
+**핵심**: MCP에서 작업 시 프로젝트가 사용 중인 디자인 시스템을 감지하여, **해당 디자인 시스템이 제공하는 기능을 참고**하기 위한 것입니다.
+
+**예시**:
+- `designSystem: "openerd-nuxt3"` 감지 → CommonTable, CommonButton, CommonLayout 등의 컴포넌트 및 사용 패턴 참고
+- `designSystem: "element-plus"` 감지 → ElTable, ElButton, ElDialog 등의 컴포넌트 및 API 참고
+- `designSystem: "vuetify"` 감지 → VDataTable, VBtn, VCard 등의 Material Design 패턴 참고
+
+이를 통해 AI는 프로젝트의 기존 디자인 시스템과 일관된 코드를 생성할 수 있습니다.
 
 ### 왜 메타데이터인가?
 
@@ -173,6 +185,7 @@ interface ProjectMetadata {
 const projectMeta = await metadata.analyzeProject(targetPath, files);
 // → patterns: ["state-management", "api-call"]
 // → frameworks: ["nuxt", "vue"]
+// → designSystem: "openerd-nuxt3"  // ⭐ 디자인 시스템 자동 감지
 // → apiType: "grpc"
 
 // 2단계: BestCase 메타데이터와 비교
@@ -192,9 +205,11 @@ const missingPatterns = bestCaseMeta.patterns.filter(p =>
 const keywords = [
   ...projectMeta.patterns,
   ...projectMeta.frameworks,
-  ...missingPatterns  // 배워야 할 패턴
+  ...missingPatterns,  // 배워야 할 패턴
+  projectMeta.designSystem  // ⭐ 디자인 시스템 키워드 추가
 ];
 const guides = await guides.search({ keywords });
+// → openerd-nuxt3 가이드가 자동으로 포함됨 (CommonTable, CommonButton 등 컴포넌트 사용법)
 
 // 5단계: 고품질 참고 파일 선택 (점수 기반)
 const referenceFiles = bestCase.files
@@ -388,6 +403,93 @@ await mcp.callTool('execute', {
   `
 });
 ```
+
+### 4. 디자인 시스템 기반 코드 생성 ⭐ NEW
+
+디자인 시스템을 감지하여 해당 시스템의 컴포넌트를 자동으로 활용합니다.
+
+```typescript
+// Sandbox 내부에서 실행
+await mcp.callTool('execute', {
+  code: `
+    // 1. 프로젝트 메타데이터 추출
+    const projectMeta = await metadata.analyzeProject('/workspace/myapp', files, 3);
+
+    console.log('Detected Design System:', projectMeta.designSystem);
+    // → "openerd-nuxt3"
+
+    // 2. 디자인 시스템 키워드로 가이드 검색
+    const guides = await guides.search({
+      keywords: [
+        projectMeta.designSystem,  // "openerd-nuxt3"
+        'table',                   // 사용자가 테이블 컴포넌트 요청
+        'crud'
+      ]
+    });
+
+    // 3. 디자인 시스템별 컴포넌트 매핑
+    const componentMap = {
+      'openerd-nuxt3': {
+        table: 'CommonTable',
+        button: 'CommonButton',
+        input: 'CommonInput',
+        modal: 'CommonModal',
+        layout: 'CommonLayout'
+      },
+      'element-plus': {
+        table: 'ElTable',
+        button: 'ElButton',
+        input: 'ElInput',
+        modal: 'ElDialog',
+        layout: 'ElContainer'
+      },
+      'vuetify': {
+        table: 'VDataTable',
+        button: 'VBtn',
+        input: 'VTextField',
+        modal: 'VDialog',
+        layout: 'VContainer'
+      }
+    };
+
+    // 4. 코드 생성 (프로젝트의 디자인 시스템 사용)
+    const designSystem = projectMeta.designSystem || 'openerd-nuxt3';
+    const components = componentMap[designSystem];
+
+    const generatedCode = \`
+<template>
+  <div>
+    <\${components.table}
+      :data="users"
+      :columns="columns"
+      @row-click="handleRowClick"
+    />
+    <\${components.button} @click="handleAdd">
+      Add User
+    </\${components.button}>
+  </div>
+</template>
+
+<script setup lang="ts">
+// 프로젝트의 디자인 시스템(\${designSystem})에 맞는 컴포넌트 사용
+const users = ref([]);
+</script>
+    \`;
+
+    return { designSystem, components, generatedCode };
+  `
+});
+```
+
+**결과**:
+- `designSystem: "openerd-nuxt3"` → `CommonTable`, `CommonButton` 사용
+- `designSystem: "element-plus"` → `ElTable`, `ElButton` 사용
+- `designSystem: "vuetify"` → `VDataTable`, `VBtn` 사용
+
+**장점**:
+- ✅ 프로젝트의 기존 디자인 시스템과 일관성 유지
+- ✅ 올바른 컴포넌트 import 및 사용법 적용
+- ✅ 디자인 시스템별 특화 기능 활용 (예: Vuetify의 Material Design 패턴)
 
 **상세 예시는 [WORKFLOW_CORRECT.md](./WORKFLOW_CORRECT.md) 참조**
 

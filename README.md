@@ -68,14 +68,26 @@ Code Mode는 LLM이 직접 tool calling을 하는 대신, **TypeScript 코드를
 - **자동 탐지**: Vue/TS 파일, gRPC/OpenAPI 패키지 감지
 - **AI 분석**: Ollama LLM + GPU 기반 코드 품질 측정
 - **패턴 추출**: 컴포넌트 사용 통계, API 타입, 프레임워크 정보
+- **디자인 시스템 감지**: 컴포넌트 네이밍 패턴 기반 자동 감지 (CommonButton → openerd-nuxt3, ElButton → element-plus, VBtn → vuetify 등)
 
-### 2. BestCase 관리
+### 2. 디자인 시스템 활용 ⭐ NEW
+
+**핵심**: 프로젝트의 디자인 시스템을 자동 감지하여 일관된 코드 생성
+
+- **자동 감지**: 7개 주요 UI 프레임워크 지원 (openerd-nuxt3, element-plus, vuetify, quasar, primevue, ant-design-vue, naive-ui)
+- **가이드 자동 로드**: 감지된 디자인 시스템의 컴포넌트 사용법 가이드 자동 포함
+- **일관성 유지**: 프로젝트의 기존 디자인 시스템에 맞는 컴포넌트 자동 선택
+  - `openerd-nuxt3` → CommonTable, CommonButton 사용
+  - `element-plus` → ElTable, ElButton 사용
+  - `vuetify` → VDataTable, VBtn 사용
+
+### 3. BestCase 관리
 
 - **자동 저장**: 프로젝트 패턴, 샘플 코드, 점수 저장
 - **스마트 로드**: 현재 프로젝트의 BestCase 자동 로드
 - **버전 관리**: 타임스탬프 기반 버전 추적
 
-### 3. 동적 지침 로딩 시스템 (MCP 통합 완료) ⭐ NEW
+### 4. 동적 지침 로딩 시스템 (MCP 통합 완료) ⭐ NEW
 
 - **4가지 MCP 도구**: `search_guides`, `load_guide`, `combine_guides`, `execute_workflow`
 - **메타데이터 기반 검색**: scope/priority/version/tags로 관련 지침 자동 검색 (BM25-like)
@@ -86,14 +98,14 @@ Code Mode는 LLM이 직접 tool calling을 하는 대신, **TypeScript 코드를
 - **감사 추적**: 사용된 지침 id/version/scope 자동 로깅
 - **11개 지침 파일**: API, UI, 에러 처리, 워크플로우 등
 
-### 4. 점수 시스템
+### 5. 점수 시스템
 
 - **API 품질** (0-100점): gRPC/OpenAPI 사용도 평가
 - **컴포넌트 품질** (0-100점): openerd-nuxt3 활용도 평가
 - **종합 점수**: API 40% + 컴포넌트 20% + 패턴 40%
 - **티어 시스템**: S (90+), A (80-89), B (70-79), C (60-69), D (0-59)
 
-### 5. 자동화
+### 6. 자동화
 
 - **Docker 시작 시 자동 검증**: 기존 BestCase 양식 체크 및 오래된 데이터 삭제
 - **초기 AI 스캔**: 문제 있는 BestCase 발견 시 자동으로 전체 스캔 실행
