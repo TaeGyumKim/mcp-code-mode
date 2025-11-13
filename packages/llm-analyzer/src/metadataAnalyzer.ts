@@ -67,6 +67,7 @@ export class MetadataAnalyzer {
         patterns: result.patterns || [],
         frameworks: result.frameworks || [],
         designSystem: result.designSystem || this.detectDesignSystem(content),
+        utilityLibrary: result.utilityLibrary || this.detectUtilityLibrary(content),
         apiType: result.apiType,
         apiMethods: result.apiMethods || [],
         complexity: result.complexity || 'medium',
@@ -104,12 +105,14 @@ export class MetadataAnalyzer {
       );
       const result = await this.llm.generateJSON(prompt, this.model, 0.2);
 
+      const fullContent = templateContent + scriptContent;
       return {
         filePath,
         category: 'component',
         patterns: result.patterns || [],
         frameworks: result.frameworks || [],
-        designSystem: result.designSystem || this.detectDesignSystem(templateContent + scriptContent),
+        designSystem: result.designSystem || this.detectDesignSystem(fullContent),
+        utilityLibrary: result.utilityLibrary || this.detectUtilityLibrary(fullContent),
         componentsUsed: result.componentsUsed || [],
         composablesUsed: result.composablesUsed || [],
         vModelBindings: result.vModelBindings || [],
@@ -124,7 +127,7 @@ export class MetadataAnalyzer {
         isExcellent: result.isExcellent || false,
         excellentReasons: result.excellentReasons,
         excellentPatterns: result.excellentPatterns,
-        linesOfCode: (templateContent + scriptContent).split('\n').length,
+        linesOfCode: fullContent.split('\n').length,
         templateLines: templateContent.split('\n').length,
         scriptLines: scriptContent.split('\n').length
       };
@@ -270,6 +273,7 @@ export class MetadataAnalyzer {
     const allEntities = new Set<string>();
     const allApiMethods: string[] = [];
     const designSystemCount: Record<string, number> = {};
+    const utilityLibraryCount: Record<string, number> = {};
 
     const filesByCategory: Record<string, number> = {};
     const complexityDistribution: Record<ComplexityLevel, number> = {
@@ -323,6 +327,11 @@ export class MetadataAnalyzer {
         designSystemCount[result.designSystem] = (designSystemCount[result.designSystem] || 0) + 1;
       }
 
+      // Utility Library
+      if ('utilityLibrary' in result && result.utilityLibrary) {
+        utilityLibraryCount[result.utilityLibrary] = (utilityLibraryCount[result.utilityLibrary] || 0) + 1;
+      }
+
       // Category
       filesByCategory[result.category] = (filesByCategory[result.category] || 0) + 1;
 
@@ -358,6 +367,10 @@ export class MetadataAnalyzer {
     const dominantDesignSystem = Object.entries(designSystemCount)
       .sort(([, a], [, b]) => b - a)[0]?.[0];
 
+    // Utility Library 결정 (가장 많이 사용된 유틸리티 라이브러리)
+    const dominantUtilityLibrary = Object.entries(utilityLibraryCount)
+      .sort(([, a], [, b]) => b - a)[0]?.[0];
+
     // Average complexity
     const complexityLevels: ComplexityLevel[] = ['trivial', 'low', 'medium', 'high', 'very-high'];
     const avgComplexityIndex = complexityLevels.reduce((sum, level, idx) => {
@@ -375,6 +388,7 @@ export class MetadataAnalyzer {
       patterns: Array.from(allPatterns),
       dependencies: Array.from(allDependencies),
       designSystem: dominantDesignSystem,
+      utilityLibrary: dominantUtilityLibrary,
       componentsUsed: Array.from(allComponentsUsed),
       composablesUsed: Array.from(allComposablesUsed),
       entities: Array.from(allEntities),
@@ -471,6 +485,80 @@ export class MetadataAnalyzer {
   }
 
   /**
+   * 유틸리티 라이브러리 감지
+   * 환경 변수 UTILITY_LIBRARIES에서 목록을 가져와 코드에서 감지
+   */
+  private detectUtilityLibrary(content: string): string | undefined {
+    const utilityLibrariesStr = process.env.UTILITY_LIBRARIES || 'vueuse,lodash,date-fns,axios,dayjs';
+    const utilityLibraries = utilityLibrariesStr.split(',').map(lib => lib.trim());
+
+    // 라이브러리 사용 패턴 감지
+    const patterns: Record<string, RegExp[]> = {
+      'vueuse': [
+        /use[A-Z]\w+/g,  // useLocalStorage, useMouse, useFetch, etc
+        /from ['"]@vueuse\/core['"]/g,
+        /from ['"]@vueuse\/[^'"]+['"]/g,
+        /@vueuse/g
+      ],
+      'lodash': [
+        /_\.[a-z]+/g,  // _.debounce, _.get, _.chunk, etc
+        /from ['"]lodash['"]/g,
+        /import .+ from ['"]lodash\/[^'"]+['"]/g,
+        /lodash/g
+      ],
+      'date-fns': [
+        /from ['"]date-fns['"]/g,
+        /import \{[^}]*\} from ['"]date-fns['"]/g,
+        /format\(/g,
+        /parseISO\(/g,
+        /addDays\(/g,
+        /subDays\(/g,
+        /differenceInDays\(/g
+      ],
+      'axios': [
+        /axios\./g,  // axios.get, axios.post, etc
+        /from ['"]axios['"]/g,
+        /import axios/g,
+        /\.get\(/g,
+        /\.post\(/g,
+        /\.put\(/g,
+        /\.delete\(/g
+      ],
+      'dayjs': [
+        /dayjs\(/g,  // dayjs(), dayjs().format(), etc
+        /from ['"]dayjs['"]/g,
+        /import dayjs/g,
+        /\.format\(/g,
+        /\.add\(/g,
+        /\.subtract\(/g
+      ]
+    };
+
+    // 각 유틸리티 라이브러리별로 매칭 점수 계산
+    const scores: Record<string, number> = {};
+    for (const lib of utilityLibraries) {
+      const libPatterns = patterns[lib];
+      if (!libPatterns) continue;
+
+      let score = 0;
+      for (const pattern of libPatterns) {
+        const matches = content.match(pattern);
+        if (matches) {
+          score += matches.length;
+        }
+      }
+      scores[lib] = score;
+    }
+
+    // 가장 높은 점수의 유틸리티 라이브러리 반환
+    const entries = Object.entries(scores).filter(([_, score]) => score > 0);
+    if (entries.length === 0) return undefined;
+
+    entries.sort((a, b) => b[1] - a[1]);
+    return entries[0][0];
+  }
+
+  /**
    * 기본 파일 메타데이터
    */
   private getDefaultFileMetadata(filePath: string, content: string): FileMetadata {
@@ -480,6 +568,7 @@ export class MetadataAnalyzer {
       patterns: [],
       frameworks: [],
       designSystem: this.detectDesignSystem(content),
+      utilityLibrary: this.detectUtilityLibrary(content),
       apiMethods: [],
       complexity: 'low',
       reusability: 'low',
@@ -503,12 +592,14 @@ export class MetadataAnalyzer {
     templateContent: string,
     scriptContent: string
   ): ComponentMetadata {
+    const fullContent = templateContent + scriptContent;
     return {
       filePath,
       category: 'component',
       patterns: [],
       frameworks: [],
-      designSystem: this.detectDesignSystem(templateContent + scriptContent),
+      designSystem: this.detectDesignSystem(fullContent),
+      utilityLibrary: this.detectUtilityLibrary(fullContent),
       componentsUsed: [],
       composablesUsed: [],
       vModelBindings: [],
@@ -521,7 +612,7 @@ export class MetadataAnalyzer {
       hasLoadingStates: false,
       hasErrorStates: false,
       isExcellent: false,
-      linesOfCode: (templateContent + scriptContent).split('\n').length,
+      linesOfCode: fullContent.split('\n').length,
       templateLines: templateContent.split('\n').length,
       scriptLines: scriptContent.split('\n').length
     };

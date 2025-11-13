@@ -4,6 +4,7 @@ import * as bestcase from '../../../mcp-servers/bestcase/index.js';
 import * as guides from '../../../mcp-servers/guides/dist/index.js';
 import { MetadataAnalyzer } from '../../llm-analyzer/src/metadataAnalyzer.js';
 import * as designSystemMapping from '../../llm-analyzer/src/designSystemMapping.js';
+import * as utilityLibraryMapping from '../../llm-analyzer/src/utilityLibraryMapping.js';
 
 export interface SandboxResult {
   ok: boolean;
@@ -99,7 +100,58 @@ export async function runInSandbox(code: string, timeoutMs: number = 30000): Pro
           /**
            * 모든 디자인 시스템 정보
            */
-          DESIGN_SYSTEMS: designSystemMapping.DESIGN_SYSTEMS
+          DESIGN_SYSTEMS: designSystemMapping.DESIGN_SYSTEMS,
+
+          /**
+           * 유틸리티 라이브러리 정보 가져오기
+           *
+           * @example
+           * const libInfo = metadata.getUtilityLibraryInfo('vueuse');
+           * console.log(libInfo.functions.useLocalStorage.name); // "useLocalStorage"
+           */
+          getUtilityLibraryInfo: utilityLibraryMapping.getUtilityLibraryInfo,
+
+          /**
+           * 특정 함수 타입에 대한 유틸리티 라이브러리 함수 가져오기
+           *
+           * @example
+           * const func = metadata.getFunctionForUtilityLibrary('vueuse', 'useLocalStorage');
+           * console.log(func.name); // "useLocalStorage"
+           * console.log(func.usage); // "const state = useLocalStorage('key', defaultValue)"
+           */
+          getFunctionForUtilityLibrary: utilityLibraryMapping.getFunctionForUtilityLibrary,
+
+          /**
+           * 지원되는 모든 유틸리티 라이브러리 ID 목록
+           *
+           * @example
+           * const libraries = metadata.getSupportedUtilityLibraries();
+           * // ['vueuse', 'lodash', 'date-fns', 'axios', 'dayjs']
+           */
+          getSupportedUtilityLibraries: utilityLibraryMapping.getSupportedUtilityLibraries,
+
+          /**
+           * 유틸리티 라이브러리의 함수 매핑 가져오기
+           *
+           * @example
+           * const functions = metadata.getFunctionMap('vueuse');
+           * // { useLocalStorage: 'useLocalStorage', useMouse: 'useMouse', ... }
+           */
+          getFunctionMap: utilityLibraryMapping.getFunctionMap,
+
+          /**
+           * 카테고리별 함수 목록 가져오기
+           *
+           * @example
+           * const stateFunctions = metadata.getFunctionsByCategory('vueuse', 'state');
+           * // ['useLocalStorage', 'useSessionStorage', 'useStorage']
+           */
+          getFunctionsByCategory: utilityLibraryMapping.getFunctionsByCategory,
+
+          /**
+           * 모든 유틸리티 라이브러리 정보
+           */
+          UTILITY_LIBRARIES: utilityLibraryMapping.UTILITY_LIBRARIES
         },
 
         // Console API

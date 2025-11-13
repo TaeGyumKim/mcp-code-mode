@@ -28,31 +28,32 @@ ${shortContent}
 1. **Patterns**: Design patterns used (e.g., "interceptor", "queue", "state-machine", "factory", "singleton", "observer", "repository")
 2. **Frameworks**: Libraries/frameworks detected (e.g., "vue", "nuxt3", "pinia", "@grpc/grpc-js", "axios", "zod")
 3. **Design System**: UI design system detected (e.g., "openerd-nuxt3", "element-plus", "vuetify", "quasar", "primevue", "ant-design-vue", "naive-ui") - based on component naming patterns like CommonButton, ElButton, VBtn, etc.
-4. **API Type**: API technology used ("grpc", "openapi", "rest", or "none")
-5. **API Methods**: List of API method names (e.g., ["getUserList", "createUser", "updateUser"])
-6. **Complexity**: Code complexity level
+4. **Utility Library**: Utility library detected (e.g., "vueuse", "lodash", "date-fns", "axios", "dayjs") - based on usage patterns like useLocalStorage, _.debounce, format(), etc.
+5. **API Type**: API technology used ("grpc", "openapi", "rest", or "none")
+6. **API Methods**: List of API method names (e.g., ["getUserList", "createUser", "updateUser"])
+7. **Complexity**: Code complexity level
    - "trivial": < 10 lines, minimal logic
    - "low": 10-50 lines, simple logic
    - "medium": 50-100 lines, moderate logic
    - "high": 100-200 lines, complex logic
    - "very-high": 200+ lines, very complex logic
-7. **Reusability**: How reusable is this code ("low", "medium", "high")
-8. **Error Handling**: Error handling quality
+8. **Reusability**: How reusable is this code ("low", "medium", "high")
+9. **Error Handling**: Error handling quality
    - "none": No error handling
    - "basic": Basic try-catch or if-checks
    - "comprehensive": Detailed error handling with types, logging, recovery
-9. **Type Definitions**: TypeScript quality
+10. **Type Definitions**: TypeScript quality
    - "poor": Lots of 'any', no interfaces
    - "basic": Some types, some 'any'
    - "good": Proper types, minimal 'any'
    - "excellent": Full types, generics, type guards, no 'any'
-10. **Dependencies**: External libraries imported
-11. **Composables Used**: Composable functions called (e.g., ["useRoute", "useRouter", "usePaging", "useAlert"])
-12. **Entities**: Domain entities handled (e.g., ["User", "Order", "Product", "Inquiry"])
-13. **Features**: Main features implemented (e.g., ["pagination", "search", "CRUD", "authentication", "caching"])
-14. **Has Documentation**: Does it have JSDoc or meaningful comments?
-15. **Is Excellent**: Is this excellent reusable code worth extracting as a pattern?
-16. **Excellent Reasons**: If excellent, why? (list of reasons)
+11. **Dependencies**: External libraries imported
+12. **Composables Used**: Composable functions called (e.g., ["useRoute", "useRouter", "usePaging", "useAlert"])
+13. **Entities**: Domain entities handled (e.g., ["User", "Order", "Product", "Inquiry"])
+14. **Features**: Main features implemented (e.g., ["pagination", "search", "CRUD", "authentication", "caching"])
+15. **Has Documentation**: Does it have JSDoc or meaningful comments?
+16. **Is Excellent**: Is this excellent reusable code worth extracting as a pattern?
+17. **Excellent Reasons**: If excellent, why? (list of reasons)
 
 **Response format (JSON only):**
 \`\`\`json
@@ -60,6 +61,7 @@ ${shortContent}
   "patterns": ["interceptor", "error-recovery"],
   "frameworks": ["@grpc/grpc-js", "nuxt3"],
   "designSystem": "openerd-nuxt3",
+  "utilityLibrary": "vueuse",
   "apiType": "grpc",
   "apiMethods": ["getUserList", "createUser"],
   "complexity": "high",
@@ -115,30 +117,31 @@ ${shortScript}
 1. **Patterns**: Component patterns (e.g., "slot-forwarding", "v-model", "provide-inject", "renderless", "scoped-slots")
 2. **Frameworks**: UI libraries (e.g., "tailwind", "openerd-nuxt3", "headlessui")
 3. **Design System**: UI design system detected (e.g., "openerd-nuxt3", "element-plus", "vuetify", "quasar", "primevue", "ant-design-vue", "naive-ui") - based on component naming patterns
-4. **Components Used**: Child components (e.g., ["CommonTable", "CommonButton", "CommonInput"])
-5. **Composables Used**: Composables called (e.g., ["usePaging", "useRoute", "useAsyncData", "useAlert"])
-6. **v-Model Bindings**: Analyze v-model usage
+4. **Utility Library**: Utility library detected (e.g., "vueuse", "lodash", "date-fns", "axios", "dayjs") - based on usage patterns
+5. **Components Used**: Child components (e.g., ["CommonTable", "CommonButton", "CommonInput"])
+6. **Composables Used**: Composables called (e.g., ["usePaging", "useRoute", "useAsyncData", "useAlert"])
+7. **v-Model Bindings**: Analyze v-model usage
    - name: variable name
    - component: component using v-model
    - hasWatch: is there a watch for this variable?
    - hasValidation: is there validation logic?
    - hasTypeDefinition: is it properly typed?
-7. **Complexity**: Component complexity
+8. **Complexity**: Component complexity
    - "trivial": Empty or placeholder
    - "low": Simple display component
    - "medium": Some logic, few composables
    - "high": Multiple composables, complex logic
    - "very-high": Full CRUD page with many features
-8. **Reusability**: Reusability level
-9. **Error Handling**: Error handling quality
-10. **Type Definitions**: TypeScript quality
-11. **Features**: Features implemented (e.g., ["CRUD", "search", "pagination", "filtering", "export", "drag-drop"])
-12. **Entities**: Entities handled (e.g., ["User", "Order"])
-13. **Has Loading States**: Does it handle loading states (pending, loading, etc)?
-14. **Has Error States**: Does it handle error states?
-15. **Is Excellent**: Is this excellent component worth reusing?
-16. **Excellent Reasons**: If excellent, why?
-17. **Excellent Patterns**: Specific excellent patterns found
+9. **Reusability**: Reusability level
+10. **Error Handling**: Error handling quality
+11. **Type Definitions**: TypeScript quality
+12. **Features**: Features implemented (e.g., ["CRUD", "search", "pagination", "filtering", "export", "drag-drop"])
+13. **Entities**: Entities handled (e.g., ["User", "Order"])
+14. **Has Loading States**: Does it handle loading states (pending, loading, etc)?
+15. **Has Error States**: Does it handle error states?
+16. **Is Excellent**: Is this excellent component worth reusing?
+17. **Excellent Reasons**: If excellent, why?
+18. **Excellent Patterns**: Specific excellent patterns found
 
 **Response format (JSON only):**
 \`\`\`json
@@ -146,6 +149,7 @@ ${shortScript}
   "patterns": ["slot-forwarding", "v-model"],
   "frameworks": ["tailwind", "openerd-nuxt3"],
   "designSystem": "openerd-nuxt3",
+  "utilityLibrary": "vueuse",
   "componentsUsed": ["CommonTable", "CommonButton"],
   "composablesUsed": ["usePaging", "useRoute", "useAsyncData"],
   "vModelBindings": [

@@ -154,6 +154,7 @@ export interface SearchGuidesInput {
   scope?: 'project' | 'repo' | 'org' | 'global';
   mandatoryIds?: string[];  // 🔑 필수 지침 ID (키워드 매칭 무관)
   designSystem?: string;     // 🎨 디자인 시스템 ID (검색 우선순위 부스트)
+  utilityLibrary?: string;   // 🔧 유틸리티 라이브러리 ID (검색 우선순위 부스트)
 }
 
 export interface SearchGuidesOutput {
@@ -243,7 +244,7 @@ export async function searchGuides(input: SearchGuidesInput): Promise<SearchGuid
       score += 20;
     }
     
-    // 3. 디자인 시스템 매칭 (+40점) 🎨 NEW
+    // 3. 디자인 시스템 매칭 (+40점) 🎨
     if (input.designSystem) {
       const lowerDesignSystem = input.designSystem.toLowerCase();
 
@@ -258,6 +259,25 @@ export async function searchGuides(input: SearchGuidesInput): Promise<SearchGuid
       // 요약/내용 매칭
       else if (guide.summary.toLowerCase().includes(lowerDesignSystem) ||
                guide.content.toLowerCase().includes(lowerDesignSystem)) {
+        score += 25;
+      }
+    }
+
+    // 3.5. 유틸리티 라이브러리 매칭 (+40점) 🔧
+    if (input.utilityLibrary) {
+      const lowerUtilityLibrary = input.utilityLibrary.toLowerCase();
+
+      // ID 완전 매칭
+      if (guide.id === input.utilityLibrary || guide.id === `${input.utilityLibrary}-guide`) {
+        score += 40;
+      }
+      // 태그 매칭
+      else if (guide.tags.some(tag => tag.toLowerCase().includes(lowerUtilityLibrary))) {
+        score += 35;
+      }
+      // 요약/내용 매칭
+      else if (guide.summary.toLowerCase().includes(lowerUtilityLibrary) ||
+               guide.content.toLowerCase().includes(lowerUtilityLibrary)) {
         score += 25;
       }
     }
