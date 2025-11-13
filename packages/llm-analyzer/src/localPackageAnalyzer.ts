@@ -67,7 +67,7 @@ export class LocalPackageAnalyzer {
       let utilityLibrary: LocalUtilityLibraryInfo | undefined;
 
       if (pkg.type === 'design-system' || pkg.type === 'hybrid') {
-        designSystem = await this.extractDesignSystemInfo(pkg, results);
+        designSystem = await this.extractDesignSystemInfo(pkg, results, files);
       }
 
       if (pkg.type === 'utility' || pkg.type === 'hybrid') {
