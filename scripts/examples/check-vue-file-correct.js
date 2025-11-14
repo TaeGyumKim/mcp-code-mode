@@ -5,8 +5,9 @@
  */
 
 (async () => {
-  // ✅ Docker 환경 경로 사용
-  const p = '/projects/49.airian/frontend-admin/pages/memberManagement.vue';
+  // ✅ 환경변수로부터 프로젝트 경로 가져오기
+  const projectPath = process.env.EXAMPLE_PROJECT_PATH || '/projects/49.airian/frontend-admin';
+  const p = `${projectPath}/pages/memberManagement.vue`;
 
   try {
     // ✅ filesystem.readFile() 사용 (fs.readFile 대신)

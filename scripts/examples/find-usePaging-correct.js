@@ -13,8 +13,9 @@
   };
 
   try {
-    // 1. 특정 파일 읽기 (Docker 환경에서는 /projects 경로 사용)
-    const targetPath = '/projects/49.airian/frontend-admin/pages/memberManagement.vue';
+    // 1. ✅ 환경변수로부터 프로젝트 경로 가져오기
+    const projectPath = process.env.EXAMPLE_PROJECT_PATH || '/projects/49.airian/frontend-admin';
+    const targetPath = `${projectPath}/pages/memberManagement.vue`;
 
     try {
       const fileResult = await filesystem.readFile({ path: targetPath });
@@ -28,7 +29,7 @@
     // 2. ✅ searchFiles()로 모든 Vue/JS/TS 파일 찾기
     console.log('🔍 파일 검색 시작...');
     const searchResult = await filesystem.searchFiles({
-      path: '/projects/49.airian/frontend-admin',
+      path: projectPath,
       pattern: '**/*.{vue,js,ts,mjs}',
       recursive: true
     });

@@ -108,7 +108,9 @@ export async function runInSandbox(code: string, timeoutMs: number = 30000): Pro
            *
            * @param projectPath 프로젝트 경로 (절대 경로)
            * @example
-           * const context = await metadata.extractProjectContext('/projects/49.airian/frontend-admin');
+           * // 환경변수 사용 (권장)
+           * const projectPath = process.env.EXAMPLE_PROJECT_PATH || '/projects/your-project';
+           * const context = await metadata.extractProjectContext(projectPath);
            * console.log('API Type:', context.apiInfo.type);
            * console.log('Design System:', context.designSystemInfo.detected);
            */

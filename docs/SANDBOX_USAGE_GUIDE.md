@@ -324,7 +324,9 @@ const projectMeta = await analyzer.analyzeProject(
 );
 
 // ✅ 프로젝트 컨텍스트 추출 (외부 프로젝트 경로 지정)
-const context = await metadata.extractProjectContext('/projects/49.airian/frontend-admin');
+// 환경변수 EXAMPLE_PROJECT_PATH를 사용하거나 직접 경로 지정
+const projectPath = process.env.EXAMPLE_PROJECT_PATH || '/projects/your-project';
+const context = await metadata.extractProjectContext(projectPath);
 console.log('API Type:', context.apiInfo.type);               // 'grpc' | 'openapi' | 'rest' | 'mixed'
 console.log('API Packages:', context.apiInfo.packages);       // ['@grpc/grpc-js', ...]
 console.log('Design System:', context.designSystemInfo.detected);  // ['element-plus', ...]

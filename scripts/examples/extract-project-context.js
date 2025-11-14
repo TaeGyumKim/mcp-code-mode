@@ -5,8 +5,8 @@
  */
 
 (async () => {
-  // 1. ✅ 외부 프로젝트 경로 지정 (Docker 환경)
-  const projectPath = '/projects/49.airian/frontend-admin';
+  // 1. ✅ 환경변수로부터 프로젝트 경로 가져오기
+  const projectPath = process.env.EXAMPLE_PROJECT_PATH || '/projects/49.airian/frontend-admin';
 
   console.log('📊 프로젝트 컨텍스트 추출 시작...');
   console.log(`   경로: ${projectPath}`);

@@ -47,6 +47,7 @@ services:
       - ${HOST_PROJECTS_PATH}:/projects
     environment:
       - NODE_ENV=${NODE_ENV:-production}
+      - HOST_PROJECTS_PATH=${HOST_PROJECTS_PATH}  # 경로 변환에 필요
       - PROJECTS_PATH=${PROJECTS_PATH:-/projects}
       - BESTCASE_STORAGE_PATH=${BESTCASE_STORAGE_PATH:-/projects/.bestcases}
       - OLLAMA_URL=${OLLAMA_URL:-http://ollama:11434}
