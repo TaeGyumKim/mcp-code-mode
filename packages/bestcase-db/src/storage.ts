@@ -1,6 +1,7 @@
 import { promises as fs } from 'fs';
 import { join, dirname } from 'path';
 import { BestCaseScores } from './types.js';
+import { BestCaseIndex, buildIndex, searchIndex, IndexSearchQuery } from './indexer.js';
 
 /**
  * BestCase 인터페이스
@@ -77,10 +78,12 @@ export interface BestCase {
 
 export class BestCaseStorage {
   private storagePath: string;
+  private indexPath: string;
 
   constructor(storagePath?: string) {
     // 환경 변수 또는 기본값 사용 (Docker: /projects/.bestcases, Local: D:/01.Work/01.Projects/.bestcases)
     this.storagePath = storagePath || process.env.BESTCASE_STORAGE_PATH || '/projects/.bestcases';
+    this.indexPath = join(this.storagePath, 'index.json');
   }
 
   async initialize() {
@@ -91,6 +94,9 @@ export class BestCaseStorage {
     await this.initialize();
     const filePath = join(this.storagePath, `${bestCase.id}.json`);
     await fs.writeFile(filePath, JSON.stringify(bestCase, null, 2), 'utf-8');
+
+    // 인덱스 자동 업데이트
+    await this.updateIndex();
   }
 
   async load(id: string): Promise<BestCase | null> {
@@ -168,6 +174,9 @@ export class BestCaseStorage {
     try {
       const filePath = join(this.storagePath, `${id}.json`);
       await fs.unlink(filePath);
+
+      // 인덱스 자동 업데이트
+      await this.updateIndex();
       return true;
     } catch (error) {
       return false;
@@ -180,11 +189,120 @@ export class BestCaseStorage {
     const results: BestCase[] = [];
 
     for (const file of files) {
-      if (!file.endsWith('.json')) continue;
+      if (!file.endsWith('.json') || file === 'index.json') continue;
       const content = await fs.readFile(join(this.storagePath, file), 'utf-8');
       results.push(JSON.parse(content));
     }
 
     return results;
+  }
+
+  /**
+   * 인덱스 로드
+   */
+  async loadIndex(): Promise<BestCaseIndex | null> {
+    try {
+      const content = await fs.readFile(this.indexPath, 'utf-8');
+      return JSON.parse(content);
+    } catch (error) {
+      return null;
+    }
+  }
+
+  /**
+   * 인덱스 저장
+   */
+  async saveIndex(index: BestCaseIndex): Promise<void> {
+    await this.initialize();
+    await fs.writeFile(this.indexPath, JSON.stringify(index, null, 2), 'utf-8');
+  }
+
+  /**
+   * 인덱스 재구축
+   */
+  async rebuildIndex(): Promise<BestCaseIndex> {
+    const allCases = await this.list();
+    const index = buildIndex(allCases);
+    await this.saveIndex(index);
+    return index;
+  }
+
+  /**
+   * 인덱스 자동 업데이트 (save/delete 시 호출)
+   */
+  private async updateIndex(): Promise<void> {
+    try {
+      await this.rebuildIndex();
+    } catch (error) {
+      console.error('[BestCaseStorage] Failed to update index:', error);
+    }
+  }
+
+  /**
+   * 인덱스 기반 고급 검색 (빠른 검색)
+   *
+   * 예시:
+   * - 구조가 우수한 케이스: searchByIndex({ excellentIn: ['structure'] })
+   * - 특정 프로젝트의 API 연결이 우수한 케이스: searchByIndex({ projectName: 'my-project', excellentIn: ['apiConnection'] })
+   * - 85점 이상의 우수 케이스: searchByIndex({ minTotalScore: 85 })
+   * - Vue3 태그가 있는 케이스: searchByIndex({ tags: ['vue3'] })
+   */
+  async searchByIndex(query: IndexSearchQuery): Promise<BestCase[]> {
+    // 인덱스 로드 (없으면 재구축)
+    let index = await this.loadIndex();
+    if (!index) {
+      console.error('[BestCaseStorage] Index not found, rebuilding...');
+      index = await this.rebuildIndex();
+    }
+
+    // 인덱스 기반 검색으로 ID 목록 획득
+    const matchingIds = searchIndex(index, query);
+
+    // ID로 BestCase 로드
+    const results: BestCase[] = [];
+    for (const id of matchingIds) {
+      const bestCase = await this.load(id);
+      if (bestCase) {
+        results.push(bestCase);
+      }
+    }
+
+    return results;
+  }
+
+  /**
+   * 특정 카테고리에서 우수한 케이스 검색
+   *
+   * 예: findExcellentInCategory('structure')
+   */
+  async findExcellentInCategory(category: keyof BestCaseScores): Promise<BestCase[]> {
+    return this.searchByIndex({ excellentIn: [category] });
+  }
+
+  /**
+   * 여러 카테고리 중 하나라도 우수한 케이스 검색 (OR 조건)
+   *
+   * 예: findExcellentInAnyCategory(['structure', 'apiConnection'])
+   */
+  async findExcellentInAnyCategory(categories: Array<keyof BestCaseScores>): Promise<BestCase[]> {
+    return this.searchByIndex({ excellentIn: categories });
+  }
+
+  /**
+   * 점수대별 케이스 검색
+   *
+   * 예: findByScoreGrade('excellent')
+   */
+  async findByScoreGrade(grade: 'excellent' | 'good' | 'fair' | 'poor'): Promise<BestCase[]> {
+    return this.searchByIndex({ scoreGrade: grade });
+  }
+
+  /**
+   * 최소 점수 이상의 케이스 검색
+   *
+   * 예: findByMinScore(80)
+   */
+  async findByMinScore(minScore: number): Promise<BestCase[]> {
+    return this.searchByIndex({ minTotalScore: minScore });
   }
 }

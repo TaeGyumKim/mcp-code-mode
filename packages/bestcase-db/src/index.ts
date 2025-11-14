@@ -11,3 +11,10 @@ export {
   getExcellentCategories,
   shouldSaveBestCase
 } from './types.js';
+export {
+  type BestCaseIndex,
+  type IndexSearchQuery,
+  buildIndex,
+  searchIndex,
+  getIndexStats
+} from './indexer.js';
