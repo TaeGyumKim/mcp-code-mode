@@ -8,7 +8,6 @@
  * 4. 실제 코드 생성 시나리오
  */
 
-import { MetadataAnalyzer } from '../../packages/llm-analyzer/src/metadataAnalyzer.js';
 import * as designSystemMapping from '../../packages/llm-analyzer/src/designSystemMapping.js';
 import { searchGuides } from '../../mcp-servers/guides/dist/index.js';
 
