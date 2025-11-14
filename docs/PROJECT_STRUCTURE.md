@@ -35,12 +35,11 @@ mcp-code-mode-starter/
 │   ├── *_GUIDE.md                  # Setup guides
 │   └── *_SUMMARY.md                # Implementation summaries
 ├── mcp-servers/                    # MCP server implementations
-│   ├── bestcase/                   # BestCase management
+│   ├── bestcase/                   # BestCase management (메타데이터 기반)
 │   │   ├── index.ts
 │   │   ├── saveBestCase.ts
 │   │   ├── loadBestCase.ts
-│   │   ├── listBestCases.ts
-│   │   └── scoreCalculator.ts
+│   │   └── listBestCases.ts
 │   ├── guides/                     # ⭐ Guides MCP 서버 (동적 지침 로딩)
 │   │   ├── index.ts                # searchGuides, loadGuide, combineGuides
 │   │   └── preflight.ts            # 프리플라이트 체크 로직

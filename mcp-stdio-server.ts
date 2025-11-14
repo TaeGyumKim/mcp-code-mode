@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * MCP STDIO Server
- * 
+ *
  * VS Code MCP Extension과 stdio 프로토콜로 통신하는 서버
  * Docker 컨테이너 내부에서 실행됩니다.
  */
@@ -90,34 +90,21 @@ rl.on('line', async (line: string) => {
           tools: [
             {
               name: 'execute',
-              description: 'Execute code in sandbox with filesystem and bestcase APIs',
+              description: 'Execute TypeScript code in sandbox. Access filesystem, bestcase, guides, and metadata APIs within the sandbox. Anthropic MCP Code Mode approach for 98% token reduction.',
               inputSchema: {
                 type: 'object',
                 properties: {
-                  code: { type: 'string', description: 'JavaScript code to execute' },
-                  timeoutMs: { type: 'number', description: 'Timeout in milliseconds', default: 30000 }
+                  code: {
+                    type: 'string',
+                    description: 'TypeScript code to execute. Available APIs: filesystem (read/write/search), bestcase (save/load/list), guides (search/load/combine), metadata (createAnalyzer)'
+                  },
+                  timeoutMs: {
+                    type: 'number',
+                    description: 'Timeout in milliseconds',
+                    default: 30000
+                  }
                 },
                 required: ['code']
-              }
-            },
-            {
-              name: 'list_bestcases',
-              description: 'List all saved BestCases with scores and metadata',
-              inputSchema: {
-                type: 'object',
-                properties: {}
-              }
-            },
-            {
-              name: 'load_bestcase',
-              description: 'Load a specific BestCase by project name and category',
-              inputSchema: {
-                type: 'object',
-                properties: {
-                  projectName: { type: 'string', description: 'Project name' },
-                  category: { type: 'string', description: 'BestCase category' }
-                },
-                required: ['projectName', 'category']
               }
             }
           ]
@@ -130,6 +117,7 @@ rl.on('line', async (line: string) => {
       const { name, arguments: args } = request.params as ToolCallParams;
       log('Tool call', { tool: name, args });
       
+      // ✅ execute 도구만 제공 (Anthropic Code Mode 방식)
       if (name === 'execute') {
         log('Executing code', { codeLength: args.code?.length });
         const result = await runAgentScript({
@@ -137,26 +125,36 @@ rl.on('line', async (line: string) => {
           timeoutMs: args.timeoutMs || 30000
         });
         log('Execution result', { success: !result.error });
-        
-        sendResponse({
-          jsonrpc: '2.0',
-          id: request.id,
-          result: {
-            content: [
-              {
-                type: 'text',
-                text: JSON.stringify(result, null, 2)
-              }
-            ]
+
+        // 🎯 프로젝트 컨텍스트를 포함한 응답 생성
+        let responseText = '';
+
+        // 프로젝트 컨텍스트 섹션
+        if (result.projectContext) {
+          responseText += '## 📋 Project Context\n\n';
+          responseText += `**Project Path**: ${result.projectContext.projectPath || 'Unknown'}\n\n`;
+
+          // 권장 플랜
+          if (result.projectContext.recommendedPlan && result.projectContext.recommendedPlan.length > 0) {
+            responseText += '### Recommended Plan\n\n';
+            result.projectContext.recommendedPlan.forEach(plan => {
+              responseText += `${plan}\n`;
+            });
+            responseText += '\n';
           }
-        });
-      }
-      else if (name === 'list_bestcases') {
-        log('Listing BestCases');
-        const code = 'await bestcase.listBestCases()';
-        const result = await runAgentScript({ code, timeoutMs: 10000 });
-        log('BestCases listed', { count: result.output?.bestcases?.length });
-        
+
+          responseText += '---\n\n';
+        }
+
+        // 실행 결과 섹션
+        responseText += '## ✅ Execution Result\n\n';
+        responseText += JSON.stringify({
+          ok: result.ok,
+          output: result.output,
+          logs: result.logs,
+          error: result.error
+        }, null, 2);
+
         sendResponse({
           jsonrpc: '2.0',
           id: request.id,
@@ -164,91 +162,34 @@ rl.on('line', async (line: string) => {
             content: [
               {
                 type: 'text',
-                text: JSON.stringify(result, null, 2)
-              }
-            ]
-          }
-        });
-      }
-      else if (name === 'load_bestcase') {
-        const { projectName, category } = args;
-        log('Loading BestCase', { projectName, category });
-        const code = `await bestcase.loadBestCase({ projectName: '${projectName}', category: '${category}' })`;
-        const result = await runAgentScript({ code, timeoutMs: 10000 });
-        log('BestCase loaded', { success: !result.error });
-        
-        sendResponse({
-          jsonrpc: '2.0',
-          id: request.id,
-          result: {
-            content: [
-              {
-                type: 'text',
-                text: JSON.stringify(result, null, 2)
+                text: responseText
               }
             ]
           }
         });
       }
       else {
+        log('Unknown tool', { tool: name });
         sendResponse({
           jsonrpc: '2.0',
           id: request.id,
           error: {
             code: -32601,
-            message: 'Tool not found: ' + name
+            message: `Tool not found: ${name}. Only 'execute' tool is available. Use Sandbox APIs (filesystem, bestcase, guides, metadata) within execute.`
           }
         });
       }
     }
     
-    // execute 메서드: 코드 실행 (하위 호환성)
-    else if (request.method === 'execute') {
-      const result = await runAgentScript({
-        code: request.params?.code,
-        timeoutMs: request.params?.timeoutMs || 30000
-      });
-      
-      sendResponse({
-        jsonrpc: '2.0',
-        id: request.id,
-        result: result
-      });
-    }
-    
-    // list_bestcases 메서드: BestCase 목록 (하위 호환성)
-    else if (request.method === 'list_bestcases') {
-      const code = 'await bestcase.listBestCases()';
-      const result = await runAgentScript({ code, timeoutMs: 10000 });
-      
-      sendResponse({
-        jsonrpc: '2.0',
-        id: request.id,
-        result: result
-      });
-    }
-    
-    // load_bestcase 메서드: BestCase 로드 (하위 호환성)
-    else if (request.method === 'load_bestcase') {
-      const { projectName, category } = request.params || {};
-      const code = `await bestcase.loadBestCase({ projectName: '${projectName}', category: '${category}' })`;
-      const result = await runAgentScript({ code, timeoutMs: 10000 });
-      
-      sendResponse({
-        jsonrpc: '2.0',
-        id: request.id,
-        result: result
-      });
-    }
-    
     // 지원하지 않는 메서드
     else {
+      log('Unknown method', { method: request.method });
       sendResponse({
         jsonrpc: '2.0',
         id: request.id,
         error: {
           code: -32601,
-          message: 'Method not found'
+          message: `Method not found: ${request.method}`
         }
       });
     }

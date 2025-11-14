@@ -1,0 +1,110 @@
+version: '3.8'
+
+services:
+  # Ollama LLM Server (CPU 전용)
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama-code-analyzer
+    volumes:
+      - ollama-models:/root/.ollama
+    ports:
+      - "11434:11434"
+    restart: unless-stopped
+    networks:
+      - mcp-network
+    deploy:
+      resources:
+        limits:
+          memory: 16G
+    environment:
+      - OLLAMA_NUM_PARALLEL=2
+      - OLLAMA_MAX_LOADED_MODELS=1
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # MCP Code Mode Server
+  mcp-code-mode:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: mcp-code-mode-server
+    ports:
+      - "3000:3000"
+    volumes:
+      - D:/01.Work/01.Projects:/projects
+    environment:
+      - NODE_ENV=production
+      - PROJECTS_PATH=/projects
+      - BESTCASE_STORAGE_PATH=/projects/.bestcases
+      - OLLAMA_URL=http://ollama:11434
+      - OLLAMA_HOST=http://ollama:11434
+      - LLM_PROVIDER=ollama
+      - LLM_MODEL=qwen2.5-coder:7b
+      - CONCURRENCY=1  # CPU는 동시 실행 수 줄임
+    deploy:
+      resources:
+        limits:
+          memory: 8G
+    restart: unless-stopped
+    depends_on:
+      - ollama
+    networks:
+      - mcp-network
+    command: tail -f /dev/null
+    healthcheck:
+      test: ["CMD", "test", "-f", "/app/mcp-stdio-server.js"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Cron Scheduler for Auto Scan (Weekly)
+  cron-scheduler:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: bestcase-cron-scheduler
+    volumes:
+      - D:/01.Work/01.Projects:/projects
+    environment:
+      - NODE_ENV=production
+      - PROJECTS_PATH=/projects
+      - BESTCASE_STORAGE_PATH=/projects/.bestcases
+      - OLLAMA_URL=http://ollama:11434
+      - LLM_MODEL=qwen2.5-coder:7b
+      - CONCURRENCY=1
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+    restart: unless-stopped
+    depends_on:
+      - ollama
+      - mcp-code-mode
+    networks:
+      - mcp-network
+    entrypoint: /bin/sh
+    command: >
+      -c "
+      mkdir -p /var/log &&
+      touch /var/log/cron.log &&
+      chmod +x /app/scripts/scan/init-scan.sh &&
+      chmod +x /app/cron-scan.sh &&
+      /app/scripts/scan/init-scan.sh >> /var/log/cron.log 2>&1 &&
+      echo '0 2 * * 0 /app/cron-scan.sh >> /var/log/cron.log 2>&1' | crontab - &&
+      cron &&
+      echo 'Initialization complete. Weekly cron scheduler started (Every Sunday at 2:00 AM)' &&
+      echo 'Next run: Sunday 02:00' &&
+      tail -f /var/log/cron.log
+      "
+
+networks:
+  mcp-network:
+    driver: bridge
+
+volumes:
+  ollama-models:
+    driver: local

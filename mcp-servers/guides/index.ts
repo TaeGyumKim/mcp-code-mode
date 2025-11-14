@@ -15,6 +15,7 @@ export interface GuideMetadata {
   requires?: string[];
   excludes?: string[];
   summary: string;
+  mandatory?: boolean;  // 🔑 필수 가이드 (자동으로 항상 로드됨)
 }
 
 export interface Guide extends GuideMetadata {
@@ -26,8 +27,9 @@ export interface Guide extends GuideMetadata {
  * 지침 파일 디렉토리 스캔 및 메타데이터 추출
  */
 export async function indexGuides(): Promise<Guide[]> {
-  const guidesDir = join(__dirname, '../../.github/instructions/guides');
-  
+  // Docker 컨테이너에서 실행 시: /app/mcp-servers/guides/dist/ → /app/.github/instructions/guides
+  const guidesDir = join(__dirname, '../../../.github/instructions/guides');
+
   console.error('[indexGuides] Scanning directory:', guidesDir);
   
   try {
@@ -58,11 +60,14 @@ async function scanDirectory(baseDir: string, currentDir: string, guides: Guide[
       await scanDirectory(baseDir, fullPath, guides);
     } else if (entry.isFile() && entry.name.endsWith('.md')) {
       // .md 파일 처리
-      const content = await fs.readFile(fullPath, 'utf-8');
-      
+      let content = await fs.readFile(fullPath, 'utf-8');
+
+      // 줄바꿈 정규화 (CRLF → LF)
+      content = content.replace(/\r\n/g, '\n');
+
       // 메타데이터 추출 (YAML front matter)
       const metadataMatch = content.match(/^---\n([\s\S]+?)\n---/);
-      
+
       if (!metadataMatch) {
         console.error('[scanDirectory] No metadata in file:', fullPath);
         continue;
@@ -109,8 +114,14 @@ function parseYamlMetadata(yaml: string): GuideMetadata {
     const key = line.substring(0, colonIdx).trim();
     let value: any = line.substring(colonIdx + 1).trim();
     
+    // Boolean 처리
+    if (value === 'true') {
+      value = true;
+    } else if (value === 'false') {
+      value = false;
+    }
     // 배열 처리 [a, b, c]
-    if (value.startsWith('[') && value.endsWith(']')) {
+    else if (value.startsWith('[') && value.endsWith(']')) {
       value = value
         .slice(1, -1)
         .split(',')
@@ -122,7 +133,7 @@ function parseYamlMetadata(yaml: string): GuideMetadata {
       value = parseInt(value, 10);
     }
     // 문자열 따옴표 제거
-    else if ((value.startsWith('"') && value.endsWith('"')) || 
+    else if ((value.startsWith('"') && value.endsWith('"')) ||
              (value.startsWith("'") && value.endsWith("'"))) {
       value = value.slice(1, -1);
     }
@@ -142,6 +153,8 @@ export interface SearchGuidesInput {
   apiType?: 'grpc' | 'openapi' | 'any';
   scope?: 'project' | 'repo' | 'org' | 'global';
   mandatoryIds?: string[];  // 🔑 필수 지침 ID (키워드 매칭 무관)
+  designSystem?: string;     // 🎨 디자인 시스템 ID (검색 우선순위 부스트)
+  utilityLibrary?: string;   // 🔧 유틸리티 라이브러리 ID (검색 우선순위 부스트)
 }
 
 export interface SearchGuidesOutput {
@@ -153,6 +166,7 @@ export interface SearchGuidesOutput {
     tags: string[];
     priority: number;
   }>;
+  mandatoryReminders?: string[];  // 🔑 필수 가이드 경고 메시지
 }
 
 /**
@@ -160,19 +174,38 @@ export interface SearchGuidesOutput {
  */
 export async function searchGuides(input: SearchGuidesInput): Promise<SearchGuidesOutput> {
   console.error('[searchGuides] Input:', JSON.stringify(input, null, 2));
-  
+
   const allGuides = await indexGuides();
-  
+
+  // 🔑 mandatory: true인 가이드를 자동으로 mandatoryIds에 추가
+  const autoMandatoryIds = allGuides
+    .filter(g => g.mandatory === true)
+    .map(g => g.id);
+
+  if (autoMandatoryIds.length > 0) {
+    console.error('[searchGuides] Auto-detected mandatory guides:', autoMandatoryIds);
+  }
+
+  // mandatoryIds와 auto-detected mandatory 병합
+  const allMandatoryIds = [
+    ...(input.mandatoryIds || []),
+    ...autoMandatoryIds
+  ];
+
+  // 중복 제거
+  const uniqueMandatoryIds = [...new Set(allMandatoryIds)];
+
   // 🔑 필수 지침 먼저 확보 (키워드 매칭 무관)
   const mandatoryGuides: any[] = [];
-  if (input.mandatoryIds && input.mandatoryIds.length > 0) {
-    for (const id of input.mandatoryIds) {
+  if (uniqueMandatoryIds.length > 0) {
+    for (const id of uniqueMandatoryIds) {
       const guide = allGuides.find(g => g.id === id);
       if (guide) {
         console.error('[searchGuides] Mandatory guide loaded:', {
           id: guide.id,
           summary: guide.summary,
-          priority: guide.priority
+          priority: guide.priority,
+          autoDetected: guide.mandatory === true
         });
         mandatoryGuides.push({
           id: guide.id,
@@ -211,27 +244,65 @@ export async function searchGuides(input: SearchGuidesInput): Promise<SearchGuid
       score += 20;
     }
     
-    // 3. 키워드 매칭 (태그 +15점, 요약/내용 +10점)
+    // 3. 디자인 시스템 매칭 (+40점) 🎨
+    if (input.designSystem) {
+      const lowerDesignSystem = input.designSystem.toLowerCase();
+
+      // ID 완전 매칭
+      if (guide.id === input.designSystem || guide.id === `${input.designSystem}-guide`) {
+        score += 40;
+      }
+      // 태그 매칭
+      else if (guide.tags.some(tag => tag.toLowerCase().includes(lowerDesignSystem))) {
+        score += 35;
+      }
+      // 요약/내용 매칭
+      else if (guide.summary.toLowerCase().includes(lowerDesignSystem) ||
+               guide.content.toLowerCase().includes(lowerDesignSystem)) {
+        score += 25;
+      }
+    }
+
+    // 3.5. 유틸리티 라이브러리 매칭 (+40점) 🔧
+    if (input.utilityLibrary) {
+      const lowerUtilityLibrary = input.utilityLibrary.toLowerCase();
+
+      // ID 완전 매칭
+      if (guide.id === input.utilityLibrary || guide.id === `${input.utilityLibrary}-guide`) {
+        score += 40;
+      }
+      // 태그 매칭
+      else if (guide.tags.some(tag => tag.toLowerCase().includes(lowerUtilityLibrary))) {
+        score += 35;
+      }
+      // 요약/내용 매칭
+      else if (guide.summary.toLowerCase().includes(lowerUtilityLibrary) ||
+               guide.content.toLowerCase().includes(lowerUtilityLibrary)) {
+        score += 25;
+      }
+    }
+
+    // 4. 키워드 매칭 (태그 +15점, 요약/내용 +10점)
     for (const keyword of input.keywords) {
       const lowerKeyword = keyword.toLowerCase();
-      
+
       // 태그 매칭
       if (guide.tags.some(tag => tag.toLowerCase().includes(lowerKeyword))) {
         score += 15;
       }
-      
+
       // 요약 매칭
       if (guide.summary.toLowerCase().includes(lowerKeyword)) {
         score += 10;
       }
-      
+
       // 내용 매칭
       if (guide.content.toLowerCase().includes(lowerKeyword)) {
         score += 5;
       }
     }
     
-    // 4. Priority 반영 (+priority/10점)
+    // 5. Priority 반영 (+priority/10점)
     score += guide.priority / 10;
     
     return {
@@ -257,11 +328,27 @@ export async function searchGuides(input: SearchGuidesInput): Promise<SearchGuid
     summary: g.summary,
     mandatory: g.score === 1000
   })));
-  
+
+  // 🔑 mandatory 가이드 경고 메시지 생성
+  const mandatoryReminders: string[] = [];
+  if (mandatoryGuides.length > 0) {
+    mandatoryReminders.push('⚠️ 필수 가이드 적용 필요:');
+    mandatoryGuides.forEach(mg => {
+      if (mg.id === 'mandatory-api-detection') {
+        mandatoryReminders.push('  - API 자동 감지 필수: 하드코딩된 데이터 사용 금지');
+        mandatoryReminders.push('  - 기존 gRPC/OpenAPI 타입 사용 필수');
+        mandatoryReminders.push('  - useBackendClient 같은 API 클라이언트 사용 필수');
+      } else {
+        mandatoryReminders.push(`  - ${mg.id}: ${mg.summary}`);
+      }
+    });
+  }
+
   return {
     guides: allResults.slice(0, 10).map(({ id, score, summary, filePath, tags, priority }) => ({
       id, score, summary, filePath, tags, priority
     })),
+    mandatoryReminders: mandatoryReminders.length > 0 ? mandatoryReminders : undefined
   };
 }
 
@@ -316,11 +403,31 @@ export interface CombineGuidesOutput {
     version: string;
     scope: string;
   }>;
+  mandatoryReminders?: string[];  // 🔑 필수 가이드 경고 메시지
 }
 
 export async function combineGuides(input: CombineGuidesInput): Promise<CombineGuidesOutput> {
   const allGuides = await indexGuides();
-  const requestedGuides = input.ids
+
+  // 🔑 mandatory: true인 가이드를 자동으로 추가
+  const autoMandatoryIds = allGuides
+    .filter(g => g.mandatory === true)
+    .map(g => g.id);
+
+  if (autoMandatoryIds.length > 0) {
+    console.error('[combineGuides] Auto-detected mandatory guides:', autoMandatoryIds);
+  }
+
+  // input.ids와 auto-detected mandatory 병합
+  const allIds = [
+    ...autoMandatoryIds,  // mandatory 가이드를 먼저
+    ...input.ids
+  ];
+
+  // 중복 제거
+  const uniqueIds = [...new Set(allIds)];
+
+  const requestedGuides = uniqueIds
     .map(id => allGuides.find(g => g.id === id))
     .filter(Boolean) as Guide[];
   
@@ -373,19 +480,58 @@ export async function combineGuides(input: CombineGuidesInput): Promise<CombineG
   const combined = filteredGuides
     .map(guide => `# ${guide.summary}\n\n${guide.content}`)
     .join('\n\n---\n\n');
-  
+
   const usedGuides = filteredGuides.map(g => ({
     id: g.id,
     priority: g.priority,
     version: g.version,
     scope: g.scope,
   }));
-  
-  return { combined, usedGuides };
+
+  // 🔑 mandatory 가이드 경고 메시지 생성
+  const mandatoryReminders: string[] = [];
+  const mandatoryGuides = filteredGuides.filter(g => g.mandatory === true);
+  if (mandatoryGuides.length > 0) {
+    mandatoryReminders.push('⚠️ 필수 가이드 적용 필요:');
+    mandatoryGuides.forEach(mg => {
+      if (mg.id === 'mandatory-api-detection') {
+        mandatoryReminders.push('  - API 자동 감지 필수: 하드코딩된 데이터 사용 금지');
+        mandatoryReminders.push('  - 기존 gRPC/OpenAPI 타입 사용 필수');
+        mandatoryReminders.push('  - useBackendClient 같은 API 클라이언트 사용 필수');
+      } else {
+        mandatoryReminders.push(`  - ${mg.id}: ${mg.summary}`);
+      }
+    });
+  }
+
+  return {
+    combined,
+    usedGuides,
+    mandatoryReminders: mandatoryReminders.length > 0 ? mandatoryReminders : undefined
+  };
 }
 
 /**
  * 워크플로우 실행 (Ultra Compact 메인 지침용)
+ *
+ * ⚠️ DEPRECATED: 이 함수는 더 이상 사용되지 않습니다.
+ *
+ * **Anthropic MCP Code Mode 방식으로 전환**:
+ * - 클라이언트가 Sandbox API를 통해 직접 guides를 사용
+ * - preflight 로직은 클라이언트에서 처리 (MetadataAnalyzer 사용)
+ * - MCP 도구 'execute_workflow'가 제거됨
+ *
+ * **새로운 워크플로우**:
+ * 1. 클라이언트: MetadataAnalyzer로 프로젝트 메타데이터 추출
+ * 2. 클라이언트: BestCase 검색 및 비교 (metadata 필드 사용)
+ * 3. 클라이언트: TODO 생성 (메타데이터 비교 기반)
+ * 4. 클라이언트: guides.search() 호출
+ * 5. 클라이언트: guides.combine() 호출
+ * 6. 클라이언트: 코드 생성 및 실행
+ *
+ * 📖 참고: docs/WORKFLOW_CORRECT.md
+ *
+ * @deprecated Use Sandbox APIs in client instead (guides.search, guides.load, guides.combine)
  */
 export interface ExecuteWorkflowInput {
   workflowGuide: Guide;
@@ -408,93 +554,19 @@ export interface ExecuteWorkflowOutput {
   changeSummary: any;
 }
 
+/**
+ * @deprecated
+ */
 export async function executeWorkflow(input: ExecuteWorkflowInput): Promise<ExecuteWorkflowOutput> {
-  // preflight.ts 함수들을 동적으로 import
-  const { 
-    buildRequestMetadata, 
-    synthesizeTodoList, 
-    preflightCheck, 
-    extractKeywords 
-  } = await import('./preflight.js');
-  
-  // 1단계: 메타데이터 변환
-  const metadata = await buildRequestMetadata(input.userRequest, input.workspacePath);
-  
-  // BestCase에서 API 타입 확정
-  if (input.bestCase?.patterns?.apiInfo?.apiType) {
-    metadata.apiTypeHint = input.bestCase.patterns.apiInfo.apiType.toLowerCase() as any;
-  }
-  
-  // 2단계: TODO 합성 + 프리플라이트 검수
-  const todos = await synthesizeTodoList(metadata, input.bestCase, input.workspacePath);
-  const preflight = await preflightCheck(metadata, todos, input.bestCase);
-  
-  // risk >= 40 → 스캐폴딩만
-  if (!preflight.ok) {
-    return {
-      success: false,
-      metadata,
-      preflight,
-      usedGuides: [],
-      combinedContent: '',
-      changeSummary: {
-        mode: 'scaffold-only',
-        reason: `Risk ${preflight.risk} >= ${metadata.riskThreshold}`,
-        reasons: preflight.reasons,
-      }
-    };
-  }
-  
-  // 3단계: 키워드 추출 (이미 preflight.keywords에 포함)
-  const keywords = preflight.keywords;
-  
-  // 4단계: 지침 검색/병합 (⚠️ 필수 지침 강제 포함)
-  const apiTypeForSearch = metadata.apiTypeHint === 'auto' ? undefined : metadata.apiTypeHint;
-  
-  // 필수 지침 ID 구성
-  const mandatoryGuides = [
-    `${metadata.apiTypeHint}.api.connection`,  // API 연결 체크
-    'api.validation',                          // API 시그니처 검증
-    'error.handling'                           // 에러 처리 패턴
-  ];
-  
-  console.error('[executeWorkflow] Mandatory guides:', mandatoryGuides);
-  
-  const searchResult = await searchGuides({
-    keywords,
-    apiType: apiTypeForSearch,
-    mandatoryIds: mandatoryGuides,  // 🔑 필수 지침 강제 포함
-  });
-  
-  const topGuideIds = searchResult.guides.slice(0, 5).map(g => g.id);
-  
-  const apiTypeForCombine = metadata.apiTypeHint === 'auto' ? 'any' as const : metadata.apiTypeHint;
-  
-  const combined = await combineGuides({
-    ids: topGuideIds,
-    context: {
-      project: metadata.projectName,
-      apiType: apiTypeForCombine,
-    }
-  });
-  
-  // 5단계: 변경 요약
-  const changeSummary = {
-    mode: 'auto-apply',
-    usedGuides: combined.usedGuides,
-    changedFiles: metadata.targets,
-    totalLoc: todos.reduce((sum: number, t: any) => sum + t.loc, 0),
-    risk: preflight.risk,
-    keywords,
-    timestamp: new Date().toISOString(),
-  };
-  
-  return {
-    success: true,
-    metadata,
-    preflight,
-    usedGuides: combined.usedGuides,
-    combinedContent: combined.combined,
-    changeSummary,
-  };
+  throw new Error(
+    'DEPRECATED: executeWorkflow() is no longer used.\n\n' +
+    'Anthropic MCP Code Mode approach:\n' +
+    '1. Client: Extract metadata with MetadataAnalyzer\n' +
+    '2. Client: Search and compare BestCase (metadata field)\n' +
+    '3. Client: Generate TODOs from metadata comparison\n' +
+    '4. Client: Call guides.search() with keywords\n' +
+    '5. Client: Call guides.combine() to merge guides\n' +
+    '6. Client: Generate and execute code\n\n' +
+    'See docs/WORKFLOW_CORRECT.md for details.'
+  );
 }

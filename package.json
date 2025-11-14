@@ -31,7 +31,8 @@
   "workspaces": [
     "apps/*",
     "packages/*",
-    "mcp-servers/*"
+    "mcp-servers/*",
+    "scripts"
   ],
   "scripts": {
     "dev": "yarn workspace web run dev",
@@ -39,6 +40,10 @@
     "build:root": "tsup mcp-stdio-server.ts --format esm --clean --no-dts --external vm2 --external vm --shims",
     "scan:auto": "tsx scripts/scan/auto-scan-projects.ts",
     "scan:auto-ai": "tsx scripts/scan/auto-scan-projects-ai.ts",
+    "test:guides": "tsx scripts/test/test-guides-integration.ts",
+    "test:yaml": "tsx scripts/test/test-yaml-parser.ts",
+    "test:flow": "tsx scripts/test/test-mcp-server-flow.ts",
+    "test:metadata": "tsx scripts/test/test-metadata-analyzer.ts",
     "ollama:init": "powershell -ExecutionPolicy Bypass -File ./init-ollama.ps1",
     "ollama:test": "docker exec ollama-code-analyzer ollama list",
     "docker:up": "docker-compose -f docker-compose.ai.yml up -d",

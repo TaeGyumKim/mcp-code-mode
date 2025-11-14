@@ -1,6 +1,12 @@
 import { promises as fs } from 'fs';
 import { join, dirname } from 'path';
 
+/**
+ * BestCase 인터페이스
+ *
+ * 우수 코드 사례를 저장하고 관리합니다.
+ * 메타데이터 기반 비교를 통해 프로젝트 개선점을 도출할 수 있습니다.
+ */
 export interface BestCase {
   id: string;
   projectName: string;
@@ -11,9 +17,29 @@ export interface BestCase {
     content: string;
     purpose: string;
   }>;
+
+  /**
+   * 패턴 및 메타데이터
+   *
+   * ✅ 메타데이터 기반 BestCase (권장):
+   * {
+   *   metadata: ProjectMetadata | FileMetadata,  // MetadataAnalyzer 결과
+   *   excellentReasons: string[]
+   * }
+   *
+   * ⚠️ 기존 점수 기반 (하위 호환성):
+   * {
+   *   apiInfo: { ... },
+   *   componentUsage: { ... },
+   *   score: number
+   * }
+   */
   patterns: {
-    [key: string]: any;
+    metadata?: any;  // ProjectMetadata | FileMetadata (from llm-analyzer)
+    excellentReasons?: string[];
+    [key: string]: any;  // 하위 호환성 유지
   };
+
   metadata: {
     createdAt: string;
     updatedAt: string;

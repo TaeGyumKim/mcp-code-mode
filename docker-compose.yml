@@ -1,6 +1,41 @@
 version: '3.8'
 
 services:
+  # Ollama LLM Server for Code Analysis with GPU
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama-code-analyzer
+    volumes:
+      - ollama-models:/root/.ollama
+    ports:
+      - "11434:11434"
+    restart: unless-stopped
+    networks:
+      - mcp-network
+    # GPU 활성화 (NVIDIA GPU가 있는 경우)
+    # 없으면 CPU로 동작
+    runtime: nvidia
+    deploy:
+      resources:
+        limits:
+          memory: 24G
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ['1']
+              capabilities: [gpu]
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+      - OLLAMA_NUM_PARALLEL=3
+      - OLLAMA_MAX_LOADED_MODELS=1
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # MCP Code Mode Server
   mcp-code-mode:
     build:
       context: .
@@ -9,19 +44,121 @@ services:
     ports:
       - "3000:3000"
     volumes:
-      # 로컬 프로젝트 디렉토리를 컨테이너에 마운트 (읽기/쓰기)
-      - D:/01.Work/01.Projects:/projects
+      - ${HOST_PROJECTS_PATH}:/projects
     environment:
-      - NODE_ENV=production
-      - PROJECTS_PATH=/projects
-      - BESTCASE_STORAGE_PATH=/projects/.bestcases
+      - NODE_ENV=${NODE_ENV:-production}
+      - PROJECTS_PATH=${PROJECTS_PATH:-/projects}
+      - BESTCASE_STORAGE_PATH=${BESTCASE_STORAGE_PATH:-/projects/.bestcases}
+      - OLLAMA_URL=${OLLAMA_URL:-http://ollama:11434}
+      - OLLAMA_HOST=${OLLAMA_HOST:-http://ollama:11434}
+      - LLM_PROVIDER=${LLM_PROVIDER:-ollama}
+      - LLM_MODEL=${LLM_MODEL:-qwen2.5-coder:7b}
+      - CONCURRENCY=${CONCURRENCY:-2}
+      - DESIGN_SYSTEMS=${DESIGN_SYSTEMS:-openerd-nuxt3,element-plus,vuetify}
+    deploy:
+      resources:
+        limits:
+          memory: 8G
     restart: unless-stopped
+    depends_on:
+      - ollama
+    networks:
+      - mcp-network
+    # 컨테이너 유지 (VSCode에서 docker exec로 mcp-stdio-server.js 실행)
+    command: tail -f /dev/null
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      test: ["CMD", "test", "-f", "/app/mcp-stdio-server.js"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 40s
+
+  # Local Package Analyzer (독립 서비스)
+  local-package-analyzer:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: local-package-analyzer
+    volumes:
+      - ${HOST_PROJECTS_PATH}:/projects
+      - ./.mcp:/app/.mcp  # 로컬 패키지 설정 파일
+    environment:
+      - NODE_ENV=${NODE_ENV:-production}
+      - PROJECTS_PATH=${PROJECTS_PATH:-/projects}
+      - OLLAMA_URL=${OLLAMA_URL:-http://ollama:11434}
+      - LLM_MODEL=${LLM_MODEL:-qwen2.5-coder:7b}
+      - ANALYSIS_MODE=${LOCAL_PACKAGE_ANALYSIS_MODE:-unanalyzed}  # all | unanalyzed | force
+      - LOG_ERRORS=true
+      # Git 인증 (필요시)
+      - GIT_USERNAME=${GIT_USERNAME:-}
+      - GIT_PASSWORD=${GIT_PASSWORD:-}
+      - GIT_TOKEN=${GIT_TOKEN:-}
+    deploy:
+      resources:
+        limits:
+          memory: 6G
+    restart: unless-stopped
+    depends_on:
+      - ollama
+    networks:
+      - mcp-network
+    entrypoint: /bin/sh
+    command: >
+      -c "
+      echo '🔧 Local Package Analyzer starting...' &&
+      mkdir -p /var/log &&
+      touch /var/log/local-packages.log &&
+      echo '📅 Cron schedule: Daily at 00:00 (midnight) for unanalyzed packages' &&
+      echo '📅 Cron schedule: Weekly on Sunday at 03:00 AM for re-analysis (all packages)' &&
+      echo '0 0 * * * ANALYSIS_MODE=unanalyzed tsx /app/scripts/analyze-local-packages.ts >> /var/log/local-packages.log 2>&1' | crontab - &&
+      echo '0 3 * * 0 ANALYSIS_MODE=all tsx /app/scripts/analyze-local-packages.ts >> /var/log/local-packages.log 2>&1' | crontab - &&
+      cron &&
+      echo '✅ Local package analyzer ready' &&
+      echo '   - Daily scan (unanalyzed): 00:00' &&
+      echo '   - Weekly re-scan (all): Sunday 03:00' &&
+      tail -f /var/log/local-packages.log
+      "
+
+  # Cron Scheduler for Auto Scan (Weekly)
+  cron-scheduler:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: bestcase-cron-scheduler
+    volumes:
+      - ${HOST_PROJECTS_PATH}:/projects
+    environment:
+      - NODE_ENV=${NODE_ENV:-production}
+      - PROJECTS_PATH=${PROJECTS_PATH:-/projects}
+      - BESTCASE_STORAGE_PATH=${BESTCASE_STORAGE_PATH:-/projects/.bestcases}
+      - OLLAMA_URL=${OLLAMA_URL:-http://ollama:11434}
+      - LLM_MODEL=${LLM_MODEL:-qwen2.5-coder:7b}
+      - CONCURRENCY=${CONCURRENCY:-2}
+      - DESIGN_SYSTEMS=${DESIGN_SYSTEMS:-openerd-nuxt3,element-plus,vuetify}
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+    restart: unless-stopped
+    depends_on:
+      - ollama
+      - mcp-code-mode
+    networks:
+      - mcp-network
+    entrypoint: /bin/sh
+    command: >
+      -c "
+      mkdir -p /var/log &&
+      touch /var/log/cron.log &&
+      chmod +x /app/scripts/scan/init-scan.sh &&
+      chmod +x /app/cron-scan.sh &&
+      sh /app/scripts/scan/init-scan.sh >> /var/log/cron.log 2>&1 &&
+      echo '0 2 * * 0 /app/cron-scan.sh >> /var/log/cron.log 2>&1' | crontab - &&
+      cron &&
+      echo 'Initialization complete. Weekly cron scheduler started (Every Sunday at 2:00 AM)' &&
+      echo 'Next run: Sunday 02:00' &&
+      tail -f /var/log/cron.log
+      "
 
   # 개발용 서비스 (선택적)
   mcp-code-mode-dev:
@@ -32,14 +169,27 @@ services:
     ports:
       - "3001:3000"
     volumes:
-      # 전체 소스 코드 마운트 (개발 모드)
       - .:/app
       - /app/node_modules
-      - D:/01.Work/01.Projects:/projects
+      - ${HOST_PROJECTS_PATH}:/projects
     environment:
       - NODE_ENV=development
-      - PROJECTS_PATH=/projects
-      - BESTCASE_STORAGE_PATH=/projects/.bestcases
+      - PROJECTS_PATH=${PROJECTS_PATH:-/projects}
+      - BESTCASE_STORAGE_PATH=${BESTCASE_STORAGE_PATH:-/projects/.bestcases}
+      - OLLAMA_URL=${OLLAMA_URL:-http://ollama:11434}
+      - DESIGN_SYSTEMS=${DESIGN_SYSTEMS:-openerd-nuxt3,element-plus,vuetify}
     command: yarn workspace web dev
+    depends_on:
+      - ollama
+    networks:
+      - mcp-network
     profiles:
       - dev
+
+networks:
+  mcp-network:
+    driver: bridge
+
+volumes:
+  ollama-models:
+    driver: local

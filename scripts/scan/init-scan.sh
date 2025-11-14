@@ -1,0 +1,86 @@
+#!/bin/sh
+# Docker 시작 시 실행되는 초기화 스크립트
+# 에러가 발생해도 컨테이너는 정상 시작됩니다
+
+echo ""
+echo "========================================="
+echo "🚀 Docker 초기화: BestCase 검증 및 AI 스캔"
+echo "📅 $(date)"
+echo "========================================="
+echo ""
+
+cd /app || exit 1
+
+# 환경 변수 기본값 설정
+export LLM_MODEL="${LLM_MODEL:-qwen2.5-coder:7b}"
+export CONCURRENCY="${CONCURRENCY:-2}"
+export BESTCASE_STORAGE_PATH="${BESTCASE_STORAGE_PATH:-/projects/.bestcases}"
+
+# 1. Ollama 서버 대기
+echo "⏳ Ollama 서버 대기 중..."
+RETRY_COUNT=0
+MAX_RETRIES=30
+
+while ! curl -sf http://ollama:11434/api/tags > /dev/null 2>&1; do
+  RETRY_COUNT=$((RETRY_COUNT + 1))
+  if [ $RETRY_COUNT -ge $MAX_RETRIES ]; then
+    echo "❌ Ollama 서버 응답 없음 (30초 초과)"
+    echo "⚠️ 초기 검증 및 AI 스캔을 건너뜁니다."
+    echo "✅ Cron 스케줄러는 정상 시작합니다."
+    exit 0
+  fi
+  echo "   대기 중... (${RETRY_COUNT}/${MAX_RETRIES})"
+  sleep 1
+done
+
+echo "✅ Ollama 서버 준비 완료"
+echo ""
+
+# 2. BestCase 검증 및 정리
+echo "🔍 BestCase 검증 시작..."
+
+# 빌드된 스크립트 사용
+node /app/scripts/dist/scan/validate-bestcases.js
+VALIDATION_EXIT_CODE=$?
+
+echo ""
+
+# 3. 검증 결과에 따라 처리
+if [ $VALIDATION_EXIT_CODE -eq 1 ]; then
+  # 유효한 BestCase가 없거나 삭제된 파일이 있음 → AI 스캔 필요
+  echo "🔄 전체 프로젝트 AI 스캔을 실행합니다..."
+  echo ""
+  echo "🧠 LLM Model: $LLM_MODEL"
+  echo "⚡ Concurrency: $CONCURRENCY"
+  echo "📁 Storage: $BESTCASE_STORAGE_PATH"
+  echo ""
+
+  # 전체 AI 스캔 실행
+  node /app/scripts/dist/scan/auto-scan-projects-ai.js
+
+  if [ $? -eq 0 ]; then
+    echo ""
+    echo "✨ 초기 AI 스캔 완료"
+  else
+    echo ""
+    echo "❌ 초기 AI 스캔 실패"
+    echo "⚠️ 다음 주간 스캔 때 재시도됩니다."
+  fi
+elif [ $VALIDATION_EXIT_CODE -eq 0 ]; then
+  # 유효한 BestCase가 있고 삭제된 파일 없음 → 스캔 불필요
+  echo "💡 주간 스캔은 매주 일요일 02:00에 실행됩니다."
+else
+  # 검증 중 에러 발생
+  echo "❌ BestCase 검증 중 에러 발생 (exit code: $VALIDATION_EXIT_CODE)"
+  echo "⚠️ 초기 AI 스캔을 건너뜁니다."
+fi
+
+echo ""
+echo "========================================="
+echo "✅ 초기화 완료"
+echo "⏰ $(date)"
+echo "========================================="
+echo ""
+
+# 항상 정상 종료 (컨테이너가 계속 실행되도록)
+exit 0
