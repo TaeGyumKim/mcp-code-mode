@@ -208,10 +208,60 @@ export async function runInSandbox(code: string, timeoutMs: number = 30000): Pro
       projectContext  // 🎯 프로젝트 컨텍스트 포함
     };
   } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+
+    // 일반적인 실수에 대한 친절한 가이드 제공
+    let helpfulMessage = errorMessage;
+
+    // JSX 문법 사용 감지
+    if (errorMessage.includes('Unexpected identifier') || errorMessage.includes('Unexpected token <')) {
+      if (code.includes('<template>') || code.includes('<div') || code.includes('</')) {
+        helpfulMessage = `❌ JSX/TSX 문법은 샌드박스에서 사용할 수 없습니다.
+
+원인: const variable = <template>... 같은 JSX 문법을 사용했습니다.
+
+✅ 해결책: 백틱(\`)을 사용하여 문자열로 저장하세요:
+   const variable = \`<template>...\`;
+
+📚 샌드박스는 순수 JavaScript만 실행 가능합니다.`;
+      }
+    }
+
+    // import/export 문 사용 감지
+    if (errorMessage.includes('import') && errorMessage.includes('export')) {
+      helpfulMessage = `❌ import/export는 샌드박스에서 사용할 수 없습니다.
+
+원인: import fs from 'fs' 같은 ES 모듈 문법을 사용했습니다.
+
+✅ 해결책: 샌드박스에서 제공하는 API를 사용하세요:
+   - filesystem.readFile({ path: '...' })  // fs.readFile 대신
+   - filesystem.writeFile({ path: '...', content: '...' })
+   - bestcase.saveBestCase({ ... })
+   - guides.searchGuides({ ... })
+
+📚 이미 주입된 API: filesystem, bestcase, guides, metadata, console`;
+    }
+
+    // interface/type 사용 감지
+    if (code.includes('interface ') || (code.includes('type ') && code.includes(' = {'))) {
+      helpfulMessage = `❌ TypeScript 문법(interface, type)은 샌드박스에서 사용할 수 없습니다.
+
+원인: interface나 type 선언을 사용했습니다.
+
+✅ 해결책: 타입 선언을 제거하고 순수 JavaScript로 작성하세요:
+   ❌ interface Data { name: string; }
+   ✅ const data = { name: "value" };
+
+   ❌ const value: string = "text";
+   ✅ const value = "text";
+
+📚 최신 JavaScript(ES6+) 문법은 지원되지만, TypeScript 전용 문법은 불가합니다.`;
+    }
+
     return {
       ok: false,
       logs,
-      error: error instanceof Error ? error.message : String(error)
+      error: helpfulMessage
     };
   }
 }
