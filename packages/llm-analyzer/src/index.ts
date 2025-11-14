@@ -30,3 +30,10 @@ export type {
   ErrorHandlingLevel,
   TypeDefinitionQuality
 } from './metadata.js';
+
+// BestCase 비교 유틸리티 ⭐ NEW
+export { compareBestCaseMetadata } from './bestcaseComparator.js';
+export type {
+  ComparisonResult,
+  TodoItem
+} from './bestcaseComparator.js';

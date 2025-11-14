@@ -5,6 +5,7 @@ import * as guides from '../../../mcp-servers/guides/dist/index.js';
 import { MetadataAnalyzer } from '../../llm-analyzer/src/metadataAnalyzer.js';
 import * as designSystemMapping from '../../llm-analyzer/src/designSystemMapping.js';
 import * as utilityLibraryMapping from '../../llm-analyzer/src/utilityLibraryMapping.js';
+import { compareBestCaseMetadata } from '../../llm-analyzer/src/bestcaseComparator.js';
 import { extractProjectContext, type ProjectContext } from './projectContext.js';
 
 export interface SandboxResult {
@@ -61,6 +62,21 @@ export async function runInSandbox(code: string, timeoutMs: number = 30000): Pro
           createAnalyzer: (config: { ollamaUrl: string; model: string }) => {
             return new MetadataAnalyzer(config);
           },
+
+          /**
+           * BestCase 메타데이터와 프로젝트 메타데이터 비교
+           *
+           * @example
+           * const comparison = metadata.compareBestCase(
+           *   projectMeta,
+           *   bestCase.patterns.metadata,
+           *   bestCase.files
+           * );
+           *
+           * console.log('Missing patterns:', comparison.missingPatterns);
+           * console.log('TODOs:', comparison.todos);
+           */
+          compareBestCase: compareBestCaseMetadata,
 
           /**
            * 디자인 시스템 정보 가져오기
