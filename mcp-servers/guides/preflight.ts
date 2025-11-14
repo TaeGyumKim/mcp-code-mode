@@ -1,161 +1,19 @@
 /**
- * ⚠️ DEPRECATED - Preflight 시스템
+ * Preflight 유틸리티 함수들
  *
- * Anthropic MCP Code Mode 방식으로 전환되었습니다.
+ * ⚠️ 기존 preflight 시스템은 deprecated 되었습니다.
+ * 새로운 Anthropic MCP Code Mode 방식으로 전환되었습니다.
  *
- * **기존 방식** (deprecated):
- * - 서버가 buildRequestMetadata, synthesizeTodoList, preflightCheck 실행
- * - 복잡한 프로젝트 스캔 로직 (scanProjectApiFiles, detectProjectType 등)
- * - executeWorkflow MCP 도구로 제공
- * - 매번 프로젝트 전체를 재귀 스캔 (느림)
- *
- * **새로운 방식** (권장):
- * - 클라이언트가 MetadataAnalyzer로 메타데이터 추출 (한 번만)
+ * - 클라이언트가 MetadataAnalyzer로 메타데이터 추출
  * - 클라이언트가 BestCase 비교 및 TODO 생성
  * - 서버는 guides API만 제공 (search, load, combine)
- * - 98% 토큰 절감
  *
  * 📖 참고: docs/WORKFLOW_CORRECT.md
- *
- * @deprecated 이 파일의 대부분 함수는 더 이상 사용되지 않습니다.
  */
 
 // ============================================================
-// 기존 인터페이스 (호환성 유지)
+// 키워드 추출 유틸리티
 // ============================================================
-
-export interface RequestMetadata {
-  projectName: string;
-  intent: 'page-create' | 'page-update' | 'refactor' | 'api-integration';
-  targets: string[];
-  apiTypeHint: 'grpc' | 'openapi' | 'auto';
-  entities: string[];
-  uiDeps: {
-    tailwind: boolean;
-    openerdComponents: string[];
-  };
-  allowWrite: {
-    glob: string[];
-    maxFiles: number;
-    maxLoc: number;
-  };
-  constraints: string[];
-  riskThreshold: number;
-}
-
-export interface TodoItem {
-  id: string;
-  files: string[];
-  loc: number;
-  description: string;
-}
-
-export interface PreflightResult {
-  ok: boolean;
-  risk: number;
-  keywords: string[];
-  reasons: Array<{
-    check: string;
-    passed: boolean;
-    details: string;
-  }>;
-}
-
-// ============================================================
-// Deprecated 함수들 (더 이상 사용하지 마세요)
-// ============================================================
-
-/**
- * @deprecated 클라이언트가 MetadataAnalyzer를 사용하세요
- *
- * 기존: 서버가 package.json, nuxt.config.ts 읽어서 메타데이터 생성
- * 새 방식: 클라이언트가 MetadataAnalyzer로 추출
- */
-export async function buildRequestMetadata(
-  reqText: string,
-  workspacePath: string
-): Promise<RequestMetadata> {
-  throw new Error(
-    'DEPRECATED: Use MetadataAnalyzer in client instead.\n' +
-    'See docs/WORKFLOW_CORRECT.md for the new workflow.'
-  );
-}
-
-/**
- * @deprecated 클라이언트에서 메타데이터 비교로 TODO를 생성하세요
- *
- * 기존: 서버가 scanProjectApiFiles()로 프로젝트 스캔 → TODO 생성
- * 새 방식: 클라이언트가 ProjectMetadata와 BestCase 비교 → TODO 생성
- */
-export async function synthesizeTodoList(
-  meta: RequestMetadata,
-  bestCase?: any,
-  workspacePath?: string
-): Promise<TodoItem[]> {
-  throw new Error(
-    'DEPRECATED: Generate TODOs in client by comparing ProjectMetadata with BestCase.\n' +
-    'See docs/WORKFLOW_CORRECT.md for the new workflow.'
-  );
-}
-
-/**
- * @deprecated 선택적 위험도 평가는 클라이언트에서 처리하세요
- *
- * 기존: 서버가 API 타입 체크, UI 의존성 체크, 쓰기 범위 확인
- * 새 방식: 클라이언트가 메타데이터 기반 위험도 평가 (선택적)
- */
-export async function preflightCheck(
-  meta: RequestMetadata,
-  todos: TodoItem[],
-  bestCase?: any
-): Promise<PreflightResult> {
-  throw new Error(
-    'DEPRECATED: Implement optional risk assessment in client if needed.\n' +
-    'Preflight is now optional. See docs/WORKFLOW_CORRECT.md'
-  );
-}
-
-// ============================================================
-// 유지되는 유틸리티 함수들
-// ============================================================
-
-/**
- * RequestMetadata에서 키워드 추출 (가이드 검색용)
- *
- * ⚠️ 이 함수는 유지되지만, extractKeywordsFromMetadata()를 사용하는 것을 권장합니다.
- */
-export function extractKeywords(
-  meta: RequestMetadata,
-  todos: TodoItem[]
-): string[] {
-  const keywords: string[] = [];
-
-  // API 타입
-  if (meta.apiTypeHint !== 'auto') {
-    keywords.push(meta.apiTypeHint);
-  }
-
-  // 엔티티
-  keywords.push(...meta.entities);
-
-  // TODO ID
-  keywords.push(...todos.map(t => t.id));
-
-  // 공통 키워드
-  keywords.push('nuxt3');
-
-  if (meta.intent === 'page-create' || meta.intent === 'page-update') {
-    keywords.push('pages', 'asyncData', 'errorHandling', 'paging');
-  }
-
-  if (meta.apiTypeHint === 'grpc') {
-    keywords.push('proto', 'composables', 'backend');
-  } else if (meta.apiTypeHint === 'openapi') {
-    keywords.push('rest', 'api', 'backend');
-  }
-
-  return keywords;
-}
 
 /**
  * ProjectMetadata/FileMetadata에서 가이드 검색 키워드 추출 (✅ 권장)
