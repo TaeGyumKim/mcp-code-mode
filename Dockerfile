@@ -34,11 +34,11 @@ RUN chmod +x /app/cron-scan.sh \
 # Yarn cache 디렉토리 생성 및 의존성 설치
 RUN yarn install --inline-builds
 
-# 프로젝트 빌드
+# 프로젝트 빌드 (dependency order: llm-analyzer before ai-runner)
 RUN yarn workspace bestcase-db run build && \
+    yarn workspace llm-analyzer run build && \
     yarn workspace ai-bindings run build && \
     yarn workspace ai-runner run build && \
-    yarn workspace llm-analyzer run build && \
     yarn workspace @mcp-code-mode/guides run build && \
     yarn workspace mcp-scripts run build && \
     yarn build:root
