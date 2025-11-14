@@ -6,7 +6,7 @@
  */
 
 import { promises as fs } from 'fs';
-import { join, resolve } from 'path';
+import { join } from 'path';
 import { tmpdir } from 'os';
 import { execSync } from 'child_process';
 import { MetadataAnalyzer } from './metadataAnalyzer.js';
@@ -46,8 +46,6 @@ export class LocalPackageAnalyzer {
     // 소스 경로 확인
     const sourcePath = await this.resolveSourcePath(pkg);
     console.log(`📂 Source path: ${sourcePath}`);
-
-    let tempDir: string | null = null;
 
     try {
       // 소스 파일 스캔
