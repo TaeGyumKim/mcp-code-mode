@@ -37,3 +37,6 @@ export type {
   ComparisonResult,
   TodoItem
 } from './bestcaseComparator.js';
+
+// 다차원 점수 계산기 ⭐ NEW
+export { calculateScoresFromMetadata } from './scoreCalculator.js';

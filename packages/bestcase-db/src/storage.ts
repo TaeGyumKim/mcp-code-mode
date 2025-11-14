@@ -1,11 +1,12 @@
 import { promises as fs } from 'fs';
 import { join, dirname } from 'path';
+import { BestCaseScores } from './types.js';
 
 /**
  * BestCase 인터페이스
  *
  * 우수 코드 사례를 저장하고 관리합니다.
- * 메타데이터 기반 비교를 통해 프로젝트 개선점을 도출할 수 있습니다.
+ * 다차원 점수 시스템으로 각 영역별 우수성을 평가합니다.
  */
 export interface BestCase {
   id: string;
@@ -17,6 +18,33 @@ export interface BestCase {
     content: string;
     purpose: string;
   }>;
+
+  /**
+   * 다차원 품질 점수 (v2.0+)
+   *
+   * 8가지 항목별 점수 (0-100):
+   * - structure: 구조
+   * - apiConnection: API 연결
+   * - designSystem: 디자인 시스템
+   * - utilityUsage: 유틸리티
+   * - errorHandling: 에러 핸들링
+   * - typeUsage: 타입 활용
+   * - stateManagement: 상태 관리
+   * - performance: 성능
+   */
+  scores?: BestCaseScores;
+
+  /**
+   * 가중 평균 총점 (0-100)
+   * scores가 있으면 자동 계산, 없으면 하위 호환용
+   */
+  totalScore?: number;
+
+  /**
+   * 우수 영역 (80점 이상)
+   * 예: ["structure", "apiConnection"]
+   */
+  excellentIn?: Array<keyof BestCaseScores>;
 
   /**
    * 패턴 및 메타데이터

@@ -8,7 +8,15 @@
  * - BestCase patterns.metadata 필드 사용
  */
 
-import { MetadataAnalyzer } from '../../packages/llm-analyzer/dist/index.js';
+import {
+  MetadataAnalyzer,
+  calculateScoresFromMetadata
+} from '../../packages/llm-analyzer/dist/index.js';
+import {
+  calculateWeightedScore,
+  getExcellentCategories,
+  shouldSaveBestCase
+} from '../../packages/bestcase-db/dist/index.js';
 import { runAgentScript } from '../../packages/ai-runner/dist/agentRunner.js';
 import { readFileSync, existsSync, readdirSync, statSync } from 'fs';
 import { promises as fs } from 'fs';
@@ -513,36 +521,54 @@ try {
     return;
   }
 
-  // BestCase 저장 (메타데이터 기반)
+  // BestCase 저장 (다차원 점수 기반)
   if (scanResult && scanResult.patterns) {
     try {
+      const meta = scanResult.metadata;
+
+      // 🎯 다차원 점수 계산
+      const multiScores = calculateScoresFromMetadata(meta, true);
+      const totalScore = calculateWeightedScore(multiScores);
+      const excellentIn = getExcellentCategories(multiScores);
+
+      // 🔍 저장 기준 판정
+      const saveDecision = shouldSaveBestCase(multiScores);
+
+      if (!saveDecision.shouldSave) {
+        console.log(`⏭️  Skipping BestCase (${saveDecision.reason})`);
+        console.log(`   📊 Score: ${totalScore}/100`);
+        console.log(`   Categories: structure=${multiScores.structure}, api=${multiScores.apiConnection}, design=${multiScores.designSystem}`);
+        console.log('');
+        return;
+      }
+
       const { BestCaseStorage } = await import('../../packages/bestcase-db/dist/index.js');
       const storage = new BestCaseStorage(BESTCASE_STORAGE_PATH);
 
       const sanitizedProjectName = project.name.replace(/\//g, '-').replace(/\\/g, '-');
       const bestCaseId = `${sanitizedProjectName}-${project.category}-${Date.now()}`;
 
-      // 메타데이터 + 점수 기반 설명 생성
-      const meta = scanResult.metadata;
-      const scores = scanResult.scores;
-      let description = `${project.name} - Score: ${scores.overall}/100 (Tier ${scores.tier})`;
-      if (meta) {
-        if (meta.excellentFiles?.length > 0) {
-          description += ` - ${meta.excellentFiles.length} Excellent Files`;
-        }
-        if (meta.apiType && meta.apiType !== 'none') {
-          description += ` - API: ${meta.apiType}`;
-        }
+      // 설명 생성
+      let description = `${project.name} - Score: ${totalScore}/100`;
+      if (excellentIn.length > 0) {
+        description += ` - Excellent in: ${excellentIn.join(', ')}`;
+      }
+      if (meta?.apiType && meta.apiType !== 'none') {
+        description += ` - API: ${meta.apiType}`;
       }
 
-      // 메타데이터 + 점수 기반 태그 생성
-      const tags = ['auto-scan', 'metadata-based', `tier-${scores.tier.toLowerCase()}`, `score-${Math.floor(scores.overall / 10) * 10}`];
+      // 태그 생성
+      const tags = [
+        'auto-scan',
+        'multi-score',
+        `score-${Math.floor(totalScore / 10) * 10}`,
+        ...excellentIn.map(cat => `excellent-${cat}`)
+      ];
       if (meta) {
-        if (meta.excellentFiles?.length > 0) tags.push('has-excellent-files');
-        if (meta.averageComplexity) tags.push(`complexity-${meta.averageComplexity}`);
         if (meta.apiType && meta.apiType !== 'none') tags.push(meta.apiType);
-        if (meta.frameworks) tags.push(...meta.frameworks.slice(0, 3)); // 처음 3개만
-        if (meta.patterns) tags.push(...meta.patterns.slice(0, 3)); // 처음 3개만
+        if (meta.designSystem) tags.push(meta.designSystem);
+        if (meta.utilityLibrary) tags.push(meta.utilityLibrary);
+        if (meta.frameworks) tags.push(...meta.frameworks.slice(0, 3));
       }
       tags.push(new Date().toISOString().split('T')[0]);
 
@@ -552,30 +578,31 @@ try {
         category: project.category,
         description,
         files: scanResult.sampleFiles,
+
+        // ✨ 다차원 점수
+        scores: multiScores,
+        totalScore: totalScore,
+        excellentIn: excellentIn,
+
         patterns: {
           ...scanResult.patterns,
-          // ✅ 메타데이터 기반 점수 추가
-          scores: {
-            overall: scores.overall,
-            average: scores.average,
-            tier: scores.tier,
-            distribution: scores.distribution
-          }
+          // 하위 호환: 기존 점수도 유지
+          scores: scanResult.scores
         },
         metadata: {
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
-          tags: [...new Set(tags)]  // 중복 제거
+          tags: [...new Set(tags)]
         }
       };
 
       await storage.save(bestCase);
       console.log(`✅ BestCase saved: ${bestCaseId}`);
-      console.log(`   📊 Score: ${scores.overall}/100 (Tier ${scores.tier})`);
-      console.log(`   📈 Distribution: S=${scores.distribution.S}, A=${scores.distribution.A}, B=${scores.distribution.B}`);
+      console.log(`   📊 Total Score: ${totalScore}/100 (${saveDecision.reason})`);
+      console.log(`   🌟 Excellent in: ${excellentIn.join(', ') || 'none'}`);
+      console.log(`   🎯 Scores: structure=${multiScores.structure}, api=${multiScores.apiConnection}, design=${multiScores.designSystem}`);
       if (meta?.excellentFiles?.length > 0) {
-        console.log(`   🌟 ${meta.excellentFiles.length} Excellent files found!`);
-        console.log(`   Reasons: ${meta.excellentFiles.slice(0, 3).flatMap(f => f.reasons).slice(0, 5).join(', ')}`);
+        console.log(`   📂 ${meta.excellentFiles.length} Excellent files found`);
       }
       console.log('');
     } catch (saveError) {
