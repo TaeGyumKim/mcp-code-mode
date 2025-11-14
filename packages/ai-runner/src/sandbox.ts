@@ -18,11 +18,11 @@ export interface SandboxResult {
 }
 
 /**
- * import 문 자동 제거 (전처리)
+ * import/require 문 자동 제거 (전처리)
  *
  * vm2에서는 import/require가 차단되지만,
- * 사용자 편의를 위해 import 문을 자동으로 제거합니다.
- * fs, path 등은 sandbox에 직접 주입되므로 import 불필요합니다.
+ * 사용자 편의를 위해 import/require 문을 자동으로 제거합니다.
+ * fs, path 등은 sandbox에 직접 주입되므로 import/require 불필요합니다.
  */
 function preprocessCode(code: string): string {
   // import 문 전체 제거
@@ -30,6 +30,14 @@ function preprocessCode(code: string): string {
 
   // 단독 import 문 제거 (예: import 'module')
   code = code.replace(/import\s+['"][^'"]+['"];?\s*/g, '');
+
+  // require 문 제거 (const fs = require('fs').promises 등)
+  code = code.replace(/const\s+\w+\s*=\s*require\s*\([^)]+\)(\.\w+)*\s*;?\s*/g, '');
+  code = code.replace(/let\s+\w+\s*=\s*require\s*\([^)]+\)(\.\w+)*\s*;?\s*/g, '');
+  code = code.replace(/var\s+\w+\s*=\s*require\s*\([^)]+\)(\.\w+)*\s*;?\s*/g, '');
+
+  // 단독 require 호출 제거
+  code = code.replace(/require\s*\([^)]+\)\s*;?\s*/g, '');
 
   return code;
 }
@@ -287,7 +295,7 @@ export async function runInSandbox(code: string, timeoutMs: number = 30000): Pro
 📚 최신 JavaScript(ES6+) 문법은 지원되지만, TypeScript 전용 문법은 불가합니다.`;
     }
 
-    // filesystem API 오용 감지
+    // filesystem API 오용 감지 (존재하지 않는 API)
     if (code.includes('filesystem.list') || code.includes('filesystem.stat') || code.includes('filesystem.walk')) {
       helpfulMessage = `❌ 존재하지 않는 filesystem API를 사용했습니다.
 
@@ -315,6 +323,33 @@ export async function runInSandbox(code: string, timeoutMs: number = 30000): Pro
       const files = result.files;
 
 📚 예제: scripts/examples/find-usePaging-correct.js`;
+    }
+
+    // filesystem API 잘못된 사용 감지 (Node.js fs 스타일)
+    if (code.match(/filesystem\.(readFile|writeFile|searchFiles)\s*\([^{]/)) {
+      helpfulMessage = `❌ filesystem API를 Node.js fs 스타일로 사용했습니다.
+
+원인: filesystem.readFile(path, 'utf8') 같은 Node.js fs API 스타일을 사용했습니다.
+
+✅ 올바른 사용법 (객체 형식):
+   ❌ const content = await filesystem.readFile(path, 'utf8');
+   ✅ const result = await filesystem.readFile({ path: path });
+      const content = result.content;
+
+   ❌ await filesystem.writeFile(path, content, 'utf8');
+   ✅ await filesystem.writeFile({ path: path, content: content });
+
+   ❌ const files = await filesystem.searchFiles(dir, '*.ts', true);
+   ✅ const result = await filesystem.searchFiles({
+        path: dir,
+        pattern: '*.ts',
+        recursive: true
+      });
+      const files = result.files;
+
+💡 중요: 모든 인자를 객체로 전달해야 합니다!
+
+📚 예제: scripts/examples/check-vue-file-correct.js`;
     }
 
     return {

@@ -2,10 +2,14 @@
 
 MCP Code Mode의 `execute` 도구는 vm2 샌드박스에서 **순수 JavaScript**를 실행합니다.
 
-**✨ 새로운 기능: import 문 자동 지원**
-- `import { promises as fs } from 'fs'` 와 `import path from 'path'` 문을 사용할 수 있습니다.
-- import 문은 자동으로 제거되고, fs와 path 모듈은 샌드박스에 주입됩니다.
+**✨ 새로운 기능: import/require 문 자동 지원**
+- `import { promises as fs } from 'fs'` 와 `const fs = require('fs').promises` 문을 사용할 수 있습니다.
+- import/require 문은 자동으로 제거되고, fs와 path 모듈은 샌드박스에 주입됩니다.
 - LLM(Copilot, Claude 등)이 생성한 코드를 그대로 실행할 수 있습니다.
+
+**⚠️ filesystem API 사용법**
+- `filesystem.readFile({ path })` - 객체 형식으로 인자 전달
+- `filesystem.readFile(path, 'utf8')` - ❌ Node.js fs 스타일은 사용 불가
 
 ## ✅ 사용 가능한 문법
 
