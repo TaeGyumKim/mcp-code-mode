@@ -597,19 +597,19 @@ MIT License - 자세한 내용은 [LICENSE](./LICENSE) 파일을 참조하세요
 ### 설정 가이드
 
 - **[docs/MCP_SETUP_GUIDE.md](./docs/MCP_SETUP_GUIDE.md)** - Docker 및 VS Code MCP 설정
-- **[docs/DOCKER_SETUP_COMPLETE.md](./docs/DOCKER_SETUP_COMPLETE.md)** - Docker 설정 완료 가이드
+- **[docs/DOCKER_REBUILD_GUIDE.md](./docs/DOCKER_REBUILD_GUIDE.md)** - Docker 재빌드 가이드
 - **[docs/VSCODE_MCP_GUIDE.md](./docs/VSCODE_MCP_GUIDE.md)** - VS Code 통합 상세 가이드
 
 ### 기타 문서
 
-- **[docs/AI_QUICK_START.md](./docs/AI_QUICK_START.md)** - AI 기반 코드 분석 빠른 시작
-- **[docs/AUTO_UPDATE_GUIDE.md](./docs/AUTO_UPDATE_GUIDE.md)** - 자동 BestCase 업데이트 가이드
-- **[docs/COMPLETION_SUMMARY.md](./docs/COMPLETION_SUMMARY.md)** - 구현 요약
+- **[docs/QUICK_START_OTHER_PROJECTS.md](./docs/QUICK_START_OTHER_PROJECTS.md)** - 다른 프로젝트에서 빠른 시작
+- **[docs/WEEKLY_SCAN_GUIDE.md](./docs/WEEKLY_SCAN_GUIDE.md)** - 자동 주간 스캔 가이드
+- **[docs/ENVIRONMENT_VARIABLES.md](./docs/ENVIRONMENT_VARIABLES.md)** - 환경변수 설정 가이드
 
 ### Deprecated (참고용)
 
 - **[docs/deprecated/SCORING_SYSTEM.md](./docs/deprecated/SCORING_SYSTEM.md)** - 점수 시스템 (메타데이터 시스템으로 대체됨)
-- **[docs/deprecated/AI_CODE_ANALYZER.md](./docs/deprecated/AI_CODE_ANALYZER.md)** - CodeAnalyzer (MetadataAnalyzer로 대체됨)
+- **[docs/deprecated/AI-SCORING-GUIDE.md](./docs/deprecated/AI-SCORING-GUIDE.md)** - AI 스코어링 가이드
 - **[.github/instructions/default.instructions.md](./.github/instructions/default.instructions.md)** - AI 코딩 가이드라인
 
 ## 📚 참고
