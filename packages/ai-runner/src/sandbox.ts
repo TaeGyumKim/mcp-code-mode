@@ -1,4 +1,6 @@
 import { VM } from 'vm2';
+import { promises as fs } from 'fs';
+import * as path from 'path';
 import * as filesystem from '../../../mcp-servers/filesystem/index.js';
 import * as bestcase from '../../../mcp-servers/bestcase/index.js';
 import * as guides from '../../../mcp-servers/guides/dist/index.js';
@@ -13,6 +15,23 @@ export interface SandboxResult {
   output?: any;
   logs?: string[];
   error?: string;
+}
+
+/**
+ * import 문 자동 제거 (전처리)
+ *
+ * vm2에서는 import/require가 차단되지만,
+ * 사용자 편의를 위해 import 문을 자동으로 제거합니다.
+ * fs, path 등은 sandbox에 직접 주입되므로 import 불필요합니다.
+ */
+function preprocessCode(code: string): string {
+  // import 문 전체 제거
+  code = code.replace(/import\s+.+?from\s+['"][^'"]+['"];?\s*/g, '');
+
+  // 단독 import 문 제거 (예: import 'module')
+  code = code.replace(/import\s+['"][^'"]+['"];?\s*/g, '');
+
+  return code;
 }
 
 /**
@@ -33,9 +52,16 @@ export async function runInSandbox(code: string, timeoutMs: number = 30000): Pro
   const logs: string[] = [];
   
   try {
+    // ✅ import 문 자동 제거 (전처리)
+    const preprocessedCode = preprocessCode(code);
+
     const vm = new VM({
       timeout: timeoutMs,
       sandbox: {
+        // Node.js 기본 모듈 (안전한 모듈만 주입)
+        fs,      // fs.promises (비동기만)
+        path,    // 경로 유틸리티
+
         // Filesystem API
         filesystem,
 
@@ -214,7 +240,7 @@ export async function runInSandbox(code: string, timeoutMs: number = 30000): Pro
 
     const result = await vm.run(`
       (async () => {
-        ${code}
+        ${preprocessedCode}
       })()
     `);
 
@@ -241,21 +267,6 @@ export async function runInSandbox(code: string, timeoutMs: number = 30000): Pro
 
 📚 샌드박스는 순수 JavaScript만 실행 가능합니다.`;
       }
-    }
-
-    // import/export 문 사용 감지
-    if (errorMessage.includes('import') && errorMessage.includes('export')) {
-      helpfulMessage = `❌ import/export는 샌드박스에서 사용할 수 없습니다.
-
-원인: import fs from 'fs' 같은 ES 모듈 문법을 사용했습니다.
-
-✅ 해결책: 샌드박스에서 제공하는 API를 사용하세요:
-   - filesystem.readFile({ path: '...' })  // fs.readFile 대신
-   - filesystem.writeFile({ path: '...', content: '...' })
-   - bestcase.saveBestCase({ ... })
-   - guides.searchGuides({ ... })
-
-📚 이미 주입된 API: filesystem, bestcase, guides, metadata, console`;
     }
 
     // interface/type 사용 감지

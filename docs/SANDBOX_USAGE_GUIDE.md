@@ -2,6 +2,11 @@
 
 MCP Code Mode의 `execute` 도구는 vm2 샌드박스에서 **순수 JavaScript**를 실행합니다.
 
+**✨ 새로운 기능: import 문 자동 지원**
+- `import { promises as fs } from 'fs'` 와 `import path from 'path'` 문을 사용할 수 있습니다.
+- import 문은 자동으로 제거되고, fs와 path 모듈은 샌드박스에 주입됩니다.
+- LLM(Copilot, Claude 등)이 생성한 코드를 그대로 실행할 수 있습니다.
+
 ## ✅ 사용 가능한 문법
 
 ### 1. 최신 JavaScript (ES6+)
@@ -46,6 +51,13 @@ const matches = content.match(/pattern/g);
 // ✅ JSON
 const parsed = JSON.parse(jsonString);
 const stringified = JSON.stringify(obj, null, 2);
+
+// ✅ import 문 (fs, path만 지원)
+import { promises as fs } from 'fs';
+import path from 'path';
+
+const content = await fs.readFile('/path/to/file.txt', 'utf8');
+const fullPath = path.join('/projects', 'myapp', 'src');
 ```
 
 ## ❌ 사용 불가능한 문법
@@ -122,37 +134,31 @@ const template = `<template>
 const element = `<div>Hello</div>`;
 ```
 
-### 3. import/export 문
+### 3. import/export 문 (✅ 자동 지원)
+
+**샌드박스는 import 문을 자동으로 제거하고 필요한 모듈을 주입합니다.**
 
 ```javascript
-// ❌ ES 모듈
-import fs from 'fs';
-import { readFile } from 'fs/promises';
-export const myFunction = () => {};
+// ✅ import 문 사용 가능 (자동으로 제거됨)
+import { promises as fs } from 'fs';
+import path from 'path';
 
-// ❌ CommonJS
-const fs = require('fs');
-module.exports = myFunction;
+// fs와 path는 자동으로 주입되어 사용 가능
+const content = await fs.readFile('/projects/myapp/package.json', 'utf8');
+const filePath = path.join('/projects', 'myapp', 'src', 'index.ts');
+
+// ❌ export는 샌드박스 내에서 의미 없음
+export const myFunction = () => {};  // 무시됨
+
+// ❌ require는 지원되지 않음
+const fs = require('fs');  // 에러 발생
 ```
 
-**✅ 해결책:** 샌드박스 API 사용
+**지원되는 Node.js 모듈:**
+- `fs` (fs.promises만)
+- `path`
 
-```javascript
-// ✅ 샌드박스 API (이미 주입됨)
-const result = await filesystem.readFile({ path: '...' });
-await filesystem.writeFile({ path: '...', content: '...' });
-```
-
-### 4. Node.js 기본 모듈
-
-```javascript
-// ❌ Node.js 모듈
-const fs = require('fs');
-const path = require('path');
-const http = require('http');
-```
-
-**✅ 해결책:** 샌드박스 API 사용
+**기타 모듈은 샌드박스 API 사용:**
 
 ```javascript
 // ✅ 파일 시스템
@@ -373,14 +379,18 @@ const template = `<template>
 </template>`;
 ```
 
-### 실수 2: import 사용
+### 실수 2: require 사용
 
 ```javascript
-// ❌ 잘못된 코드
-import fs from 'fs';
+// ❌ 잘못된 코드 (require는 지원 안됨)
+const fs = require('fs');
 const content = fs.readFileSync(path, 'utf8');
 
-// ✅ 올바른 코드
+// ✅ 올바른 코드 (import 사용 또는 직접 사용)
+import { promises as fs } from 'fs';
+const content = await fs.readFile(path, 'utf8');
+
+// 또는 filesystem API 사용
 const result = await filesystem.readFile({ path });
 const content = result.content;
 ```

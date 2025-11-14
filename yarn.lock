@@ -654,7 +654,6 @@ __metadata:
   dependencies:
     "@types/node": "npm:^20.11.5"
     typescript: "npm:^5.9.3"
-    yaml: "npm:^2.3.4"
   languageName: unknown
   linkType: soft
 
@@ -2258,7 +2257,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"ai-bindings@workspace:*, ai-bindings@workspace:^, ai-bindings@workspace:packages/ai-bindings":
+"ai-bindings@workspace:*, ai-bindings@workspace:packages/ai-bindings":
   version: 0.0.0-use.local
   resolution: "ai-bindings@workspace:packages/ai-bindings"
   dependencies:
@@ -2266,7 +2265,7 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"ai-runner@workspace:^, ai-runner@workspace:packages/ai-runner":
+"ai-runner@workspace:*, ai-runner@workspace:packages/ai-runner":
   version: 0.0.0-use.local
   resolution: "ai-runner@workspace:packages/ai-runner"
   dependencies:
@@ -4490,6 +4489,16 @@ __metadata:
     esbuild: "npm:^0.25.12"
     tsup: "npm:^8.5.0"
     tsx: "npm:^4.19.2"
+    typescript: "npm:^5.9.3"
+  languageName: unknown
+  linkType: soft
+
+"mcp-scripts@workspace:scripts":
+  version: 0.0.0-use.local
+  resolution: "mcp-scripts@workspace:scripts"
+  dependencies:
+    "@types/node": "npm:^24.10.0"
+    tsup: "npm:^8.5.0"
     typescript: "npm:^5.9.3"
   languageName: unknown
   linkType: soft
@@ -7545,8 +7554,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "web@workspace:apps/web"
   dependencies:
-    ai-bindings: "workspace:^"
-    ai-runner: "workspace:^"
+    ai-runner: "workspace:*"
     nuxt: "npm:^4.2.0"
     vue: "npm:^3.5.22"
     vue-router: "npm:^4.6.3"
@@ -7691,7 +7699,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"yaml@npm:^2.3.4, yaml@npm:^2.8.1":
+"yaml@npm:^2.8.1":
   version: 2.8.1
   resolution: "yaml@npm:2.8.1"
   bin:
