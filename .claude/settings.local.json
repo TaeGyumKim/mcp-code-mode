@@ -5,7 +5,14 @@
       "Bash(npm run build:*)",
       "Bash(npx tsx:*)",
       "Bash(cat:*)",
-      "Bash(python:*)"
+      "Bash(python:*)",
+      "Bash(tree /F /A \"d:\\01.Work\\08.rf\\mcp-code-mode-starter\")",
+      "Bash(findstr:*)",
+      "Bash(find:*)",
+      "Bash(test:*)",
+      "Bash(npm run build:all:*)",
+      "Bash(npm run build:root:*)",
+      "Bash(node:*)"
     ],
     "deny": [],
     "ask": []
