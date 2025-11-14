@@ -617,7 +617,6 @@ MIT License - 자세한 내용은 [LICENSE](./LICENSE) 파일을 참조하세요
 - [Anthropic - MCP Code Mode](https://www.anthropic.com/research/building-effective-agents)
 - [Cloudflare - MCP Deep Dive](https://blog.cloudflare.com/mcp-deep-dive)
 - [AI Sparkup - MCP Code Mode](https://aisparkup.com/articles/mcp-code-mode)
-- [STRUCTURE_CHANGE_SUMMARY.md](./STRUCTURE_CHANGE_SUMMARY.md) - 동적 지침 로딩 시스템 구현 요약
 
 ## 기여
 

@@ -2,22 +2,19 @@
 /**
  * Guides 통합 테스트 스크립트
  *
- * 동적 지침 로딩 시스템의 4가지 도구를 테스트합니다:
- * 1. search_guides
- * 2. load_guide
- * 3. combine_guides
- * 4. execute_workflow
+ * 동적 지침 로딩 시스템의 3가지 핵심 도구를 테스트합니다:
+ * 1. search_guides - 키워드와 메타데이터로 가이드 검색
+ * 2. load_guide - 특정 ID의 가이드 로드
+ * 3. combine_guides - 여러 가이드를 우선순위에 따라 병합
  */
 
 import {
   searchGuides,
   loadGuide,
   combineGuides,
-  executeWorkflow,
   type SearchGuidesInput,
   type LoadGuideInput,
-  type CombineGuidesInput,
-  type ExecuteWorkflowInput
+  type CombineGuidesInput
 } from '../../mcp-servers/guides/index.js';
 
 console.log('🧪 Starting Guides Integration Test\n');
@@ -119,68 +116,9 @@ async function testCombineGuides() {
   console.log('\n');
 }
 
-// 테스트 4: execute_workflow
-async function testExecuteWorkflow() {
-  console.log('📝 Test 4: execute_workflow');
-  console.log('━'.repeat(60));
-
-  const input: ExecuteWorkflowInput = {
-    userRequest: 'Create an inquiry list page with gRPC API integration',
-    workspacePath: '/home/user/test-project',
-    bestCase: {
-      patterns: {
-        apiInfo: {
-          apiType: 'gRPC',
-          hasGrpc: true,
-          hasOpenApi: false
-        }
-      }
-    },
-    workflowGuide: {} as any
-  };
-
-  console.log('Input:', JSON.stringify({
-    userRequest: input.userRequest,
-    workspacePath: input.workspacePath,
-    hasBestCase: !!input.bestCase
-  }, null, 2));
-
-  try {
-    const result = await executeWorkflow(input);
-    console.log('✅ Success!');
-    console.log(`   Success: ${result.success}`);
-    console.log(`   Risk: ${result.preflight?.risk || 0}`);
-    console.log(`   Keywords: ${result.preflight?.keywords?.join(', ') || 'none'}`);
-    console.log(`   Used guides: ${result.usedGuides.length}`);
-
-    if (result.success) {
-      console.log('\nPreflight checks:');
-      result.preflight?.reasons?.forEach((reason: any) => {
-        const status = reason.passed ? '✅' : '❌';
-        console.log(`  ${status} ${reason.check}: ${reason.details}`);
-      });
-
-      console.log('\nUsed guides:');
-      result.usedGuides.forEach((guide, idx) => {
-        console.log(`  ${idx + 1}. ${guide.id} (${guide.scope}, priority: ${guide.priority})`);
-      });
-
-      console.log(`\nCombined content length: ${result.combinedContent.length} chars`);
-    } else {
-      console.log('\n⚠️  Workflow failed (scaffold-only mode)');
-      console.log('Reason:', result.changeSummary?.reason);
-    }
-  } catch (error: any) {
-    console.error('❌ Error:', error.message);
-    console.error('Stack:', error.stack);
-  }
-
-  console.log('\n');
-}
-
-// 테스트 5: 필수 지침 포함 테스트
+// 테스트 4: 필수 지침 포함 테스트
 async function testMandatoryGuides() {
-  console.log('📝 Test 5: search_guides with mandatory IDs');
+  console.log('📝 Test 4: search_guides with mandatory IDs');
   console.log('━'.repeat(60));
 
   const input: SearchGuidesInput = {
@@ -225,7 +163,6 @@ async function runAllTests() {
     await testLoadGuide();
     await testCombineGuides();
     await testMandatoryGuides();
-    await testExecuteWorkflow();
 
     console.log('━'.repeat(60));
     console.log('🎉 All tests completed!');
