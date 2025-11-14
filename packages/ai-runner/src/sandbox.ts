@@ -274,6 +274,36 @@ export async function runInSandbox(code: string, timeoutMs: number = 30000): Pro
 📚 최신 JavaScript(ES6+) 문법은 지원되지만, TypeScript 전용 문법은 불가합니다.`;
     }
 
+    // filesystem API 오용 감지
+    if (code.includes('filesystem.list') || code.includes('filesystem.stat') || code.includes('filesystem.walk')) {
+      helpfulMessage = `❌ 존재하지 않는 filesystem API를 사용했습니다.
+
+원인: filesystem.list(), filesystem.stat(), filesystem.walk() 등을 사용했습니다.
+
+✅ 실제 사용 가능한 API (3개만 존재):
+   1. filesystem.readFile({ path: '/projects/...' })
+      - 파일 내용 읽기
+      - 반환: { content: string, size: number }
+
+   2. filesystem.writeFile({ path: '/projects/...', content: '...' })
+      - 파일 쓰기
+
+   3. filesystem.searchFiles({ path: '/projects/...', pattern: '**/*.js', recursive: true })
+      - 파일 검색 (glob 패턴)
+      - 반환: { files: string[] }
+
+💡 파일 목록을 얻으려면:
+   ❌ const files = await filesystem.list(dir);
+   ✅ const result = await filesystem.searchFiles({
+        path: '/projects/myapp',
+        pattern: '**/*.{js,ts,vue}',
+        recursive: true
+      });
+      const files = result.files;
+
+📚 예제: scripts/examples/find-usePaging-correct.js`;
+    }
+
     return {
       ok: false,
       logs,

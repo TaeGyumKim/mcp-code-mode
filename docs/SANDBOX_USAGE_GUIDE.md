@@ -177,30 +177,76 @@ const meta = await analyzer.analyzeProject(path, files);
 ## 🎯 샌드박스에서 사용 가능한 API
 
 ### 1. filesystem API
+**⚠️ 중요: 3개의 API만 존재합니다**
 
 ```javascript
-// 파일 읽기
+// 1. 파일 읽기
 const result = await filesystem.readFile({
   path: '/projects/myapp/src/index.ts'
 });
 console.log(result.content); // 파일 내용
 console.log(result.size);    // 파일 크기
 
-// 파일 쓰기
+// 2. 파일 쓰기
 await filesystem.writeFile({
   path: '/projects/myapp/output.txt',
   content: 'Hello World'
 });
 
-// 파일 검색
-const files = await filesystem.searchFiles({
+// 3. 파일 검색 (glob 패턴)
+const searchResult = await filesystem.searchFiles({
   path: '/projects/myapp',
   pattern: '**/*.vue',
   recursive: true
 });
-console.log(files.files); // 파일 목록
+console.log(searchResult.files); // 파일 경로 배열
 ```
 
+**❌ 존재하지 않는 API (사용 불가):**
+```javascript
+// ❌ list() - 존재하지 않음
+const files = await filesystem.list(dir);
+
+// ❌ stat() - 존재하지 않음
+const stat = await filesystem.stat(path);
+
+// ❌ walk() - 존재하지 않음
+await filesystem.walk(dir, callback);
+
+// ❌ exists() - 존재하지 않음
+const exists = await filesystem.exists(path);
+```
+
+**✅ 올바른 대체 방법:**
+```javascript
+// ✅ 파일 목록 얻기: searchFiles() 사용
+const result = await filesystem.searchFiles({
+  path: '/projects/myapp',
+  pattern: '**/*.{js,ts,vue}',
+  recursive: true
+});
+const allFiles = result.files;
+
+// ✅ 파일 존재 확인: readFile()로 시도
+try {
+  await filesystem.readFile({ path: '/projects/myapp/file.txt' });
+  console.log('파일 존재함');
+} catch (e) {
+  console.log('파일 없음');
+}
+
+// ✅ 디렉토리 순회: searchFiles()로 파일 가져온 후 처리
+const result = await filesystem.searchFiles({
+  path: '/projects/myapp',
+  pattern: '**/*',
+  recursive: true
+});
+
+for (const filePath of result.files) {
+  const fileResult = await filesystem.readFile({ path: filePath });
+  console.log(filePath, fileResult.size);
+}
+```
 ### 2. bestcase API
 
 ```javascript
