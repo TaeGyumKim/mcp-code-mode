@@ -126,29 +126,8 @@ rl.on('line', async (line: string) => {
         });
         log('Execution result', { success: !result.error });
 
-        // 🎯 프로젝트 컨텍스트를 포함한 응답 생성
-        let responseText = '';
-
-        // 프로젝트 컨텍스트 섹션
-        if (result.projectContext) {
-          responseText += '## 📋 Project Context\n\n';
-          responseText += `**Project Path**: ${result.projectContext.projectPath || 'Unknown'}\n\n`;
-
-          // 권장 플랜
-          if (result.projectContext.recommendedPlan && result.projectContext.recommendedPlan.length > 0) {
-            responseText += '### Recommended Plan\n\n';
-            result.projectContext.recommendedPlan.forEach(plan => {
-              responseText += `${plan}\n`;
-            });
-            responseText += '\n';
-          }
-
-          responseText += '---\n\n';
-        }
-
-        // 실행 결과 섹션
-        responseText += '## ✅ Execution Result\n\n';
-        responseText += JSON.stringify({
+        // 실행 결과를 JSON으로 변환
+        const responseText = JSON.stringify({
           ok: result.ok,
           output: result.output,
           logs: result.logs,

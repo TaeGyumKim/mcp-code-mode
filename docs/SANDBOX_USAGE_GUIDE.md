@@ -317,6 +317,23 @@ const projectMeta = await analyzer.analyzeProject(
   3
 );
 
+// ✅ 프로젝트 컨텍스트 추출 (외부 프로젝트 경로 지정)
+const context = await metadata.extractProjectContext('/projects/49.airian/frontend-admin');
+console.log('API Type:', context.apiInfo.type);               // 'grpc' | 'openapi' | 'rest' | 'mixed'
+console.log('API Packages:', context.apiInfo.packages);       // ['@grpc/grpc-js', ...]
+console.log('Design System:', context.designSystemInfo.detected);  // ['element-plus', ...]
+console.log('Utility Library:', context.utilityLibraryInfo.detected); // ['vueuse', ...]
+console.log('Recommended Plan:', context.recommendedPlan);    // 권장 작업 계획
+
+// BestCase 메타데이터 비교
+const comparison = metadata.compareBestCase(
+  projectMeta,
+  bestCase.patterns.metadata,
+  bestCase.files
+);
+console.log('Missing patterns:', comparison.missingPatterns);
+console.log('TODOs:', comparison.todos);
+
 // 디자인 시스템 정보
 const dsInfo = metadata.getDesignSystemInfo('openerd-nuxt3');
 console.log(dsInfo.components.table.name); // "CommonTable"
@@ -324,6 +341,7 @@ console.log(dsInfo.components.table.name); // "CommonTable"
 // 유틸리티 라이브러리 정보
 const libInfo = metadata.getUtilityLibraryInfo('vueuse');
 console.log(libInfo.functions.useLocalStorage);
+
 ```
 
 ### 5. console API

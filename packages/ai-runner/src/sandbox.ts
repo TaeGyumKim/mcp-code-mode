@@ -13,7 +13,6 @@ export interface SandboxResult {
   output?: any;
   logs?: string[];
   error?: string;
-  projectContext?: ProjectContext;  // 🎯 프로젝트 컨텍스트 추가
 }
 
 /**
@@ -77,6 +76,17 @@ export async function runInSandbox(code: string, timeoutMs: number = 30000): Pro
            * console.log('TODOs:', comparison.todos);
            */
           compareBestCase: compareBestCaseMetadata,
+
+          /**
+           * 프로젝트 컨텍스트 추출
+           *
+           * @param projectPath 프로젝트 경로 (절대 경로)
+           * @example
+           * const context = await metadata.extractProjectContext('/projects/49.airian/frontend-admin');
+           * console.log('API Type:', context.apiInfo.type);
+           * console.log('Design System:', context.designSystemInfo.detected);
+           */
+          extractProjectContext,
 
           /**
            * 디자인 시스템 정보 가져오기
@@ -208,20 +218,10 @@ export async function runInSandbox(code: string, timeoutMs: number = 30000): Pro
       })()
     `);
 
-    // 🎯 프로젝트 컨텍스트 자동 추출
-    let projectContext: ProjectContext | undefined;
-    try {
-      projectContext = await extractProjectContext();
-    } catch (error) {
-      // 컨텍스트 추출 실패는 무시 (선택적 기능)
-      logs.push('[INFO] Project context extraction skipped');
-    }
-
     return {
       ok: true,
       output: result,
-      logs,
-      projectContext  // 🎯 프로젝트 컨텍스트 포함
+      logs
     };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
