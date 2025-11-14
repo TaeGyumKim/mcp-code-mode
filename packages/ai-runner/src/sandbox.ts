@@ -236,7 +236,108 @@ export async function runInSandbox(code: string, timeoutMs: number = 30000): Pro
           /**
            * 모든 유틸리티 라이브러리 정보
            */
-          UTILITY_LIBRARIES: utilityLibraryMapping.UTILITY_LIBRARIES
+          UTILITY_LIBRARIES: utilityLibraryMapping.UTILITY_LIBRARIES,
+
+          /**
+           * 메타데이터 기반 자동 가이드 로딩
+           *
+           * 메타데이터에서 키워드를 추출하고, 관련 가이드를 자동으로 검색/병합합니다.
+           *
+           * @param metadata ProjectMetadata 또는 FileMetadata
+           * @param options 추가 옵션 (apiType, designSystem, utilityLibrary, mandatoryIds 등)
+           * @returns 병합된 가이드 문자열과 사용된 가이드 목록
+           *
+           * @example
+           * const projectMeta = await analyzer.analyzeProject(projectPath, files);
+           * const { combined, guides: usedGuides } = await metadata.loadGuides(projectMeta, {
+           *   apiType: projectMeta.apiType,
+           *   designSystem: projectMeta.designSystem,
+           *   mandatoryIds: ['00-bestcase-priority']
+           * });
+           *
+           * console.log('Loaded guides:', usedGuides.map(g => g.id).join(', '));
+           * console.log('Combined guide length:', combined.length);
+           */
+          loadGuides: async (metadata: any, options: {
+            apiType?: 'grpc' | 'openapi' | 'any';
+            designSystem?: string;
+            utilityLibrary?: string;
+            mandatoryIds?: string[];
+            limit?: number;
+          } = {}) => {
+            // 1. 메타데이터에서 키워드 추출
+            const keywords: string[] = [];
+
+            // 프로젝트 메타데이터인 경우
+            if (metadata.patterns && Array.isArray(metadata.patterns)) {
+              keywords.push(...metadata.patterns);
+            }
+
+            // 프레임워크 추가
+            if (metadata.frameworks && Array.isArray(metadata.frameworks)) {
+              keywords.push(...metadata.frameworks);
+            }
+
+            // 엔티티 추가
+            if (metadata.entities && Array.isArray(metadata.entities)) {
+              keywords.push(...metadata.entities);
+            }
+
+            // 기능 추가
+            if (metadata.features && Array.isArray(metadata.features)) {
+              keywords.push(...metadata.features);
+            }
+
+            // 파일 메타데이터인 경우
+            if (metadata.category) {
+              keywords.push(metadata.category);
+            }
+
+            // 옵션에서 키워드 추가
+            if (options.apiType) {
+              keywords.push(options.apiType);
+            }
+
+            if (options.designSystem) {
+              keywords.push(options.designSystem);
+              keywords.push('design-system');
+            }
+
+            if (options.utilityLibrary) {
+              keywords.push(options.utilityLibrary);
+              keywords.push('utility');
+            }
+
+            // 중복 제거
+            const uniqueKeywords = Array.from(new Set(keywords));
+
+            // 2. 가이드 검색
+            const searchResult = await guides.searchGuides({
+              keywords: uniqueKeywords,
+              apiType: options.apiType,
+              mandatoryIds: options.mandatoryIds,
+              designSystem: options.designSystem,
+              utilityLibrary: options.utilityLibrary
+            });
+
+            // 3. 가이드 ID 목록 생성
+            const guideIds = searchResult.guides.map((g: any) => g.id);
+
+            // 4. 가이드 병합
+            const combineResult = await guides.combineGuides({
+              ids: guideIds,
+              context: {
+                project: metadata.projectName || 'unknown',
+                apiType: options.apiType || 'any'
+              }
+            });
+
+            return {
+              combined: combineResult.combined,
+              guides: combineResult.usedGuides,
+              keywords: uniqueKeywords
+            };
+          }
         },
 
         // Console API
