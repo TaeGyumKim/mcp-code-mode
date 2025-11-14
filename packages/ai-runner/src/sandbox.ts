@@ -18,11 +18,13 @@ export interface SandboxResult {
 }
 
 /**
- * import/require 문 자동 제거 (전처리)
+ * import/require 문 자동 제거 및 IIFE unwrap (전처리)
  *
  * vm2에서는 import/require가 차단되지만,
  * 사용자 편의를 위해 import/require 문을 자동으로 제거합니다.
  * fs, path 등은 sandbox에 직접 주입되므로 import/require 불필요합니다.
+ *
+ * 또한 최상위 IIFE를 자동으로 unwrap하여 중복 wrap을 방지합니다.
  */
 function preprocessCode(code: string): string {
   // import 문 전체 제거
@@ -38,6 +40,25 @@ function preprocessCode(code: string): string {
 
   // 단독 require 호출 제거
   code = code.replace(/require\s*\([^)]+\)\s*;?\s*/g, '');
+
+  // TypeScript 타입 annotation 제거 (간단한 패턴만)
+  // const name: Type = value → const name = value
+  code = code.replace(/(const|let|var)\s+(\w+)\s*:\s*[^=]+=/g, '$1 $2 =');
+
+  // 최상위 IIFE unwrap (중복 wrap 방지)
+  // (async () => { ... })() 또는 (() => { ... })() 형식 감지
+  const iifePattern = /^\s*\(\s*async\s*\(\s*\)\s*=>\s*\{([\s\S]*)\}\s*\)\s*\(\s*\)\s*;?\s*$/;
+  const syncIifePattern = /^\s*\(\s*\(\s*\)\s*=>\s*\{([\s\S]*)\}\s*\)\s*\(\s*\)\s*;?\s*$/;
+
+  let match = code.match(iifePattern);
+  if (match) {
+    code = match[1].trim();
+  } else {
+    match = code.match(syncIifePattern);
+    if (match) {
+      code = match[1].trim();
+    }
+  }
 
   return code;
 }
