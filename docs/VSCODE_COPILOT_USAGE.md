@@ -548,6 +548,546 @@ await mcp.callTool('execute', {
 
 ---
 
+## 🚀 **완전한 워크플로우**: 메타데이터 → BestCase → 자동 가이드 로딩 → 코드 생성
+
+> 🆕 **v2.0 신규 기능**: `metadata.loadGuides()`, `bestcase.searchBestCases()`, 다차원 점수 시스템
+
+이 섹션에서는 **전체 워크플로우를 하나의 통합 시나리오**로 보여줍니다.
+
+### 시나리오: "상품 목록 페이지 만들어줘"
+
+**사용자 요청**:
+```
+상품 목록 페이지를 만들어줘. 검색, 필터링, 페이지네이션 기능 포함해서.
+```
+
+#### Step 1: 프로젝트 메타데이터 분석
+
+```typescript
+await mcp.callTool('execute', {
+  code: `
+    // 1. MetadataAnalyzer 생성
+    const analyzer = metadata.createAnalyzer({
+      ollamaUrl: 'http://ollama:11434',
+      model: 'qwen2.5-coder:7b'
+    });
+
+    // 2. 프로젝트 파일 스캔 (최대 20개)
+    const files = await filesystem.searchFiles({
+      path: '/projects/ecommerce-frontend',
+      pattern: '**/*.{ts,tsx,vue}',
+      recursive: true
+    });
+
+    const filesWithContent = [];
+    for (const file of files.files.slice(0, 20)) {
+      const content = await filesystem.readFile({ path: file.path });
+      filesWithContent.push({
+        path: file.path,
+        content: content.content
+      });
+    }
+
+    // 3. 메타데이터 추출
+    const projectMeta = await analyzer.analyzeProject(
+      '/projects/ecommerce-frontend',
+      filesWithContent,
+      3  // concurrency
+    );
+
+    return {
+      projectName: projectMeta.projectName,
+      apiType: projectMeta.apiType,
+      frameworks: projectMeta.frameworks,
+      designSystem: projectMeta.designSystem,
+      utilityLibrary: projectMeta.utilityLibrary,
+      patterns: projectMeta.patterns,
+      totalFiles: projectMeta.totalFiles,
+      excellentFiles: projectMeta.excellentFiles.length
+    };
+  `
+});
+```
+
+**결과**:
+```json
+{
+  "projectName": "ecommerce-frontend",
+  "apiType": "grpc",
+  "frameworks": ["vue3", "pinia", "nuxt3"],
+  "designSystem": "@openerd/nuxt3",
+  "utilityLibrary": "lodash",
+  "patterns": ["composable", "api-client", "error-boundary"],
+  "totalFiles": 120,
+  "excellentFiles": 8
+}
+```
+
+#### Step 2: 우수 BestCase 검색 (다차원 점수 기반)
+
+```typescript
+await mcp.callTool('execute', {
+  code: `
+    // 🆕 v2.0: 다차원 점수 기반 고급 검색
+    const searchResult = await bestcase.searchBestCases({
+      // 구조와 API 연결이 우수한 케이스 찾기
+      excellentIn: ['structure', 'apiConnection'],
+      // 75점 이상만
+      minTotalScore: 75,
+      // 태그 매칭
+      tags: ['vue3', 'grpc']
+    });
+
+    console.log('Found', searchResult.total, 'excellent cases');
+
+    // 가장 우수한 케이스 선택
+    const topCase = searchResult.summary[0];
+
+    return {
+      totalFound: searchResult.total,
+      selectedCase: {
+        id: topCase.id,
+        projectName: topCase.projectName,
+        totalScore: topCase.totalScore,
+        excellentIn: topCase.excellentIn,
+        scores: topCase.scores
+      }
+    };
+  `
+});
+```
+
+**결과**:
+```json
+{
+  "totalFound": 3,
+  "selectedCase": {
+    "id": "ecommerce-frontend-auto-scan-1234567890",
+    "projectName": "ecommerce-frontend",
+    "totalScore": 87,
+    "excellentIn": ["structure", "apiConnection", "designSystem", "errorHandling"],
+    "scores": {
+      "structure": 92,
+      "apiConnection": 88,
+      "designSystem": 85,
+      "utilityUsage": 78,
+      "errorHandling": 82,
+      "typeUsage": 85,
+      "stateManagement": 80,
+      "performance": 75
+    }
+  }
+}
+```
+
+#### Step 3: BestCase 상세 로드 및 비교
+
+```typescript
+await mcp.callTool('execute', {
+  code: `
+    // 1. BestCase 상세 정보 로드
+    const bestCaseResult = await bestcase.loadBestCase({
+      id: 'ecommerce-frontend-auto-scan-1234567890'
+    });
+
+    const bc = bestCaseResult.bestCase;
+
+    // 2. 🆕 v2.0: metadata.compareBestCase()로 자동 비교
+    const comparison = metadata.compareBestCase(
+      projectMeta,  // 현재 프로젝트
+      bc.patterns.metadata  // BestCase 메타데이터
+    );
+
+    return {
+      bestCase: {
+        projectName: bc.projectName,
+        totalScore: bc.totalScore,
+        excellentIn: bc.excellentIn,
+        componentUsage: bc.patterns.metadata?.componentsUsed?.slice(0, 5)
+      },
+      comparison: {
+        missingPatterns: comparison.missing.patterns,
+        patternGap: comparison.gaps.patterns,
+        componentGap: comparison.gaps.componentUsage,
+        recommendations: comparison.recommendations.slice(0, 3)
+      }
+    };
+  `
+});
+```
+
+**결과**:
+```json
+{
+  "bestCase": {
+    "projectName": "ecommerce-frontend",
+    "totalScore": 87,
+    "excellentIn": ["structure", "apiConnection", "designSystem", "errorHandling"],
+    "componentUsage": ["CommonButton", "CommonInput", "CommonTable", "CommonCard", "CommonDialog"]
+  },
+  "comparison": {
+    "missingPatterns": ["lazy-loading", "error-recovery"],
+    "patternGap": "20% (현재: 3개, BestCase: 5개)",
+    "componentGap": "40% (현재: 3개, BestCase: 5개)",
+    "recommendations": [
+      "lazy-loading 패턴 추가 (성능 향상)",
+      "CommonTable 컴포넌트 사용 (BestCase에서 15회 사용)",
+      "error-recovery 패턴 추가 (에러 처리 개선)"
+    ]
+  }
+}
+```
+
+#### Step 4: 자동 가이드 로딩 (메타데이터 기반)
+
+```typescript
+await mcp.callTool('execute', {
+  code: `
+    // 🆕 v2.0: metadata.loadGuides() - 메타데이터 기반 자동 가이드 로딩
+    const guideResult = await metadata.loadGuides(projectMeta, {
+      apiType: projectMeta.apiType,
+      designSystem: projectMeta.designSystem,
+      utilityLibrary: projectMeta.utilityLibrary,
+      mandatoryIds: ['mandatory-api-detection']
+    });
+
+    return {
+      extractedKeywords: guideResult.keywords.slice(0, 10),
+      loadedGuides: guideResult.guides.map(g => ({
+        id: g.id,
+        scope: g.scope,
+        priority: g.priority
+      })),
+      guidesCount: guideResult.guides.length,
+      combinedLength: guideResult.combined.length
+    };
+  `
+});
+```
+
+**결과**:
+```json
+{
+  "extractedKeywords": [
+    "composable", "api-client", "error-boundary",
+    "vue3", "pinia", "nuxt3",
+    "grpc", "design-system", "@openerd/nuxt3", "lodash"
+  ],
+  "loadedGuides": [
+    { "id": "mandatory-api-detection", "scope": "global", "priority": 1000 },
+    { "id": "grpc-api-integration", "scope": "project", "priority": 95 },
+    { "id": "vue-composition-api", "scope": "project", "priority": 90 },
+    { "id": "openerd-nuxt3-components", "scope": "project", "priority": 88 },
+    { "id": "error-handling-best-practices", "scope": "repo", "priority": 85 },
+    { "id": "lodash-usage-guide", "scope": "repo", "priority": 80 }
+  ],
+  "guidesCount": 6,
+  "combinedLength": 12450
+}
+```
+
+**핵심 장점**:
+- ✅ **자동 키워드 추출**: patterns, frameworks, entities, designSystem, utilityLibrary 모두 자동 추출
+- ✅ **필수 가이드 자동 포함**: mandatory-api-detection 자동 추가
+- ✅ **우선순위 정렬**: scope + priority + version 기반 자동 정렬
+- ✅ **토큰 절감**: 필요한 가이드만 선택적 로딩
+
+#### Step 5: 우수 참고 파일 선택 (점수 기반)
+
+```typescript
+await mcp.callTool('execute', {
+  code: `
+    // 1. BestCase에서 product 관련 우수 파일 검색
+    const bestCase = await bestcase.loadBestCase({
+      id: 'ecommerce-frontend-auto-scan-1234567890'
+    });
+
+    const bc = bestCase.bestCase;
+
+    // 2. 🆕 v2.0: 다차원 점수를 활용한 참고 파일 선택
+    // 구조(structure) 점수가 80점 이상인 파일만
+    const excellentFiles = bc.files
+      .filter(f => {
+        const meta = f.metadata;
+        return meta?.scores?.structure >= 80;
+      })
+      .filter(f => f.path.toLowerCase().includes('product'))
+      .sort((a, b) => (b.metadata?.scores?.structure || 0) - (a.metadata?.scores?.structure || 0))
+      .slice(0, 3);
+
+    return {
+      totalFiles: bc.files.length,
+      productFiles: excellentFiles.map(f => ({
+        path: f.path,
+        structureScore: f.metadata?.scores?.structure,
+        apiConnectionScore: f.metadata?.scores?.apiConnection,
+        totalScore: f.metadata?.totalScore,
+        patterns: f.metadata?.patterns
+      }))
+    };
+  `
+});
+```
+
+**결과**:
+```json
+{
+  "totalFiles": 45,
+  "productFiles": [
+    {
+      "path": "/pages/products/index.vue",
+      "structureScore": 92,
+      "apiConnectionScore": 88,
+      "totalScore": 87,
+      "patterns": ["composable", "api-client", "pagination", "search-filter"]
+    },
+    {
+      "path": "/composables/useProduct.ts",
+      "structureScore": 88,
+      "apiConnectionScore": 90,
+      "totalScore": 86,
+      "patterns": ["api-client", "error-handling", "type-safe"]
+    },
+    {
+      "path": "/components/ProductList.vue",
+      "structureScore": 85,
+      "apiConnectionScore": 82,
+      "totalScore": 83,
+      "patterns": ["component", "design-system", "responsive"]
+    }
+  ]
+}
+```
+
+#### Step 6: 코드 생성 (가이드 + 참고 파일 + 실제 API)
+
+이제 Claude는 다음 정보를 모두 가지고 있습니다:
+1. ✅ 프로젝트 메타데이터 (apiType: grpc, frameworks: vue3/pinia/nuxt3)
+2. ✅ BestCase 비교 결과 (누락된 패턴, 개선점)
+3. ✅ 자동 로딩된 가이드 (6개, mandatory 포함)
+4. ✅ 우수 참고 파일 (구조 92점, API 연결 88점)
+5. ✅ 실제 API 타입 정의 (ProductListRequest, ProductListResponse)
+
+```typescript
+await mcp.callTool('execute', {
+  code: `
+    // 1. 실제 타입 정의 읽기
+    const productTypes = await filesystem.readFile({
+      path: '/projects/ecommerce-frontend/types/product.types.ts'
+    });
+
+    // 2. 실제 API 클라이언트 읽기
+    const grpcClient = await filesystem.readFile({
+      path: '/projects/ecommerce-frontend/composables/useGrpcClient.ts'
+    });
+
+    // 3. 참고 파일 읽기
+    const referencePage = await filesystem.readFile({
+      path: '/projects/ecommerce-frontend/pages/products/index.vue'
+    });
+
+    return {
+      hasTypes: !!productTypes.content,
+      hasClient: !!grpcClient.content,
+      hasReference: !!referencePage.content,
+      ready: true
+    };
+  `
+});
+```
+
+**생성된 코드** (`pages/products/list.vue`):
+
+```vue
+<script setup lang="ts">
+// ✅ 1. 실제 프로젝트 타입 import (mandatory-api-detection 가이드 적용)
+import type {
+  ProductListRequest,
+  ProductListResponse,
+  Product
+} from '~/types/product.types';
+
+// ✅ 2. 실제 gRPC 클라이언트 사용 (BestCase 참고)
+const { getProductList } = useGrpcClient();
+
+// ✅ 3. 실제 Request 구조체 사용 (구조 점수 92점 참고)
+const filters = reactive<ProductListRequest>({
+  page: 1,
+  pageSize: 20,
+  category: '',
+  searchKeyword: '',
+  minPrice: 0,
+  maxPrice: 0,
+  sortBy: 'createdAt',
+  sortOrder: 'desc'
+});
+
+// ✅ 4. CommonTable 컴포넌트 사용 (BestCase: 15회 사용, 디자인 시스템 점수 85점)
+const tableHeaders = [
+  { key: 'id', label: 'ID' },
+  { key: 'name', label: '상품명' },
+  { key: 'price', label: '가격' },
+  { key: 'stock', label: '재고' },
+  { key: 'category', label: '카테고리' },
+  { key: 'createdAt', label: '등록일' }
+];
+
+// ✅ 5. 에러 처리 (에러 핸들링 점수 82점 참고)
+const { data: productData, pending: isLoading, error } = await useAsyncData<ProductListResponse>(
+  'product-list',
+  async () => {
+    try {
+      return await getProductList(filters);
+    } catch (err) {
+      console.error('Failed to load products:', err);
+      throw err;
+    }
+  },
+  { watch: [filters] }
+);
+
+const products = computed(() => productData.value?.products || []);
+const totalCount = computed(() => productData.value?.totalCount || 0);
+
+// ✅ 6. 검색 처리 (lazy-loading 패턴 추가 - BestCase 권장)
+const handleSearch = useDebounceFn(() => {
+  filters.page = 1;
+  refreshNuxtData('product-list');
+}, 500);
+
+// ✅ 7. 페이지네이션 (pagination 패턴 - 참고 파일에서 확인)
+const handlePageChange = (newPage: number) => {
+  filters.page = newPage;
+  refreshNuxtData('product-list');
+};
+
+// ✅ 8. 정렬 처리
+const handleSort = (key: string) => {
+  if (filters.sortBy === key) {
+    filters.sortOrder = filters.sortOrder === 'asc' ? 'desc' : 'asc';
+  } else {
+    filters.sortBy = key;
+    filters.sortOrder = 'desc';
+  }
+};
+</script>
+
+<template>
+  <CommonLayout title="상품 목록">
+    <!-- ✅ CommonCard 사용 (BestCase: 12회 사용) -->
+    <CommonCard>
+      <template #header>
+        <div class="filters">
+          <!-- ✅ CommonSelect 사용 (BestCase: 8회 사용) -->
+          <CommonSelect
+            v-model="filters.category"
+            :options="categoryOptions"
+            placeholder="카테고리 선택"
+          />
+
+          <!-- ✅ CommonInput 사용 (BestCase: 11회 사용) -->
+          <CommonInput
+            v-model="filters.searchKeyword"
+            placeholder="검색어 입력"
+            @input="handleSearch"
+          />
+
+          <!-- ✅ CommonButton 사용 (BestCase: 15회 사용) -->
+          <CommonButton
+            type="primary"
+            @click="handleSearch"
+          >
+            검색
+          </CommonButton>
+        </div>
+      </template>
+
+      <!-- ✅ 로딩 상태 (error-boundary 패턴) -->
+      <div v-if="isLoading" class="loading">
+        <CommonSpinner />
+        <span>데이터를 불러오는 중...</span>
+      </div>
+
+      <!-- ✅ 에러 상태 (error-recovery 패턴 - BestCase 권장) -->
+      <div v-else-if="error" class="error">
+        <CommonAlert type="error">
+          {{ error.message }}
+        </CommonAlert>
+        <CommonButton @click="refreshNuxtData('product-list')">
+          재시도
+        </CommonButton>
+      </div>
+
+      <!-- ✅ CommonTable 사용 (구조 점수 92점 참고) -->
+      <CommonTable
+        v-else
+        :data="products"
+        :headers="tableHeaders"
+        :sortable="true"
+        :current-sort="filters.sortBy"
+        :sort-order="filters.sortOrder"
+        @sort="handleSort"
+        @row-click="handleRowClick"
+      />
+
+      <!-- ✅ 페이지네이션 -->
+      <template #footer>
+        <CommonPagination
+          :current-page="filters.page"
+          :page-size="filters.pageSize"
+          :total="totalCount"
+          @change="handlePageChange"
+        />
+      </template>
+    </CommonCard>
+  </CommonLayout>
+</template>
+```
+
+### 워크플로우 요약
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  Step 1: 메타데이터 분석                                        │
+│  ├─ analyzer.analyzeProject()                                   │
+│  └─ 결과: apiType, frameworks, designSystem, patterns          │
+├─────────────────────────────────────────────────────────────────┤
+│  Step 2: 우수 BestCase 검색 (🆕 v2.0)                          │
+│  ├─ bestcase.searchBestCases({ excellentIn, minTotalScore })   │
+│  └─ 결과: 87점, 4개 우수 영역                                   │
+├─────────────────────────────────────────────────────────────────┤
+│  Step 3: BestCase 비교                                          │
+│  ├─ metadata.compareBestCase(현재, BestCase)                   │
+│  └─ 결과: 누락 패턴, 개선 권장사항                             │
+├─────────────────────────────────────────────────────────────────┤
+│  Step 4: 자동 가이드 로딩 (🆕 v2.0)                            │
+│  ├─ metadata.loadGuides(projectMeta, options)                  │
+│  └─ 결과: 6개 가이드 자동 로딩 (mandatory 포함)                │
+├─────────────────────────────────────────────────────────────────┤
+│  Step 5: 우수 참고 파일 선택                                    │
+│  ├─ filter by scores.structure >= 80                           │
+│  └─ 결과: 구조 92점, API 88점 참고 파일                        │
+├─────────────────────────────────────────────────────────────────┤
+│  Step 6: 코드 생성                                              │
+│  ├─ 실제 타입 + API 사용 (mandatory-api-detection)             │
+│  ├─ BestCase 패턴 적용 (구조 92점 참고)                        │
+│  ├─ CommonTable, CommonButton 등 (디자인 시스템 85점)          │
+│  └─ 에러 처리, lazy-loading 패턴 추가                          │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### 🆕 v2.0 개선사항
+
+| 기능 | v1.0 (이전) | v2.0 (신규) |
+|------|------------|------------|
+| **가이드 로딩** | `guides.searchGuides()` + `guides.combineGuides()` 수동 호출 | `metadata.loadGuides()` 한 번 호출로 자동화 |
+| **BestCase 검색** | `bestcase.listBestCases()` 후 수동 필터링 | `bestcase.searchBestCases()` 고급 필터링 |
+| **점수 시스템** | 단일 점수 (total, api, component) | 8가지 카테고리 점수 + excellentIn |
+| **저장 기준** | totalScore >= 70 (엄격) | totalScore >= 40 OR excellentIn.length > 0 (유연) |
+| **참고 파일 선택** | 전체 점수로만 필터링 | 카테고리별 점수로 세밀한 필터링 가능 |
+
+---
+
 ## 📚 가이드 로드
 
 ### 메타데이터 기반 가이드 검색
