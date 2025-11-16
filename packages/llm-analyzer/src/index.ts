@@ -40,3 +40,6 @@ export type {
 
 // 다차원 점수 계산기 ⭐ NEW
 export { calculateScoresFromMetadata } from './scoreCalculator.js';
+
+// BestCase 점수 타입 (scoreCalculator에서 사용)
+export type { BestCaseScores } from '../../bestcase-db/src/types.js';
