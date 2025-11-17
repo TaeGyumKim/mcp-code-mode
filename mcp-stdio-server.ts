@@ -14,17 +14,79 @@ import { FileCaseStorage } from './packages/bestcase-db/dist/index.js';
 import type { BestCaseScores } from './packages/bestcase-db/dist/index.js';
 import * as readline from 'readline';
 
-const fileCaseStorage = new FileCaseStorage();
+const _fileCaseStorage = new FileCaseStorage();
 
-// ============= 캐싱 시스템 =============
+// 캐시 클리어 콜백 (나중에 설정됨)
+let onFileCaseSaved: (() => void) | null = null;
+
+/**
+ * 캐시 일관성을 위한 FileCaseStorage 래퍼
+ *
+ * FileCase 저장/삭제 시 캐시를 자동으로 클리어하여 데이터 일관성을 보장합니다.
+ */
+const fileCaseStorage = {
+  ..._fileCaseStorage,
+
+  // save 시 캐시 클리어
+  async save(fileCase: any): Promise<void> {
+    await _fileCaseStorage.save(fileCase);
+    // 캐시 클리어 - 새 데이터 반영을 위해
+    if (onFileCaseSaved) onFileCaseSaved();
+    process.stderr.write(`[${new Date().toISOString()}] FileCase saved, cache cleared for consistency: ${JSON.stringify({ id: fileCase.id })}\n`);
+  },
+
+  // delete 시 캐시 클리어
+  async delete(id: string): Promise<boolean> {
+    const result = await _fileCaseStorage.delete(id);
+    if (result) {
+      if (onFileCaseSaved) onFileCaseSaved();
+      process.stderr.write(`[${new Date().toISOString()}] FileCase deleted, cache cleared for consistency: ${JSON.stringify({ id })}\n`);
+    }
+    return result;
+  },
+
+  // list는 캐시를 활용
+  list: _fileCaseStorage.list.bind(_fileCaseStorage),
+  load: _fileCaseStorage.load.bind(_fileCaseStorage),
+  search: _fileCaseStorage.search.bind(_fileCaseStorage),
+  findByKeywords: _fileCaseStorage.findByKeywords.bind(_fileCaseStorage),
+  findByFunction: _fileCaseStorage.findByFunction.bind(_fileCaseStorage),
+  findByMinScore: _fileCaseStorage.findByMinScore.bind(_fileCaseStorage),
+  findByRole: _fileCaseStorage.findByRole.bind(_fileCaseStorage),
+  findByEntity: _fileCaseStorage.findByEntity.bind(_fileCaseStorage),
+  initialize: _fileCaseStorage.initialize.bind(_fileCaseStorage)
+};
+
+// ============= 캐싱 시스템 (LRU with size limits) =============
 interface CacheEntry<T> {
   data: T;
   timestamp: number;
   ttl: number;  // Time to live in milliseconds
+  lastAccess: number;  // For LRU eviction
 }
 
+// Environment variable controlled cache settings
+const CACHE_TTL = parseInt(process.env.CACHE_TTL_MS || '300000', 10);  // 5분 기본
+const CACHE_MAX_ENTRIES = parseInt(process.env.CACHE_MAX_ENTRIES || '100', 10);  // 최대 100개 엔트리
+
 const cache = new Map<string, CacheEntry<any>>();
-const CACHE_TTL = 5 * 60 * 1000;  // 5분 기본 캐시 TTL
+
+/**
+ * LRU 기반 캐시 정리 - 최대 엔트리 수 초과 시 가장 오래된 항목 제거
+ */
+function evictLRU(): void {
+  if (cache.size <= CACHE_MAX_ENTRIES) return;
+
+  // 접근 시간 기준으로 정렬하여 가장 오래된 항목 제거
+  const entries = Array.from(cache.entries())
+    .sort((a, b) => a[1].lastAccess - b[1].lastAccess);
+
+  const toRemove = cache.size - CACHE_MAX_ENTRIES;
+  for (let i = 0; i < toRemove; i++) {
+    cache.delete(entries[i][0]);
+    log('LRU cache eviction', { key: entries[i][0] });
+  }
+}
 
 function getCached<T>(key: string): T | null {
   const entry = cache.get(key);
@@ -36,20 +98,42 @@ function getCached<T>(key: string): T | null {
     return null;
   }
 
+  // LRU: 접근 시간 업데이트
+  entry.lastAccess = now;
   return entry.data as T;
 }
 
 function setCache<T>(key: string, data: T, ttl: number = CACHE_TTL): void {
+  const now = Date.now();
   cache.set(key, {
     data,
-    timestamp: Date.now(),
-    ttl
+    timestamp: now,
+    ttl,
+    lastAccess: now
   });
+
+  // LRU 정리
+  evictLRU();
 }
 
 function clearCache(): void {
   cache.clear();
+  log('Cache cleared');
 }
+
+/**
+ * 캐시 통계 조회
+ */
+function getCacheStats(): { size: number; maxSize: number; ttlMs: number } {
+  return {
+    size: cache.size,
+    maxSize: CACHE_MAX_ENTRIES,
+    ttlMs: CACHE_TTL
+  };
+}
+
+// FileCaseStorage 저장 시 캐시 클리어 콜백 설정
+onFileCaseSaved = clearCache;
 
 interface JsonRpcRequest {
   jsonrpc: string;
@@ -87,8 +171,14 @@ interface AutoRecommendOptions {
   // NEW: 다차원 검색 옵션
   maxBestPractices?: number;       // 최대 우수 사례 수 (기본: 3, 0이면 비활성화)
   skipBestPracticeSearch?: boolean; // 다차원 검색 건너뛰기
-  minScoreThreshold?: number;      // 최소 점수 임계값 (기본: 75, 자동 조정됨)
+  minScoreThreshold?: number | Partial<Record<keyof BestCaseScores, number>>;  // 단일 값 또는 차원별 임계값
+  minScoreThresholdFloor?: number; // 동적 임계값 하한선 (기본: 50)
   enableDynamicThreshold?: boolean; // 동적 임계값 활성화 (기본: true)
+  // NEW: 사용자 정의 키워드 및 강제 검색
+  customKeywords?: Partial<Record<keyof BestCaseScores, string[]>>;  // 추가 키워드 병합
+  forceBestPracticeSearch?: boolean;  // skipBestPracticeSearch 조건 무시하고 강제 검색
+  // NEW: 결과 설명 옵션
+  includeSelectionReasons?: boolean;  // 선택 이유 포함 (기본: true)
 }
 
 interface ExecuteParams {
@@ -104,6 +194,11 @@ interface AutoContextResult {
   projectContext: any;
   warnings: string[];  // NEW: 경고 메시지 수집
   bestPracticeExamples: any[];  // NEW: 다차원 점수 기반 우수 코드 예제
+  searchMetadata?: {  // NEW: 검색 메타데이터 (임계값, 평균 점수 등)
+    effectiveThresholds: Record<string, number>;
+    candidatesCount: number;
+    avgScores: Record<string, number>;
+  };
 }
 
 const rl = readline.createInterface({
@@ -359,15 +454,42 @@ const DIMENSION_KEYWORDS: Record<keyof BestCaseScores, string[]> = {
 };
 
 /**
+ * 사용자 정의 키워드를 DIMENSION_KEYWORDS와 병합
+ */
+function mergeCustomKeywords(
+  customKeywords?: Partial<Record<keyof BestCaseScores, string[]>>
+): Record<keyof BestCaseScores, string[]> {
+  if (!customKeywords) return DIMENSION_KEYWORDS;
+
+  const merged = { ...DIMENSION_KEYWORDS };
+  for (const [dimension, keywords] of Object.entries(customKeywords)) {
+    if (keywords && Array.isArray(keywords)) {
+      merged[dimension as keyof BestCaseScores] = [
+        ...merged[dimension as keyof BestCaseScores],
+        ...keywords
+      ];
+    }
+  }
+  return merged;
+}
+
+/**
  * 요청에서 중요한 점수 차원 추론 (확장된 키워드 사전 사용)
  *
  * 사용자 요청을 분석하여 어떤 점수 차원이 중요한지 결정합니다.
  */
-function inferImportantDimensions(description: string, keywords: string[]): Array<keyof BestCaseScores> {
+function inferImportantDimensions(
+  description: string,
+  keywords: string[],
+  customKeywords?: Partial<Record<keyof BestCaseScores, string[]>>
+): Array<keyof BestCaseScores> {
   const dimensions: Array<keyof BestCaseScores> = [];
   const descLower = description.toLowerCase();
   const allKeywords = keywords.map(k => k.toLowerCase());
   const combined = descLower + ' ' + allKeywords.join(' ');
+
+  // 사용자 정의 키워드 병합
+  const effectiveKeywords = mergeCustomKeywords(customKeywords);
 
   // 각 차원별 매칭 점수 계산
   const dimensionScores: Record<keyof BestCaseScores, number> = {
@@ -382,9 +504,9 @@ function inferImportantDimensions(description: string, keywords: string[]): Arra
   };
 
   // 키워드 매칭으로 점수 계산
-  for (const [dimension, keywordList] of Object.entries(DIMENSION_KEYWORDS)) {
+  for (const [dimension, keywordList] of Object.entries(effectiveKeywords)) {
     for (const keyword of keywordList) {
-      if (combined.includes(keyword)) {
+      if (combined.includes(keyword.toLowerCase())) {
         dimensionScores[dimension as keyof BestCaseScores]++;
       }
     }
@@ -408,7 +530,7 @@ function inferImportantDimensions(description: string, keywords: string[]): Arra
 }
 
 /**
- * 다차원 점수 기반 우수 코드 검색 (캐싱 + 동적 임계값 + 다중 차원 기록)
+ * 다차원 점수 기반 우수 코드 검색 (캐싱 + 동적 임계값 + 다중 차원 기록 + 선택 이유)
  *
  * 특정 차원에서 높은 점수를 가진 파일을 검색합니다.
  */
@@ -417,26 +539,61 @@ async function searchBestPracticeExamples(
   fileRole?: string,
   maxResults: number = 3,
   options: {
-    minScoreThreshold?: number;
+    minScoreThreshold?: number | Partial<Record<keyof BestCaseScores, number>>;
+    minScoreThresholdFloor?: number;  // 동적 임계값 하한선
     enableDynamicThreshold?: boolean;
+    includeSelectionReasons?: boolean;
   } = {}
 ): Promise<{
   examples: any[];
   warning?: string;
+  searchMetadata?: {
+    effectiveThresholds: Record<string, number>;
+    candidatesCount: number;
+    avgScores: Record<string, number>;
+  };
 }> {
-  const minThreshold = options.minScoreThreshold ?? 75;
+  const thresholdFloor = options.minScoreThresholdFloor ?? 50;  // 동적 임계값 하한선
   const enableDynamic = options.enableDynamicThreshold ?? true;
+  const includeReasons = options.includeSelectionReasons ?? true;
+
+  // 차원별 임계값 처리
+  const perDimensionThresholds: Record<keyof BestCaseScores, number> = {
+    apiConnection: 75,
+    errorHandling: 75,
+    typeUsage: 75,
+    stateManagement: 75,
+    designSystem: 75,
+    structure: 75,
+    performance: 75,
+    utilityUsage: 75
+  };
+
+  if (typeof options.minScoreThreshold === 'number') {
+    // 단일 값이면 모든 차원에 적용
+    for (const dim of Object.keys(perDimensionThresholds) as Array<keyof BestCaseScores>) {
+      perDimensionThresholds[dim] = options.minScoreThreshold;
+    }
+  } else if (options.minScoreThreshold && typeof options.minScoreThreshold === 'object') {
+    // 차원별 값이면 개별 적용
+    for (const [dim, value] of Object.entries(options.minScoreThreshold)) {
+      if (value !== undefined) {
+        perDimensionThresholds[dim as keyof BestCaseScores] = value;
+      }
+    }
+  }
 
   try {
-    // 캐시 키 생성
-    const cacheKey = `bestpractice:${dimensions.join(',')}:${fileRole || 'any'}:${minThreshold}`;
+    // 캐시 키 생성 (차원별 임계값 포함)
+    const thresholdKey = dimensions.map(d => `${d}:${perDimensionThresholds[d]}`).join(',');
+    const cacheKey = `bestpractice:${thresholdKey}:${fileRole || 'any'}`;
     const cached = getCached<any[]>(cacheKey);
     if (cached) {
       log('Best practice cache hit', { cacheKey });
       return { examples: cached.slice(0, maxResults) };
     }
 
-    // 전체 파일 목록 캐시 (5분간 유효)
+    // 전체 파일 목록 캐시
     let allCases = getCached<any[]>('all_file_cases');
     if (!allCases) {
       log('Loading all file cases...');
@@ -458,56 +615,74 @@ async function searchBestPracticeExamples(
       };
     }
 
+    // 각 차원별 평균 점수 계산 (동적 임계값용)
+    const avgScores: Record<keyof BestCaseScores, number> = {
+      apiConnection: 0,
+      errorHandling: 0,
+      typeUsage: 0,
+      stateManagement: 0,
+      designSystem: 0,
+      structure: 0,
+      performance: 0,
+      utilityUsage: 0
+    };
+
+    for (const dimension of dimensions) {
+      const scores = candidates.map((fc: any) => fc.scores[dimension] || 0);
+      const avg = scores.reduce((a: number, b: number) => a + b, 0) / scores.length;
+      avgScores[dimension] = avg;
+    }
+
+    // 동적 임계값 조정 (차원별로 적용, 하한선 보장)
+    const effectiveThresholds = { ...perDimensionThresholds };
+    if (enableDynamic && candidates.length > 0) {
+      for (const dimension of dimensions) {
+        const originalThreshold = perDimensionThresholds[dimension];
+        const avgScore = avgScores[dimension];
+
+        if (avgScore < originalThreshold) {
+          // 동적 조정: 평균 + 10% 또는 +10점, 하지만 하한선 이상 유지
+          const dynamicThreshold = Math.max(avgScore * 1.1, avgScore + 10);
+          effectiveThresholds[dimension] = Math.max(dynamicThreshold, thresholdFloor);
+
+          log('Dynamic threshold adjusted for dimension', {
+            dimension,
+            original: originalThreshold,
+            average: avgScore,
+            effective: effectiveThresholds[dimension],
+            floor: thresholdFloor
+          });
+        }
+      }
+    }
+
     // 각 파일별 차원 점수 및 우수 차원 기록
     const fileScores: Map<string, {
       fileCase: any;
       excellentDimensions: Array<keyof BestCaseScores>;
       topScore: number;
+      selectionReasons: string[];
     }> = new Map();
-
-    // 동적 임계값: 상위 N% 선택을 위한 점수 계산
-    let effectiveThreshold = minThreshold;
-    if (enableDynamic && candidates.length > 0) {
-      // 각 차원별 평균 점수 계산
-      const avgScores: Record<keyof BestCaseScores, number> = {
-        apiConnection: 0,
-        errorHandling: 0,
-        typeUsage: 0,
-        stateManagement: 0,
-        designSystem: 0,
-        structure: 0,
-        performance: 0,
-        utilityUsage: 0
-      };
-
-      for (const dimension of dimensions) {
-        const scores = candidates.map((fc: any) => fc.scores[dimension] || 0);
-        const avg = scores.reduce((a: number, b: number) => a + b, 0) / scores.length;
-        avgScores[dimension] = avg;
-      }
-
-      // 평균이 임계값보다 낮으면 동적으로 조정 (상위 25% 기준)
-      const lowestAvg = Math.min(...dimensions.map(d => avgScores[d]));
-      if (lowestAvg < minThreshold) {
-        effectiveThreshold = Math.max(lowestAvg * 1.1, lowestAvg + 10);  // 평균 + 10% 또는 +10점
-        log('Dynamic threshold adjusted', {
-          original: minThreshold,
-          effective: effectiveThreshold,
-          lowestAvg
-        });
-      }
-    }
 
     // 각 파일의 차원별 점수 평가
     for (const fileCase of candidates) {
       const excellentDimensions: Array<keyof BestCaseScores> = [];
+      const selectionReasons: string[] = [];
       let topScore = 0;
 
       for (const dimension of dimensions) {
         const score = fileCase.scores[dimension] || 0;
-        if (score >= effectiveThreshold) {
+        const threshold = effectiveThresholds[dimension];
+
+        if (score >= threshold) {
           excellentDimensions.push(dimension);
           topScore = Math.max(topScore, score);
+
+          if (includeReasons) {
+            selectionReasons.push(
+              `${dimension}: ${score}점 (임계값 ${threshold}점 충족)`
+            );
+          }
         }
       }
 
@@ -515,7 +690,8 @@ async function searchBestPracticeExamples(
         fileScores.set(fileCase.id, {
           fileCase,
           excellentDimensions,
-          topScore
+          topScore,
+          selectionReasons
         });
       }
     }
@@ -534,8 +710,9 @@ async function searchBestPracticeExamples(
         .sort((a: any, b: any) => b.avgScore - a.avgScore)
         .slice(0, percentile);
 
-      for (const { fileCase } of sortedByAvg) {
+      for (const { fileCase, avgScore } of sortedByAvg) {
         const excellentDimensions: Array<keyof BestCaseScores> = [];
+        const selectionReasons: string[] = [];
         let topScore = 0;
 
         for (const dimension of dimensions) {
@@ -544,10 +721,17 @@ async function searchBestPracticeExamples(
           topScore = Math.max(topScore, score);
         }
 
+        if (includeReasons) {
+          selectionReasons.push(
+            `상위 ${Math.round((percentile / candidates.length) * 100)}% 선택 (평균 점수: ${avgScore.toFixed(1)})`
+          );
+        }
+
         fileScores.set(fileCase.id, {
           fileCase,
           excellentDimensions,
-          topScore
+          topScore,
+          selectionReasons
         });
       }
     }
@@ -556,7 +740,7 @@ async function searchBestPracticeExamples(
     const sortedResults = Array.from(fileScores.values())
       .sort((a, b) => b.topScore - a.topScore);
 
-    const results = sortedResults.slice(0, maxResults).map(({ fileCase, excellentDimensions, topScore }) => ({
+    const results = sortedResults.slice(0, maxResults).map(({ fileCase, excellentDimensions, topScore, selectionReasons }) => ({
       id: fileCase.id,
       projectName: fileCase.projectName,
       filePath: fileCase.filePath,
@@ -574,20 +758,29 @@ async function searchBestPracticeExamples(
         apiMethods: fileCase.analysis.apiMethods,
         componentsUsed: fileCase.analysis.componentsUsed,
         patterns: fileCase.analysis.patterns
-      }
+      },
+      // NEW: 선택 이유 포함
+      ...(includeReasons && { selectionReasons })
     }));
 
-    // 결과 캐싱 (캐시는 최대 결과보다 많이 저장)
+    // 결과 캐싱
     setCache(cacheKey, results, CACHE_TTL);
 
     log('Best practice search results', {
       dimensions,
-      threshold: effectiveThreshold,
+      effectiveThresholds: Object.fromEntries(dimensions.map(d => [d, effectiveThresholds[d]])),
       candidates: candidates.length,
       found: results.length
     });
 
-    return { examples: results };
+    return {
+      examples: results,
+      searchMetadata: {
+        effectiveThresholds: Object.fromEntries(dimensions.map(d => [d, effectiveThresholds[d]])) as Record<string, number>,
+        candidatesCount: candidates.length,
+        avgScores: Object.fromEntries(dimensions.map(d => [d, avgScores[d]])) as Record<string, number>
+      }
+    };
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error);
     log('Best practice search failed', { error: errorMsg });
@@ -661,11 +854,15 @@ async function createAutoContext(options: AutoRecommendOptions): Promise<AutoCon
 
   // 4. 다차원 점수 기반 우수 코드 검색
   let bestPracticeExamples: any[] = [];
+  let searchMetadata: any = null;
   const maxBestPractices = options.maxBestPractices !== undefined ? options.maxBestPractices : 3;
 
-  // maxBestPractices가 0이면 명시적으로 비활성화
-  if (!options.skipBestPracticeSearch && maxBestPractices > 0 && (recommendations.length > 0 || extractedKeywords.length > 0)) {
-    log('Searching best practice examples...');
+  // forceBestPracticeSearch가 true면 skipBestPracticeSearch 무시
+  const shouldSearch = options.forceBestPracticeSearch ||
+    (!options.skipBestPracticeSearch && maxBestPractices > 0 && (recommendations.length > 0 || extractedKeywords.length > 0));
+
+  if (shouldSearch && maxBestPractices > 0) {
+    log('Searching best practice examples...', { forced: options.forceBestPracticeSearch });
 
     // 파일 역할 추론
     let inferredRole: string | undefined;
@@ -674,31 +871,40 @@ async function createAutoContext(options: AutoRecommendOptions): Promise<AutoCon
     else if (options.filePath.includes('composables/')) inferredRole = 'composable';
     else if (options.filePath.includes('stores/')) inferredRole = 'store';
 
-    // 중요 차원 추론
-    const importantDimensions = inferImportantDimensions(options.description, extractedKeywords);
+    // 중요 차원 추론 (사용자 정의 키워드 포함)
+    const importantDimensions = inferImportantDimensions(
+      options.description,
+      extractedKeywords,
+      options.customKeywords
+    );
     log('Important dimensions', { dimensions: importantDimensions });
 
-    // 다차원 검색 (캐싱 + 동적 임계값 + 다중 차원 기록)
+    // 다차원 검색 (캐싱 + 동적 임계값 + 다중 차원 기록 + 선택 이유)
     const bestPracticeResult = await searchBestPracticeExamples(
       importantDimensions,
       inferredRole,
       maxBestPractices,
       {
         minScoreThreshold: options.minScoreThreshold ?? 75,
-        enableDynamicThreshold: options.enableDynamicThreshold ?? true
+        minScoreThresholdFloor: options.minScoreThresholdFloor ?? 50,
+        enableDynamicThreshold: options.enableDynamicThreshold ?? true,
+        includeSelectionReasons: options.includeSelectionReasons ?? true
       }
     );
 
     bestPracticeExamples = bestPracticeResult.examples;
+    searchMetadata = bestPracticeResult.searchMetadata;
+
     if (bestPracticeResult.warning) {
       warnings.push(bestPracticeResult.warning);
     }
 
     log('Best practice examples loaded', {
       count: bestPracticeExamples.length,
-      excellentIn: bestPracticeExamples.map(e => e.excellentIn)
+      excellentIn: bestPracticeExamples.map(e => e.excellentIn),
+      metadata: searchMetadata
     });
-  } else if (options.skipBestPracticeSearch) {
+  } else if (options.skipBestPracticeSearch && !options.forceBestPracticeSearch) {
     log('Best practice search skipped by user');
   } else if (maxBestPractices === 0) {
     log('Best practice search disabled (maxBestPractices=0)');
@@ -710,7 +916,8 @@ async function createAutoContext(options: AutoRecommendOptions): Promise<AutoCon
     guides: autoLoadedGuides,
     projectContext,
     warnings,
-    bestPracticeExamples
+    bestPracticeExamples,
+    searchMetadata
   };
 }
 
@@ -838,13 +1045,43 @@ Sandbox APIs:
                         default: false
                       },
                       minScoreThreshold: {
-                        type: 'number',
-                        description: 'Minimum score threshold for best practices (default: 75, auto-adjusted if dynamic)',
+                        oneOf: [
+                          { type: 'number' },
+                          {
+                            type: 'object',
+                            description: 'Per-dimension thresholds',
+                            additionalProperties: { type: 'number' }
+                          }
+                        ],
+                        description: 'Minimum score threshold (single number or per-dimension object, default: 75)',
                         default: 75
+                      },
+                      minScoreThresholdFloor: {
+                        type: 'number',
+                        description: 'Lower bound for dynamic threshold adjustment (default: 50)',
+                        default: 50
                       },
                       enableDynamicThreshold: {
                         type: 'boolean',
                         description: 'Enable dynamic threshold adjustment based on average scores (default: true)',
+                        default: true
+                      },
+                      customKeywords: {
+                        type: 'object',
+                        description: 'Custom keywords to merge with DIMENSION_KEYWORDS for domain-specific terms',
+                        additionalProperties: {
+                          type: 'array',
+                          items: { type: 'string' }
+                        }
+                      },
+                      forceBestPracticeSearch: {
+                        type: 'boolean',
+                        description: 'Force best practice search even when skipBestPracticeSearch conditions apply',
+                        default: false
+                      },
+                      includeSelectionReasons: {
+                        type: 'boolean',
+                        description: 'Include reasons why each file was selected (default: true)',
                         default: true
                       }
                     },
@@ -939,6 +1176,10 @@ ${execArgs.code}
           extractedKeywords: autoContext.extractedKeywords.length > 0
             ? autoContext.extractedKeywords
             : undefined,
+          // NEW: 검색 메타데이터 (임계값, 평균 점수 등)
+          searchMetadata: autoContext.searchMetadata || undefined,
+          // NEW: 캐시 통계
+          cacheStats: getCacheStats(),
           // 경고 메시지 포함
           warnings: autoContext.warnings.length > 0
             ? autoContext.warnings
