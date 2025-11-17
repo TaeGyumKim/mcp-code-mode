@@ -18,3 +18,14 @@ export {
   searchIndex,
   getIndexStats
 } from './indexer.js';
+
+// 파일 단위 BestCase (v3.0)
+export {
+  FileCaseStorage,
+  type FileCase,
+  type FileCaseQuery,
+  filePathToId,
+  inferFileType,
+  inferFileRole,
+  extractKeywords
+} from './fileCase.js';
