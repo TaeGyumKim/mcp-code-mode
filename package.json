@@ -36,7 +36,7 @@
   ],
   "scripts": {
     "dev": "yarn workspace web run dev",
-    "build:all": "yarn workspace bestcase-db run build && yarn workspace ai-bindings run build && yarn workspace ai-runner run build && yarn workspace llm-analyzer run build",
+    "build:all": "yarn workspace bestcase-db run build && yarn workspace llm-analyzer run build && yarn workspace @mcp-code-mode/guides run build && yarn workspace ai-bindings run build && yarn workspace ai-runner run build",
     "build:root": "tsup mcp-stdio-server.ts --format esm --clean --no-dts --external vm2 --external vm --shims",
     "scan:auto": "tsx scripts/scan/auto-scan-projects.ts",
     "scan:auto-ai": "tsx scripts/scan/auto-scan-projects-ai.ts",
