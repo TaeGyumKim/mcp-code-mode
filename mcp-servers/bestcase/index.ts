@@ -14,3 +14,9 @@ export {
   findFilesByRole,
   getRecommendedCode
 } from './searchFileCases.js';
+
+// RAG 기반 자동 추천 (v3.0)
+export {
+  autoRecommend,
+  analyzeAndRecommend
+} from './autoRecommend.js';

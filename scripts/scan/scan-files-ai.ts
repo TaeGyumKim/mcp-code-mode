@@ -16,7 +16,7 @@ import { promises as fs } from 'fs';
 import { join, relative, extname, basename } from 'path';
 import { existsSync, readdirSync, statSync, readFileSync } from 'fs';
 import { createHash } from 'crypto';
-import { MetadataAnalyzer } from '../../packages/llm-analyzer/dist/index.js';
+import { MetadataAnalyzer, EmbeddingService } from '../../packages/llm-analyzer/dist/index.js';
 import {
   FileCaseStorage,
   filePathToId,
@@ -31,9 +31,11 @@ const PROJECTS_BASE_PATH = process.env.PROJECTS_PATH || '/projects';
 const BESTCASE_STORAGE_PATH = process.env.BESTCASE_STORAGE_PATH || `${PROJECTS_BASE_PATH}/.bestcases`;
 const OLLAMA_URL = process.env.OLLAMA_URL || 'http://ollama:11434';
 const LLM_MODEL = process.env.LLM_MODEL || 'qwen2.5-coder:7b';
+const EMBEDDING_MODEL = process.env.EMBEDDING_MODEL || 'nomic-embed-text';
 const CONCURRENCY = parseInt(process.env.CONCURRENCY || '2');
 const MAX_FILES_PER_PROJECT = parseInt(process.env.MAX_FILES_PER_PROJECT || '50');
 const FORCE_REANALYZE = process.env.FORCE_REANALYZE === 'true';
+const GENERATE_EMBEDDINGS = process.env.GENERATE_EMBEDDINGS !== 'false'; // 기본값 true
 
 const storage = new FileCaseStorage(BESTCASE_STORAGE_PATH);
 
@@ -468,8 +470,9 @@ async function scanProjectWithAI(
   projectName: string,
   projectPath: string,
   analyzer: MetadataAnalyzer,
-  options: ScanOptions = DEFAULT_OPTIONS
-): Promise<{ saved: number; skipped: number; analyzed: number; unchanged: number }> {
+  options: ScanOptions = DEFAULT_OPTIONS,
+  embeddingService: EmbeddingService | null = null
+): Promise<{ saved: number; skipped: number; analyzed: number; unchanged: number; embeddings: number }> {
   console.log('========================================');
   console.log(`🔍 Scanning: ${projectName}`);
   console.log('========================================');
@@ -481,6 +484,7 @@ async function scanProjectWithAI(
   let skipped = 0;
   let analyzed = 0;
   let unchanged = 0;
+  let embeddings = 0;
 
   // 변경 감지: 분석이 필요한 파일만 필터링
   console.log(`\n🔄 Checking for changes...`);
@@ -567,7 +571,7 @@ async function scanProjectWithAI(
       const existingCase = await storage.load(id);
       const createdAt = existingCase?.metadata.createdAt || new Date().toISOString();
 
-      const fileCase = {
+      const fileCase: any = {
         id,
         projectName,
         filePath: file.relativePath,
@@ -594,6 +598,18 @@ async function scanProjectWithAI(
         }
       };
 
+      // RAG용 임베딩 생성 (선택적)
+      if (embeddingService) {
+        try {
+          const embeddingText = EmbeddingService.createFileCaseText(fileCase);
+          fileCase.embedding = await embeddingService.embed(embeddingText);
+          embeddings++;
+        } catch (embError) {
+          // 임베딩 실패해도 파일은 저장
+          console.log(`   ⚠️ Embedding failed for ${file.relativePath}`);
+        }
+      }
+
       await storage.save(fileCase);
       saved++;
 
@@ -609,10 +625,11 @@ async function scanProjectWithAI(
   console.log(`   Unchanged: ${unchanged}`);
   console.log(`   AI analyzed: ${analyzed}`);
   console.log(`   Saved: ${saved}`);
+  console.log(`   Embeddings: ${embeddings}`);
   console.log(`   Skipped: ${skipped}`);
   console.log('');
 
-  return { saved, skipped, analyzed, unchanged };
+  return { saved, skipped, analyzed, unchanged, embeddings };
 }
 
 /**
@@ -625,6 +642,8 @@ async function scanAllProjects() {
   console.log(`Storage Path: ${BESTCASE_STORAGE_PATH}`);
   console.log(`Ollama URL: ${OLLAMA_URL}`);
   console.log(`LLM Model: ${LLM_MODEL}`);
+  console.log(`Embedding Model: ${EMBEDDING_MODEL}`);
+  console.log(`Generate Embeddings: ${GENERATE_EMBEDDINGS}`);
   console.log(`Concurrency: ${CONCURRENCY}`);
   console.log(`Max Files/Project: ${MAX_FILES_PER_PROJECT}`);
   console.log(`Scoring Version: ${SCORING_VERSION}`);
@@ -643,7 +662,26 @@ async function scanAllProjects() {
     console.log('   Make sure Ollama is running at', OLLAMA_URL);
     process.exit(1);
   }
-  console.log('✅ Ollama connection OK\n');
+  console.log('✅ Ollama connection OK');
+
+  // 임베딩 서비스 초기화 (RAG용)
+  let embeddingService: EmbeddingService | null = null;
+  if (GENERATE_EMBEDDINGS) {
+    embeddingService = new EmbeddingService({
+      ollamaUrl: OLLAMA_URL,
+      model: EMBEDDING_MODEL
+    });
+
+    const embedHealthy = await embeddingService.healthCheck();
+    if (!embedHealthy) {
+      console.log(`⚠️ Embedding model (${EMBEDDING_MODEL}) not available, skipping embeddings`);
+      console.log('   To enable: ollama pull nomic-embed-text');
+      embeddingService = null;
+    } else {
+      console.log(`✅ Embedding service OK (${EMBEDDING_MODEL})`);
+    }
+  }
+  console.log('');
 
   const projects = findAllNuxtProjects(PROJECTS_BASE_PATH);
   console.log(`📦 Found ${projects.length} Nuxt projects\n`);
@@ -652,13 +690,15 @@ async function scanAllProjects() {
   let totalSkipped = 0;
   let totalAnalyzed = 0;
   let totalUnchanged = 0;
+  let totalEmbeddings = 0;
 
   for (const project of projects) {
-    const result = await scanProjectWithAI(project.name, project.path, analyzer);
+    const result = await scanProjectWithAI(project.name, project.path, analyzer, DEFAULT_OPTIONS, embeddingService);
     totalSaved += result.saved;
     totalSkipped += result.skipped;
     totalAnalyzed += result.analyzed;
     totalUnchanged += result.unchanged;
+    totalEmbeddings += result.embeddings || 0;
   }
 
   console.log('==========================================');
@@ -667,6 +707,7 @@ async function scanAllProjects() {
   console.log(`   Total files unchanged: ${totalUnchanged}`);
   console.log(`   Total files AI-analyzed: ${totalAnalyzed}`);
   console.log(`   Total files saved: ${totalSaved}`);
+  console.log(`   Total embeddings generated: ${totalEmbeddings}`);
   console.log(`   Total files skipped: ${totalSkipped}`);
   console.log('==========================================');
 }

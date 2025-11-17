@@ -128,6 +128,14 @@ export interface FileCase {
     analyzedAt: string;
     tags: string[];
   };
+
+  /**
+   * RAG용 임베딩 벡터 (선택적)
+   *
+   * 의미적 유사도 검색을 위한 벡터 표현
+   * Ollama 임베딩 모델로 생성됨
+   */
+  embedding?: number[];
 }
 
 /**

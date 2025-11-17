@@ -41,5 +41,9 @@ export type {
 // 다차원 점수 계산기 ⭐ NEW
 export { calculateScoresFromMetadata, SCORING_VERSION } from './scoreCalculator.js';
 
+// RAG용 임베딩 서비스 ⭐ NEW
+export { EmbeddingService } from './embeddingService.js';
+export type { EmbeddingConfig, EmbeddingResult } from './embeddingService.js';
+
 // BestCase 점수 타입 (scoreCalculator에서 사용)
 export type { BestCaseScores } from '../../bestcase-db/src/types.js';
