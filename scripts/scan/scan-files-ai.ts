@@ -36,8 +36,33 @@ const CONCURRENCY = parseInt(process.env.CONCURRENCY || '2');
 const MAX_FILES_PER_PROJECT = parseInt(process.env.MAX_FILES_PER_PROJECT || '50');
 const FORCE_REANALYZE = process.env.FORCE_REANALYZE === 'true';
 const GENERATE_EMBEDDINGS = process.env.GENERATE_EMBEDDINGS !== 'false'; // 기본값 true
+const MAX_RETRIES = parseInt(process.env.MAX_RETRIES || '3'); // 실패 시 재시도 횟수
+const CHECKPOINT_FILE = join(BESTCASE_STORAGE_PATH, '.scan-checkpoint.json');
 
 const storage = new FileCaseStorage(BESTCASE_STORAGE_PATH);
+
+// Graceful shutdown 상태
+let isShuttingDown = false;
+
+interface ScanCheckpoint {
+  startedAt: string;
+  lastUpdatedAt: string;
+  currentProject: string;
+  completedProjects: string[];
+  failedFiles: Array<{
+    projectName: string;
+    filePath: string;
+    error: string;
+    retryCount: number;
+  }>;
+  stats: {
+    totalSaved: number;
+    totalSkipped: number;
+    totalAnalyzed: number;
+    totalUnchanged: number;
+    totalEmbeddings: number;
+  };
+}
 
 interface ScanOptions {
   maxFilesPerProject?: number;
@@ -56,6 +81,176 @@ const DEFAULT_OPTIONS: ScanOptions = {
  */
 function calculateContentHash(content: string): string {
   return createHash('sha256').update(content).digest('hex').substring(0, 16);
+}
+
+/**
+ * Checkpoint 로드
+ */
+async function loadCheckpoint(): Promise<ScanCheckpoint | null> {
+  try {
+    const data = await fs.readFile(CHECKPOINT_FILE, 'utf-8');
+    const checkpoint = JSON.parse(data) as ScanCheckpoint;
+    console.log(`📋 Checkpoint loaded from ${checkpoint.lastUpdatedAt}`);
+    console.log(`   Completed projects: ${checkpoint.completedProjects.length}`);
+    console.log(`   Failed files: ${checkpoint.failedFiles.length}`);
+    return checkpoint;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Checkpoint 저장
+ */
+async function saveCheckpoint(checkpoint: ScanCheckpoint): Promise<void> {
+  checkpoint.lastUpdatedAt = new Date().toISOString();
+  await fs.writeFile(CHECKPOINT_FILE, JSON.stringify(checkpoint, null, 2));
+}
+
+/**
+ * Checkpoint 삭제 (완료 시)
+ */
+async function clearCheckpoint(): Promise<void> {
+  try {
+    await fs.unlink(CHECKPOINT_FILE);
+    console.log('🧹 Checkpoint cleared');
+  } catch {
+    // 파일이 없으면 무시
+  }
+}
+
+/**
+ * Graceful shutdown 핸들러
+ */
+function setupGracefulShutdown(
+  checkpoint: ScanCheckpoint,
+  onShutdown?: () => Promise<void>
+): void {
+  const shutdownHandler = async (signal: string) => {
+    if (isShuttingDown) return;
+    isShuttingDown = true;
+
+    console.log(`\n\n⚠️  Received ${signal}, saving checkpoint and shutting down...`);
+
+    try {
+      await saveCheckpoint(checkpoint);
+      console.log('✅ Checkpoint saved. You can resume from this point.');
+      console.log(`   Run: yarn scan (checkpoint will be auto-loaded)`);
+
+      if (onShutdown) {
+        await onShutdown();
+      }
+    } catch (error) {
+      console.error('❌ Failed to save checkpoint:', error);
+    }
+
+    process.exit(0);
+  };
+
+  process.on('SIGINT', () => shutdownHandler('SIGINT'));
+  process.on('SIGTERM', () => shutdownHandler('SIGTERM'));
+  process.on('SIGHUP', () => shutdownHandler('SIGHUP'));
+}
+
+/**
+ * 실패한 파일 재시도
+ */
+async function retryFailedFiles(
+  checkpoint: ScanCheckpoint,
+  analyzer: MetadataAnalyzer,
+  embeddingService: EmbeddingService | null
+): Promise<{ retried: number; stillFailed: number }> {
+  const filesToRetry = checkpoint.failedFiles.filter(f => f.retryCount < MAX_RETRIES);
+
+  if (filesToRetry.length === 0) {
+    return { retried: 0, stillFailed: checkpoint.failedFiles.length };
+  }
+
+  console.log(`\n🔄 Retrying ${filesToRetry.length} failed files...`);
+  let retried = 0;
+  const stillFailedFiles: typeof checkpoint.failedFiles = [];
+
+  for (const failedFile of filesToRetry) {
+    if (isShuttingDown) break;
+
+    console.log(`   Retrying: ${failedFile.projectName}/${failedFile.filePath} (attempt ${failedFile.retryCount + 1})`);
+
+    try {
+      const fullPath = join(PROJECTS_BASE_PATH, failedFile.projectName, failedFile.filePath);
+      const content = await fs.readFile(fullPath, 'utf-8');
+
+      // 파일 분석 시도
+      const aiResult = await analyzer.analyzeFile(fullPath, content);
+
+      const id = filePathToId(failedFile.projectName, failedFile.filePath);
+      const fileType = inferFileType(failedFile.filePath);
+      const fileRole = inferFileRole(failedFile.filePath);
+      const keywords = extractKeywords(content, failedFile.filePath);
+      const scores = aiResult ? convertMetadataToScores(aiResult) : calculateFallbackScores(content, keywords, [], []);
+
+      const fileCase: any = {
+        id,
+        projectName: failedFile.projectName,
+        filePath: failedFile.filePath,
+        fileType,
+        fileRole,
+        content,
+        keywords,
+        scores,
+        scoringVersion: SCORING_VERSION,
+        analysis: {
+          linesOfCode: content.split('\n').length,
+          apiMethods: aiResult?.apiMethods || [],
+          componentsUsed: aiResult?.components || [],
+          composablesUsed: aiResult?.composables || [],
+          patterns: aiResult?.patterns || [],
+          entities: aiResult?.entities || []
+        },
+        metadata: {
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          analyzedAt: new Date().toISOString(),
+          tags: [fileType, fileRole],
+          contentHash: calculateContentHash(content)
+        }
+      };
+
+      if (embeddingService) {
+        try {
+          const embeddingText = EmbeddingService.createFileCaseText(fileCase);
+          fileCase.embedding = await embeddingService.embed(embeddingText);
+          checkpoint.stats.totalEmbeddings++;
+        } catch {
+          // 임베딩 실패는 무시
+        }
+      }
+
+      await storage.save(fileCase);
+      retried++;
+      checkpoint.stats.totalSaved++;
+      console.log(`   ✅ Retry successful: ${failedFile.filePath}`);
+
+      // checkpoint에서 제거
+      await saveCheckpoint(checkpoint);
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      stillFailedFiles.push({
+        ...failedFile,
+        retryCount: failedFile.retryCount + 1,
+        error: errorMsg
+      });
+      console.log(`   ❌ Retry failed: ${failedFile.filePath}`);
+    }
+  }
+
+  // 아직 실패한 파일 업데이트
+  checkpoint.failedFiles = [
+    ...checkpoint.failedFiles.filter(f => f.retryCount >= MAX_RETRIES),
+    ...stillFailedFiles
+  ];
+  await saveCheckpoint(checkpoint);
+
+  return { retried, stillFailed: checkpoint.failedFiles.length };
 }
 
 /**
@@ -471,11 +666,17 @@ async function scanProjectWithAI(
   projectPath: string,
   analyzer: MetadataAnalyzer,
   options: ScanOptions = DEFAULT_OPTIONS,
-  embeddingService: EmbeddingService | null = null
-): Promise<{ saved: number; skipped: number; analyzed: number; unchanged: number; embeddings: number }> {
+  embeddingService: EmbeddingService | null = null,
+  checkpoint?: ScanCheckpoint
+): Promise<{ saved: number; skipped: number; analyzed: number; unchanged: number; embeddings: number; failed: string[] }> {
   console.log('========================================');
   console.log(`🔍 Scanning: ${projectName}`);
   console.log('========================================');
+
+  if (isShuttingDown) {
+    console.log('⚠️  Shutdown in progress, skipping project');
+    return { saved: 0, skipped: 0, analyzed: 0, unchanged: 0, embeddings: 0, failed: [] };
+  }
 
   const files = await collectFilesFromProject(projectPath, options);
   console.log(`📊 Found ${files.length} files to process`);
@@ -485,12 +686,15 @@ async function scanProjectWithAI(
   let analyzed = 0;
   let unchanged = 0;
   let embeddings = 0;
+  const failedFiles: string[] = [];
 
   // 변경 감지: 분석이 필요한 파일만 필터링
   console.log(`\n🔄 Checking for changes...`);
   const filesToReanalyze: typeof files = [];
 
   for (const file of files) {
+    if (isShuttingDown) break;
+
     const check = await checkNeedsReanalysis(projectName, file.relativePath, file.content);
     if (check.needsReanalysis) {
       filesToReanalyze.push(file);
@@ -514,7 +718,11 @@ async function scanProjectWithAI(
 
   if (filesToReanalyze.length === 0) {
     console.log(`\n✅ All files are up to date, skipping AI analysis`);
-    return { saved: 0, skipped: 0, analyzed: 0, unchanged };
+    return { saved: 0, skipped: 0, analyzed: 0, unchanged, embeddings: 0, failed: [] };
+  }
+
+  if (isShuttingDown) {
+    return { saved, skipped, analyzed, unchanged, embeddings, failed: failedFiles };
   }
 
   // AI 분석 (변경된 파일만)
@@ -539,7 +747,18 @@ async function scanProjectWithAI(
   // 각 파일을 개별적으로 저장
   console.log(`\n💾 Saving files individually (no score filtering)...`);
 
-  for (const file of filesToReanalyze) {
+  for (let i = 0; i < filesToReanalyze.length; i++) {
+    if (isShuttingDown) {
+      console.log(`\n⚠️  Shutdown requested, stopping at file ${i + 1}/${filesToReanalyze.length}`);
+      // 남은 파일들을 실패 목록에 추가
+      for (let j = i; j < filesToReanalyze.length; j++) {
+        failedFiles.push(filesToReanalyze[j].relativePath);
+      }
+      break;
+    }
+
+    const file = filesToReanalyze[i];
+
     try {
       const id = filePathToId(projectName, file.relativePath);
       const fileType = inferFileType(file.relativePath);
@@ -614,9 +833,28 @@ async function scanProjectWithAI(
       saved++;
 
       console.log(`✅ ${file.relativePath} (${keywords.slice(0, 3).join(', ')})`);
+
+      // 주기적으로 checkpoint 저장 (10개 파일마다)
+      if (checkpoint && saved % 10 === 0) {
+        checkpoint.stats.totalSaved += 10;
+        await saveCheckpoint(checkpoint);
+      }
     } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
       skipped++;
-      console.log(`❌ ${file.relativePath}`);
+      failedFiles.push(file.relativePath);
+      console.log(`❌ ${file.relativePath}: ${errorMsg.substring(0, 50)}`);
+
+      // 실패한 파일을 checkpoint에 기록
+      if (checkpoint) {
+        checkpoint.failedFiles.push({
+          projectName,
+          filePath: file.relativePath,
+          error: errorMsg,
+          retryCount: 0
+        });
+        await saveCheckpoint(checkpoint);
+      }
     }
   }
 
@@ -627,9 +865,12 @@ async function scanProjectWithAI(
   console.log(`   Saved: ${saved}`);
   console.log(`   Embeddings: ${embeddings}`);
   console.log(`   Skipped: ${skipped}`);
+  if (failedFiles.length > 0) {
+    console.log(`   Failed files: ${failedFiles.length}`);
+  }
   console.log('');
 
-  return { saved, skipped, analyzed, unchanged, embeddings };
+  return { saved, skipped, analyzed, unchanged, embeddings, failed: failedFiles };
 }
 
 /**
@@ -646,8 +887,39 @@ async function scanAllProjects() {
   console.log(`Generate Embeddings: ${GENERATE_EMBEDDINGS}`);
   console.log(`Concurrency: ${CONCURRENCY}`);
   console.log(`Max Files/Project: ${MAX_FILES_PER_PROJECT}`);
+  console.log(`Max Retries: ${MAX_RETRIES}`);
   console.log(`Scoring Version: ${SCORING_VERSION}`);
   console.log('');
+
+  // Checkpoint 확인 (이전 세션에서 중단된 경우)
+  let checkpoint = await loadCheckpoint();
+  const isResuming = !!checkpoint;
+
+  if (!checkpoint) {
+    // 새 스캔 세션
+    checkpoint = {
+      startedAt: new Date().toISOString(),
+      lastUpdatedAt: new Date().toISOString(),
+      currentProject: '',
+      completedProjects: [],
+      failedFiles: [],
+      stats: {
+        totalSaved: 0,
+        totalSkipped: 0,
+        totalAnalyzed: 0,
+        totalUnchanged: 0,
+        totalEmbeddings: 0
+      }
+    };
+    console.log('📝 Starting new scan session\n');
+  } else {
+    console.log(`\n🔄 Resuming from previous session (started: ${checkpoint.startedAt})`);
+    console.log(`   Completed projects: ${checkpoint.completedProjects.join(', ') || 'none'}`);
+    console.log(`   Stats so far: saved=${checkpoint.stats.totalSaved}, analyzed=${checkpoint.stats.totalAnalyzed}\n`);
+  }
+
+  // Graceful shutdown 설정
+  setupGracefulShutdown(checkpoint);
 
   // Ollama 연결 확인
   const analyzer = new MetadataAnalyzer({
@@ -660,6 +932,8 @@ async function scanAllProjects() {
   if (!isHealthy) {
     console.log('❌ Ollama server not available!');
     console.log('   Make sure Ollama is running at', OLLAMA_URL);
+    console.log('   Saving checkpoint for later resume...');
+    await saveCheckpoint(checkpoint);
     process.exit(1);
   }
   console.log('✅ Ollama connection OK');
@@ -683,38 +957,100 @@ async function scanAllProjects() {
   }
   console.log('');
 
+  // 실패한 파일 재시도 (이전 세션에서 실패한 경우)
+  if (isResuming && checkpoint.failedFiles.length > 0) {
+    const retryResult = await retryFailedFiles(checkpoint, analyzer, embeddingService);
+    console.log(`   Retried: ${retryResult.retried}, Still failed: ${retryResult.stillFailed}`);
+  }
+
   const projects = findAllNuxtProjects(PROJECTS_BASE_PATH);
   console.log(`📦 Found ${projects.length} Nuxt projects\n`);
 
-  let totalSaved = 0;
-  let totalSkipped = 0;
-  let totalAnalyzed = 0;
-  let totalUnchanged = 0;
-  let totalEmbeddings = 0;
+  // 이미 완료된 프로젝트 건너뛰기
+  const projectsToScan = projects.filter(p => !checkpoint!.completedProjects.includes(p.name));
 
-  for (const project of projects) {
-    const result = await scanProjectWithAI(project.name, project.path, analyzer, DEFAULT_OPTIONS, embeddingService);
-    totalSaved += result.saved;
-    totalSkipped += result.skipped;
-    totalAnalyzed += result.analyzed;
-    totalUnchanged += result.unchanged;
-    totalEmbeddings += result.embeddings || 0;
+  if (projectsToScan.length < projects.length) {
+    console.log(`⏭️  Skipping ${projects.length - projectsToScan.length} already completed projects`);
+    console.log(`   Remaining: ${projectsToScan.length} projects\n`);
   }
 
+  for (const project of projectsToScan) {
+    if (isShuttingDown) {
+      console.log('\n⚠️  Shutdown in progress, stopping scan loop');
+      break;
+    }
+
+    checkpoint.currentProject = project.name;
+    await saveCheckpoint(checkpoint);
+
+    const result = await scanProjectWithAI(
+      project.name,
+      project.path,
+      analyzer,
+      DEFAULT_OPTIONS,
+      embeddingService,
+      checkpoint
+    );
+
+    // 통계 업데이트
+    checkpoint.stats.totalSaved += result.saved;
+    checkpoint.stats.totalSkipped += result.skipped;
+    checkpoint.stats.totalAnalyzed += result.analyzed;
+    checkpoint.stats.totalUnchanged += result.unchanged;
+    checkpoint.stats.totalEmbeddings += result.embeddings || 0;
+
+    // 프로젝트 완료 표시
+    if (!isShuttingDown) {
+      checkpoint.completedProjects.push(project.name);
+      checkpoint.currentProject = '';
+      await saveCheckpoint(checkpoint);
+    }
+  }
+
+  if (isShuttingDown) {
+    console.log('\n⚠️  Scan interrupted. Checkpoint saved.');
+    console.log('   Run `yarn scan` to resume from where you left off.');
+    return;
+  }
+
+  // 스캔 완료
   console.log('==========================================');
   console.log('🎉 Scan Complete!');
   console.log(`   Total projects: ${projects.length}`);
-  console.log(`   Total files unchanged: ${totalUnchanged}`);
-  console.log(`   Total files AI-analyzed: ${totalAnalyzed}`);
-  console.log(`   Total files saved: ${totalSaved}`);
-  console.log(`   Total embeddings generated: ${totalEmbeddings}`);
-  console.log(`   Total files skipped: ${totalSkipped}`);
+  console.log(`   Total files unchanged: ${checkpoint.stats.totalUnchanged}`);
+  console.log(`   Total files AI-analyzed: ${checkpoint.stats.totalAnalyzed}`);
+  console.log(`   Total files saved: ${checkpoint.stats.totalSaved}`);
+  console.log(`   Total embeddings generated: ${checkpoint.stats.totalEmbeddings}`);
+  console.log(`   Total files skipped: ${checkpoint.stats.totalSkipped}`);
+  if (checkpoint.failedFiles.length > 0) {
+    console.log(`   ⚠️  Failed files (max retries exceeded): ${checkpoint.failedFiles.length}`);
+    checkpoint.failedFiles.forEach(f => {
+      console.log(`      - ${f.projectName}/${f.filePath}: ${f.error.substring(0, 50)}`);
+    });
+  }
   console.log('==========================================');
+
+  // 성공적으로 완료되면 checkpoint 삭제
+  if (checkpoint.failedFiles.length === 0) {
+    await clearCheckpoint();
+  } else {
+    console.log(`\n💡 ${checkpoint.failedFiles.length} files still failed. Checkpoint preserved for investigation.`);
+    console.log(`   View: cat ${CHECKPOINT_FILE}`);
+    console.log(`   Clear: rm ${CHECKPOINT_FILE}`);
+  }
 }
 
 // CLI 실행
 if (process.argv[1]?.includes('scan-files-ai')) {
-  scanAllProjects().catch(console.error);
+  scanAllProjects().catch(async (error) => {
+    console.error('Scan failed:', error);
+    // 에러 시에도 checkpoint 저장 시도
+    const checkpoint = await loadCheckpoint();
+    if (checkpoint) {
+      console.log('Checkpoint preserved for resume.');
+    }
+    process.exit(1);
+  });
 }
 
-export { scanProjectWithAI, scanAllProjects };
+export { scanProjectWithAI, scanAllProjects, loadCheckpoint, clearCheckpoint };
