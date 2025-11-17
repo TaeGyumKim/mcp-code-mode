@@ -15,6 +15,7 @@
 import { promises as fs } from 'fs';
 import { join, relative, extname, basename } from 'path';
 import { existsSync, readdirSync, statSync, readFileSync } from 'fs';
+import { createHash } from 'crypto';
 import { MetadataAnalyzer } from '../../packages/llm-analyzer/dist/index.js';
 import {
   FileCaseStorage,
@@ -32,6 +33,7 @@ const OLLAMA_URL = process.env.OLLAMA_URL || 'http://ollama:11434';
 const LLM_MODEL = process.env.LLM_MODEL || 'qwen2.5-coder:7b';
 const CONCURRENCY = parseInt(process.env.CONCURRENCY || '2');
 const MAX_FILES_PER_PROJECT = parseInt(process.env.MAX_FILES_PER_PROJECT || '50');
+const FORCE_REANALYZE = process.env.FORCE_REANALYZE === 'true';
 
 const storage = new FileCaseStorage(BESTCASE_STORAGE_PATH);
 
@@ -46,6 +48,53 @@ const DEFAULT_OPTIONS: ScanOptions = {
   fileExtensions: ['.vue', '.ts', '.tsx', '.js'],
   foldersToScan: ['pages', 'components', 'composables', 'stores', 'utils', 'helpers', 'api', 'layouts', 'middleware']
 };
+
+/**
+ * 파일 내용의 해시 계산
+ */
+function calculateContentHash(content: string): string {
+  return createHash('sha256').update(content).digest('hex').substring(0, 16);
+}
+
+/**
+ * 파일이 재분석이 필요한지 확인
+ *
+ * - FORCE_REANALYZE=true면 무조건 재분석
+ * - 기존 FileCase가 없으면 재분석
+ * - scoringVersion이 다르면 재분석
+ * - 파일 내용이 변경되었으면 재분석
+ */
+async function checkNeedsReanalysis(
+  projectName: string,
+  filePath: string,
+  content: string
+): Promise<{ needsReanalysis: boolean; reason: string }> {
+  if (FORCE_REANALYZE) {
+    return { needsReanalysis: true, reason: 'force_reanalyze' };
+  }
+
+  const id = filePathToId(projectName, filePath);
+  const existing = await storage.load(id);
+
+  if (!existing) {
+    return { needsReanalysis: true, reason: 'new_file' };
+  }
+
+  // scoringVersion 체크
+  if (existing.scoringVersion !== SCORING_VERSION) {
+    return { needsReanalysis: true, reason: 'version_outdated' };
+  }
+
+  // 내용 해시 체크
+  const currentHash = calculateContentHash(content);
+  const existingHash = (existing.metadata as any).contentHash;
+
+  if (!existingHash || existingHash !== currentHash) {
+    return { needsReanalysis: true, reason: 'content_changed' };
+  }
+
+  return { needsReanalysis: false, reason: 'up_to_date' };
+}
 
 /**
  * 디렉토리가 Nuxt 프로젝트인지 확인
@@ -408,13 +457,19 @@ function calculateFallbackScores(
 
 /**
  * AI 기반 프로젝트 스캔 (파일 단위 저장)
+ *
+ * 변경 감지:
+ * - 새 파일: AI 분석 후 저장
+ * - 변경된 파일: AI 분석 후 저장
+ * - scoringVersion 구버전: AI 분석 후 저장
+ * - 변경 없음: 스킵
  */
 async function scanProjectWithAI(
   projectName: string,
   projectPath: string,
   analyzer: MetadataAnalyzer,
   options: ScanOptions = DEFAULT_OPTIONS
-): Promise<{ saved: number; skipped: number; analyzed: number }> {
+): Promise<{ saved: number; skipped: number; analyzed: number; unchanged: number }> {
   console.log('========================================');
   console.log(`🔍 Scanning: ${projectName}`);
   console.log('========================================');
@@ -425,10 +480,42 @@ async function scanProjectWithAI(
   let saved = 0;
   let skipped = 0;
   let analyzed = 0;
+  let unchanged = 0;
 
-  // AI 분석 (병렬)
-  console.log(`\n🤖 Running AI metadata analysis...`);
-  const filesToAnalyze = files.map(f => ({ path: f.fullPath, content: f.content }));
+  // 변경 감지: 분석이 필요한 파일만 필터링
+  console.log(`\n🔄 Checking for changes...`);
+  const filesToReanalyze: typeof files = [];
+
+  for (const file of files) {
+    const check = await checkNeedsReanalysis(projectName, file.relativePath, file.content);
+    if (check.needsReanalysis) {
+      filesToReanalyze.push(file);
+      if (check.reason === 'new_file') {
+        console.log(`   📄 New: ${file.relativePath}`);
+      } else if (check.reason === 'version_outdated') {
+        console.log(`   🔄 Version outdated: ${file.relativePath}`);
+      } else if (check.reason === 'content_changed') {
+        console.log(`   ✏️  Changed: ${file.relativePath}`);
+      } else if (check.reason === 'force_reanalyze') {
+        console.log(`   🔃 Force: ${file.relativePath}`);
+      }
+    } else {
+      unchanged++;
+    }
+  }
+
+  console.log(`\n📊 Change detection summary:`);
+  console.log(`   Unchanged: ${unchanged}`);
+  console.log(`   Need reanalysis: ${filesToReanalyze.length}`);
+
+  if (filesToReanalyze.length === 0) {
+    console.log(`\n✅ All files are up to date, skipping AI analysis`);
+    return { saved: 0, skipped: 0, analyzed: 0, unchanged };
+  }
+
+  // AI 분석 (변경된 파일만)
+  console.log(`\n🤖 Running AI metadata analysis for ${filesToReanalyze.length} files...`);
+  const filesToAnalyze = filesToReanalyze.map(f => ({ path: f.fullPath, content: f.content }));
 
   let aiResults: Map<string, any> = new Map();
 
@@ -448,7 +535,7 @@ async function scanProjectWithAI(
   // 각 파일을 개별적으로 저장
   console.log(`\n💾 Saving files individually (no score filtering)...`);
 
-  for (const file of files) {
+  for (const file of filesToReanalyze) {
     try {
       const id = filePathToId(projectName, file.relativePath);
       const fileType = inferFileType(file.relativePath);
@@ -476,6 +563,10 @@ async function scanProjectWithAI(
         scores = calculateFallbackScores(file.content, keywords, apiMethods, componentsUsed);
       }
 
+      // 기존 FileCase가 있으면 createdAt 유지
+      const existingCase = await storage.load(id);
+      const createdAt = existingCase?.metadata.createdAt || new Date().toISOString();
+
       const fileCase = {
         id,
         projectName,
@@ -495,10 +586,11 @@ async function scanProjectWithAI(
           entities
         },
         metadata: {
-          createdAt: new Date().toISOString(),
+          createdAt,
           updatedAt: new Date().toISOString(),
           analyzedAt: new Date().toISOString(),
-          tags: [fileType, fileRole, ...keywords.slice(0, 5)]
+          tags: [fileType, fileRole, ...keywords.slice(0, 5)],
+          contentHash: calculateContentHash(file.content)
         }
       };
 
@@ -514,12 +606,13 @@ async function scanProjectWithAI(
 
   console.log(`\n📊 Project Summary:`);
   console.log(`   Total files: ${files.length}`);
+  console.log(`   Unchanged: ${unchanged}`);
   console.log(`   AI analyzed: ${analyzed}`);
   console.log(`   Saved: ${saved}`);
   console.log(`   Skipped: ${skipped}`);
   console.log('');
 
-  return { saved, skipped, analyzed };
+  return { saved, skipped, analyzed, unchanged };
 }
 
 /**
@@ -558,17 +651,20 @@ async function scanAllProjects() {
   let totalSaved = 0;
   let totalSkipped = 0;
   let totalAnalyzed = 0;
+  let totalUnchanged = 0;
 
   for (const project of projects) {
     const result = await scanProjectWithAI(project.name, project.path, analyzer);
     totalSaved += result.saved;
     totalSkipped += result.skipped;
     totalAnalyzed += result.analyzed;
+    totalUnchanged += result.unchanged;
   }
 
   console.log('==========================================');
   console.log('🎉 Scan Complete!');
   console.log(`   Total projects: ${projects.length}`);
+  console.log(`   Total files unchanged: ${totalUnchanged}`);
   console.log(`   Total files AI-analyzed: ${totalAnalyzed}`);
   console.log(`   Total files saved: ${totalSaved}`);
   console.log(`   Total files skipped: ${totalSkipped}`);
