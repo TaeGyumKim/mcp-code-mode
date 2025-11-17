@@ -257,12 +257,12 @@ await mcp.callTool('execute', {
 });
 ```
 
-### 2. BestCase 저장 (cron job)
+### 2. FileCase 저장 (cron job)
 
 우수 코드만 선별하여 패턴 라이브러리 구축합니다.
 
 ```typescript
-// cron job에서 실행 (scripts/scan/auto-scan-projects-ai.ts)
+// cron job에서 실행 (scripts/scan/scan-files-ai.ts)
 const analyzer = new MetadataAnalyzer({
   ollamaUrl: 'http://localhost:11434',
   model: 'qwen2.5-coder:7b'
@@ -712,7 +712,7 @@ if (scores.errorHandling < 60) {
 3. ✅ MetadataPrompts 작성 (packages/llm-analyzer/src/metadataPrompts.ts)
 4. ✅ Sandbox API 통합 (packages/ai-runner/src/sandbox.ts)
 5. ✅ BestCase 구조 변경 (packages/bestcase-db/src/storage.ts)
-6. ✅ cron job 스크립트 수정 (scripts/scan/auto-scan-projects-ai.ts)
+6. ✅ cron job 스크립트 수정 (scripts/scan/scan-files-ai.ts)
 
 ## 📚 참고
 

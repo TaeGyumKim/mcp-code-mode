@@ -552,9 +552,9 @@ await mcp.callTool('execute', { code });
 
 **목적**: 사용자가 지정한 프로젝트들의 메타데이터를 미리 추출하여 BestCase DB에 저장
 
-**실행 주기**: 매일 새벽 3시 (cron: `0 3 * * *`)
+**실행 주기**: 매주 일요일 02:00 (cron: `0 2 * * 0`)
 
-**스크립트**: `scripts/scan/auto-scan-projects-ai.ts`
+**스크립트**: `scripts/scan/scan-files-ai.ts` (v3.0 파일 기반)
 
 ```typescript
 // cron job이 실행
@@ -719,7 +719,7 @@ tools/list 응답:
 3. ✅ **Sandbox API 통합** - guides, metadata API 추가 (packages/ai-runner/src/sandbox.ts)
 4. ✅ **MCP 도구 최소화** - 7개 → 1개 (execute만), 87% 토큰 절감 (mcp-stdio-server.ts)
 5. ✅ **Preflight 단순화** - 826줄 → 240줄 (71% 축소), deprecated 표시 (mcp-servers/guides/preflight.ts)
-6. ✅ **cron job 메타데이터 전환** - CodeAnalyzer → MetadataAnalyzer (scripts/scan/auto-scan-projects-ai.ts)
+6. ✅ **cron job 메타데이터 전환** - CodeAnalyzer → MetadataAnalyzer (scripts/scan/scan-files-ai.ts)
 
 ---
 

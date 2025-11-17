@@ -88,7 +88,7 @@ yarn scan:migrate --verbose
 
 ```bash
 # 마이그레이션 + 재분석 + 새 프로젝트 스캔
-yarn scan:auto-migrate
+yarn scan:migrate
 ```
 
 **프로세스**:
@@ -163,7 +163,7 @@ export REANALYZE_OLD_VERSIONS=true
 export MAX_REANALYZE_COUNT=20
 
 # 실행
-yarn scan:auto-migrate
+yarn scan:migrate
 ```
 
 **재분석 과정**:
@@ -214,7 +214,7 @@ yarn scan:migrate --verbose
 
 # 수동으로 삭제 후 재분석
 rm /projects/.bestcases/problematic-bestcase.json
-yarn scan:auto-migrate
+yarn scan:migrate
 ```
 
 ### Ollama 서버 연결 실패
