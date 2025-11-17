@@ -1927,15 +1927,15 @@ docker-compose logs ollama-code-analyzer
 
 ### Q2: "BestCase를 찾을 수 없습니다"
 
-**원인**: BestCase가 아직 생성되지 않음
+**원인**: FileCase가 아직 생성되지 않음
 
 **해결**:
 ```bash
-# cron job으로 BestCase 생성
-docker exec mcp-code-mode-server node /app/scripts/scan/auto-scan-projects-ai.js
+# v3.0 파일 기반 AI 스캔
+yarn scan
 
-# 또는 수동 스캔
-yarn scan:advanced
+# Docker 환경에서
+docker exec mcp-code-mode-server node /app/scripts/dist/scan/scan-files-ai.js
 ```
 
 ### Q3: "메타데이터 추출이 너무 느립니다"
