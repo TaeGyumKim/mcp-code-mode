@@ -10,7 +10,11 @@ import { runAgentScript } from './packages/ai-runner/dist/agentRunner.js';
 import { analyzeAndRecommend } from './mcp-servers/bestcase/autoRecommend.js';
 import * as guides from './mcp-servers/guides/dist/index.js';
 import { extractProjectContext } from './packages/ai-runner/dist/projectContext.js';
+import { FileCaseStorage } from './packages/bestcase-db/dist/index.js';
+import type { BestCaseScores } from './packages/bestcase-db/dist/index.js';
 import * as readline from 'readline';
+
+const fileCaseStorage = new FileCaseStorage();
 
 interface JsonRpcRequest {
   jsonrpc: string;
@@ -45,6 +49,9 @@ interface AutoRecommendOptions {
   mandatoryGuideIds?: string[];    // 필수 가이드 ID (기본: ['00-bestcase-priority'])
   skipGuideLoading?: boolean;      // 가이드 로딩 건너뛰기
   skipProjectContext?: boolean;    // 프로젝트 컨텍스트 분석 건너뛰기
+  // NEW: 다차원 검색 옵션
+  maxBestPractices?: number;       // 최대 우수 사례 수 (기본: 3)
+  skipBestPracticeSearch?: boolean; // 다차원 검색 건너뛰기
 }
 
 interface ExecuteParams {
@@ -59,6 +66,7 @@ interface AutoContextResult {
   guides: string;
   projectContext: any;
   warnings: string[];  // NEW: 경고 메시지 수집
+  bestPracticeExamples: any[];  // NEW: 다차원 점수 기반 우수 코드 예제
 }
 
 const rl = readline.createInterface({
@@ -268,7 +276,144 @@ async function getProjectContext(filePath: string): Promise<{
 }
 
 /**
- * 자동 컨텍스트 생성 (RAG + 가이드 + 프로젝트 분석)
+ * 요청에서 중요한 점수 차원 추론
+ *
+ * 사용자 요청을 분석하여 어떤 점수 차원이 중요한지 결정합니다.
+ */
+function inferImportantDimensions(description: string, keywords: string[]): Array<keyof BestCaseScores> {
+  const dimensions: Array<keyof BestCaseScores> = [];
+  const descLower = description.toLowerCase();
+  const allKeywords = keywords.map(k => k.toLowerCase());
+  const combined = descLower + ' ' + allKeywords.join(' ');
+
+  // API 연결 관련
+  if (combined.includes('api') || combined.includes('grpc') || combined.includes('rest') ||
+      combined.includes('fetch') || combined.includes('axios') || combined.includes('client')) {
+    dimensions.push('apiConnection');
+  }
+
+  // 에러 처리 관련
+  if (combined.includes('error') || combined.includes('에러') || combined.includes('try') ||
+      combined.includes('catch') || combined.includes('예외') || combined.includes('validation')) {
+    dimensions.push('errorHandling');
+  }
+
+  // 타입 관련
+  if (combined.includes('type') || combined.includes('interface') || combined.includes('타입') ||
+      combined.includes('typescript') || combined.includes('정의')) {
+    dimensions.push('typeUsage');
+  }
+
+  // 상태 관리 관련
+  if (combined.includes('state') || combined.includes('store') || combined.includes('pinia') ||
+      combined.includes('상태') || combined.includes('reactive') || combined.includes('ref')) {
+    dimensions.push('stateManagement');
+  }
+
+  // 디자인 시스템 관련
+  if (combined.includes('element') || combined.includes('el-') || combined.includes('ui') ||
+      combined.includes('component') || combined.includes('컴포넌트') || combined.includes('디자인')) {
+    dimensions.push('designSystem');
+  }
+
+  // 구조/패턴 관련
+  if (combined.includes('structure') || combined.includes('pattern') || combined.includes('구조') ||
+      combined.includes('패턴') || combined.includes('아키텍처') || combined.includes('composable')) {
+    dimensions.push('structure');
+  }
+
+  // 성능 관련
+  if (combined.includes('performance') || combined.includes('성능') || combined.includes('최적화') ||
+      combined.includes('optimize') || combined.includes('lazy') || combined.includes('cache')) {
+    dimensions.push('performance');
+  }
+
+  // 유틸리티 관련
+  if (combined.includes('utility') || combined.includes('helper') || combined.includes('util') ||
+      combined.includes('유틸') || combined.includes('헬퍼')) {
+    dimensions.push('utilityUsage');
+  }
+
+  // 기본값: 구조와 API 연결
+  if (dimensions.length === 0) {
+    dimensions.push('structure', 'apiConnection');
+  }
+
+  return dimensions;
+}
+
+/**
+ * 다차원 점수 기반 우수 코드 검색
+ *
+ * 특정 차원에서 높은 점수를 가진 파일을 검색합니다.
+ */
+async function searchBestPracticeExamples(
+  dimensions: Array<keyof BestCaseScores>,
+  fileRole?: string,
+  maxResults: number = 3
+): Promise<{
+  examples: any[];
+  warning?: string;
+}> {
+  try {
+    const results: any[] = [];
+    const seenIds = new Set<string>();
+
+    // 각 차원별로 최고 점수 파일 검색
+    for (const dimension of dimensions) {
+      if (results.length >= maxResults) break;
+
+      const query: any = {
+        minScores: { [dimension]: 75 },  // 75점 이상인 파일
+        limit: 2  // 차원당 최대 2개
+      };
+
+      if (fileRole) {
+        query.fileRole = fileRole;
+      }
+
+      const cases = await fileCaseStorage.search(query);
+
+      // 중복 제거하며 추가
+      for (const fileCase of cases) {
+        if (!seenIds.has(fileCase.id) && results.length < maxResults) {
+          seenIds.add(fileCase.id);
+          results.push({
+            id: fileCase.id,
+            projectName: fileCase.projectName,
+            filePath: fileCase.filePath,
+            fileRole: fileCase.fileRole,
+            excellentIn: dimension,
+            score: fileCase.scores[dimension],
+            keywords: fileCase.keywords.slice(0, 10),
+            content: fileCase.content,
+            analysis: {
+              linesOfCode: fileCase.analysis.linesOfCode,
+              apiMethods: fileCase.analysis.apiMethods,
+              componentsUsed: fileCase.analysis.componentsUsed,
+              patterns: fileCase.analysis.patterns
+            }
+          });
+        }
+      }
+    }
+
+    log('Best practice search results', { dimensions, found: results.length });
+
+    return { examples: results };
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    log('Best practice search failed', { error: errorMsg });
+
+    return {
+      examples: [],
+      warning: `Failed to search best practice examples: ${errorMsg}`
+    };
+  }
+}
+
+/**
+ * 자동 컨텍스트 생성 (RAG + 가이드 + 프로젝트 분석 + 다차원 검색)
  */
 async function createAutoContext(options: AutoRecommendOptions): Promise<AutoContextResult> {
   const warnings: string[] = [];
@@ -327,12 +472,49 @@ async function createAutoContext(options: AutoRecommendOptions): Promise<AutoCon
     }
   }
 
+  // 4. 다차원 점수 기반 우수 코드 검색
+  let bestPracticeExamples: any[] = [];
+  if (!options.skipBestPracticeSearch && (recommendations.length > 0 || extractedKeywords.length > 0)) {
+    log('Searching best practice examples...');
+
+    // 파일 역할 추론
+    let inferredRole: string | undefined;
+    if (options.filePath.includes('pages/')) inferredRole = 'page';
+    else if (options.filePath.includes('components/')) inferredRole = 'component';
+    else if (options.filePath.includes('composables/')) inferredRole = 'composable';
+    else if (options.filePath.includes('stores/')) inferredRole = 'store';
+
+    // 중요 차원 추론
+    const importantDimensions = inferImportantDimensions(options.description, extractedKeywords);
+    log('Important dimensions', { dimensions: importantDimensions });
+
+    // 다차원 검색
+    const bestPracticeResult = await searchBestPracticeExamples(
+      importantDimensions,
+      inferredRole,
+      options.maxBestPractices || 3  // 기본값 3개 예제
+    );
+
+    bestPracticeExamples = bestPracticeResult.examples;
+    if (bestPracticeResult.warning) {
+      warnings.push(bestPracticeResult.warning);
+    }
+
+    log('Best practice examples loaded', {
+      count: bestPracticeExamples.length,
+      excellentIn: bestPracticeExamples.map(e => e.excellentIn)
+    });
+  } else if (options.skipBestPracticeSearch) {
+    log('Best practice search skipped by user');
+  }
+
   return {
     recommendations,
     extractedKeywords,
     guides: autoLoadedGuides,
     projectContext,
-    warnings
+    warnings,
+    bestPracticeExamples
   };
 }
 
@@ -379,13 +561,16 @@ rl.on('line', async (line: string) => {
               description: `Execute TypeScript code in sandbox with automatic RAG-based code recommendations. Anthropic MCP Code Mode approach for 98% token reduction.
 
 When autoRecommend is provided, the server automatically:
-1. Analyzes the current file and fetches similar code via RAG
-2. Loads relevant development guides based on keywords
-3. Extracts project context (API type, design system, etc.)
-4. Injects all information into sandbox context
+1. Analyzes the current file and fetches similar code via RAG (hybrid keyword + vector search)
+2. Searches for best practice examples based on multi-dimensional scores (API connection, error handling, etc.)
+3. Loads relevant development guides based on keywords
+4. Extracts project context (API type, design system, etc.)
+5. Injects all information into sandbox context
 
 Sandbox APIs:
-- context.recommendations - Pre-loaded similar code
+- context.recommendations - Pre-loaded similar code via RAG
+- context.bestPracticeExamples - High-scoring code examples by dimension (apiConnection, errorHandling, etc.)
+- context.hasBestPractices - Boolean indicating if best practices are available
 - context.guides - Auto-loaded development guides
 - context.projectContext - Project analysis (API type, design system)
 - context.warnings - Any issues during auto-loading
@@ -445,6 +630,16 @@ Sandbox APIs:
                         type: 'boolean',
                         description: 'Skip project context extraction',
                         default: false
+                      },
+                      maxBestPractices: {
+                        type: 'number',
+                        description: 'Maximum number of best practice examples to load (default: 3)',
+                        default: 3
+                      },
+                      skipBestPracticeSearch: {
+                        type: 'boolean',
+                        description: 'Skip multi-dimensional best practice search',
+                        default: false
                       }
                     },
                     required: ['currentFile', 'filePath', 'description']
@@ -476,7 +671,8 @@ Sandbox APIs:
           extractedKeywords: [],
           guides: '',
           projectContext: null,
-          warnings: []
+          warnings: [],
+          bestPracticeExamples: []
         };
 
         if (execArgs.autoRecommend) {
@@ -486,10 +682,12 @@ Sandbox APIs:
 
         // Context 주입
         const wrappedCode = `
-// Auto-injected context with RAG recommendations, guides, and project info
+// Auto-injected context with RAG recommendations, guides, project info, and best practices
 const context = {
   recommendations: ${JSON.stringify(autoContext.recommendations, null, 2)},
   hasRecommendations: ${autoContext.recommendations.length > 0},
+  bestPracticeExamples: ${JSON.stringify(autoContext.bestPracticeExamples, null, 2)},
+  hasBestPractices: ${autoContext.bestPracticeExamples.length > 0},
   guides: ${JSON.stringify(autoContext.guides)},
   hasGuides: ${autoContext.guides.length > 0},
   projectContext: ${JSON.stringify(autoContext.projectContext)},
