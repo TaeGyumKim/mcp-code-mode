@@ -153,7 +153,8 @@ export class EmbeddingService {
 
     if (a.length !== b.length) {
       // 다른 모델로 생성된 임베딩일 수 있음 - 0 반환
-      console.error(`[EmbeddingService] Vector dimension mismatch: ${a.length} vs ${b.length}`);
+      console.error(`[EmbeddingService] ⚠️ Vector dimension mismatch: ${a.length} vs ${b.length}. This usually means embeddings were generated with different models. Consider re-scanning files with the current EMBEDDING_MODEL setting.`);
+      EmbeddingService._mismatchCount++;
       return 0;
     }
 
@@ -171,6 +172,35 @@ export class EmbeddingService {
     if (magnitude === 0) return 0;
 
     return dotProduct / magnitude;
+  }
+
+  // 임베딩 모델 불일치 카운터
+  private static _mismatchCount = 0;
+
+  /**
+   * 불일치 카운트 가져오기
+   */
+  static getMismatchCount(): number {
+    return EmbeddingService._mismatchCount;
+  }
+
+  /**
+   * 불일치 카운트 리셋
+   */
+  static resetMismatchCount(): void {
+    EmbeddingService._mismatchCount = 0;
+  }
+
+  /**
+   * 불일치 경고 메시지 생성
+   */
+  static getMismatchWarning(): string | null {
+    if (EmbeddingService._mismatchCount > 0) {
+      return `Embedding model mismatch detected ${EmbeddingService._mismatchCount} times. ` +
+        `Some FileCases may have been generated with a different embedding model. ` +
+        `Re-run 'yarn scan' with FORCE_REANALYZE=true to regenerate all embeddings with the current model.`;
+    }
+    return null;
   }
 
   /**

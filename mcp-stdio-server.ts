@@ -35,15 +35,30 @@ interface ToolCallParams {
   arguments: Record<string, any>;
 }
 
+interface AutoRecommendOptions {
+  currentFile: string;
+  filePath: string;
+  description: string;
+  // NEW: 가이드 로딩 옵션
+  maxGuides?: number;              // 최대 로드할 가이드 수 (기본: 5)
+  maxGuideLength?: number;         // 최대 가이드 총 길이 (기본: 50000)
+  mandatoryGuideIds?: string[];    // 필수 가이드 ID (기본: ['00-bestcase-priority'])
+  skipGuideLoading?: boolean;      // 가이드 로딩 건너뛰기
+  skipProjectContext?: boolean;    // 프로젝트 컨텍스트 분석 건너뛰기
+}
+
 interface ExecuteParams {
   code: string;
   timeoutMs?: number;
-  // 자동 추천 컨텍스트 (선택적)
-  autoRecommend?: {
-    currentFile: string;
-    filePath: string;
-    description: string;
-  };
+  autoRecommend?: AutoRecommendOptions;
+}
+
+interface AutoContextResult {
+  recommendations: any[];
+  extractedKeywords: string[];
+  guides: string;
+  projectContext: any;
+  warnings: string[];  // NEW: 경고 메시지 수집
 }
 
 const rl = readline.createInterface({
@@ -54,7 +69,7 @@ const rl = readline.createInterface({
 
 function log(message: string, data?: any): void {
   const timestamp = new Date().toISOString();
-  const logMessage = data 
+  const logMessage = data
     ? `[${timestamp}] ${message}: ${JSON.stringify(data)}`
     : `[${timestamp}] ${message}`;
   process.stderr.write(logMessage + '\n');
@@ -65,12 +80,269 @@ function sendResponse(response: JsonRpcResponse): void {
   process.stdout.write(JSON.stringify(response) + '\n');
 }
 
-// 요청 처리
+// ============= 헬퍼 함수들 =============
+
+/**
+ * RAG 기반 코드 추천 가져오기
+ */
+async function fetchRecommendations(options: AutoRecommendOptions): Promise<{
+  recommendations: any[];
+  keywords: string[];
+  warnings: string[];
+}> {
+  const ollamaUrl = process.env.OLLAMA_URL || 'http://ollama:11434';
+  const embeddingModel = process.env.EMBEDDING_MODEL || 'nomic-embed-text';
+  const warnings: string[] = [];
+
+  try {
+    const ragResult = await analyzeAndRecommend({
+      currentFile: options.currentFile,
+      filePath: options.filePath,
+      description: options.description,
+      ollamaConfig: {
+        url: ollamaUrl,
+        embeddingModel: embeddingModel
+      }
+    });
+
+    // RAG 내부 경고 수집
+    if (ragResult.queryInfo.warnings) {
+      warnings.push(...ragResult.queryInfo.warnings);
+    }
+
+    return {
+      recommendations: ragResult.recommendations,
+      keywords: ragResult.queryInfo.extractedKeywords,
+      warnings
+    };
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    log('RAG fetch failed', { error: errorMsg });
+
+    // 연결 실패 시 구체적인 경고 메시지
+    let warning = `RAG recommendation failed: ${errorMsg}`;
+    if (errorMsg.includes('ECONNREFUSED') || errorMsg.includes('fetch failed')) {
+      warning = `Ollama server not available at ${ollamaUrl}. Ensure Ollama is running and OLLAMA_URL is correctly set. RAG features disabled.`;
+    }
+
+    warnings.push(warning);
+
+    return {
+      recommendations: [],
+      keywords: [],
+      warnings
+    };
+  }
+}
+
+/**
+ * 추천 결과에서 키워드 및 API 타입 추론
+ */
+function analyzeRecommendations(recommendations: any[], extractedKeywords: string[]): {
+  allKeywords: string[];
+  apiType: 'grpc' | 'openapi' | 'any';
+} {
+  const allKeywords = new Set<string>(extractedKeywords);
+
+  // 추천된 파일들에서 공통 키워드 추출
+  recommendations.forEach((rec: any) => {
+    if (rec.keywords) {
+      rec.keywords.forEach((kw: string) => allKeywords.add(kw));
+    }
+    if (rec.analysis?.patterns) {
+      rec.analysis.patterns.forEach((p: string) => allKeywords.add(p));
+    }
+  });
+
+  // API 타입 추론
+  let apiType: 'grpc' | 'openapi' | 'any' = 'any';
+  for (const rec of recommendations) {
+    if (rec.analysis?.apiMethods?.some((m: string) => m.includes('grpc'))) {
+      apiType = 'grpc';
+      break;
+    }
+    if (rec.keywords?.includes('grpc')) {
+      apiType = 'grpc';
+      break;
+    }
+    if (rec.keywords?.includes('rest') || rec.keywords?.includes('openapi')) {
+      apiType = 'openapi';
+      break;
+    }
+  }
+
+  return {
+    allKeywords: Array.from(allKeywords),
+    apiType
+  };
+}
+
+/**
+ * 키워드 기반 가이드 자동 로딩
+ */
+async function loadGuidesForKeywords(
+  keywords: string[],
+  apiType: 'grpc' | 'openapi' | 'any',
+  projectName: string,
+  options: {
+    maxGuides: number;
+    maxLength: number;
+    mandatoryIds: string[];
+  }
+): Promise<{
+  combined: string;
+  count: number;
+  warning?: string;
+}> {
+  try {
+    const guideSearchResult = await guides.searchGuides({
+      keywords,
+      apiType,
+      mandatoryIds: options.mandatoryIds
+    });
+
+    if (guideSearchResult.guides.length === 0) {
+      return {
+        combined: '',
+        count: 0,
+        warning: 'No relevant guides found for the given keywords'
+      };
+    }
+
+    const guideIds = guideSearchResult.guides.map((g: any) => g.id);
+    const limitedIds = guideIds.slice(0, options.maxGuides);
+
+    const combineResult = await guides.combineGuides({
+      ids: limitedIds,
+      context: {
+        project: projectName,
+        apiType
+      }
+    });
+
+    let combined = combineResult.combined;
+
+    // 최대 길이 제한
+    if (combined.length > options.maxLength) {
+      combined = combined.substring(0, options.maxLength);
+      log('Guide truncated', { original: combineResult.combined.length, truncated: options.maxLength });
+    }
+
+    return {
+      combined,
+      count: limitedIds.length
+    };
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    log('Guide loading failed', { error: errorMsg });
+
+    return {
+      combined: '',
+      count: 0,
+      warning: `Failed to load guides: ${errorMsg}. Guides API may not be available.`
+    };
+  }
+}
+
+/**
+ * 프로젝트 컨텍스트 추출
+ */
+async function getProjectContext(filePath: string): Promise<{
+  context: any;
+  warning?: string;
+}> {
+  try {
+    const projectPath = process.env.PROJECTS_PATH || '/projects';
+    const context = await extractProjectContext(projectPath);
+
+    return { context };
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    log('Project context extraction failed', { error: errorMsg });
+
+    return {
+      context: null,
+      warning: `Failed to extract project context: ${errorMsg}. Project analysis features disabled.`
+    };
+  }
+}
+
+/**
+ * 자동 컨텍스트 생성 (RAG + 가이드 + 프로젝트 분석)
+ */
+async function createAutoContext(options: AutoRecommendOptions): Promise<AutoContextResult> {
+  const warnings: string[] = [];
+
+  // 1. RAG 추천 가져오기
+  log('Fetching RAG recommendations...');
+  const ragResult = await fetchRecommendations(options);
+  if (ragResult.warnings.length > 0) {
+    warnings.push(...ragResult.warnings);
+  }
+
+  const recommendations = ragResult.recommendations;
+  const extractedKeywords = ragResult.keywords;
+  log('RAG recommendations', { count: recommendations.length, keywords: extractedKeywords });
+
+  // 2. 가이드 자동 로딩
+  let autoLoadedGuides = '';
+  if (!options.skipGuideLoading && recommendations.length > 0) {
+    log('Auto-loading guides...');
+    const { allKeywords, apiType } = analyzeRecommendations(recommendations, extractedKeywords);
+
+    const guideResult = await loadGuidesForKeywords(
+      allKeywords,
+      apiType,
+      recommendations[0]?.projectName || 'unknown',
+      {
+        maxGuides: options.maxGuides || 5,
+        maxLength: options.maxGuideLength || 50000,
+        mandatoryIds: options.mandatoryGuideIds || ['00-bestcase-priority']
+      }
+    );
+
+    autoLoadedGuides = guideResult.combined;
+    if (guideResult.warning) {
+      warnings.push(guideResult.warning);
+    }
+    log('Guides loaded', { count: guideResult.count, length: autoLoadedGuides.length });
+  } else if (recommendations.length === 0) {
+    warnings.push('No recommendations found, skipping guide loading');
+  }
+
+  // 3. 프로젝트 컨텍스트 분석
+  let projectContext = null;
+  if (!options.skipProjectContext) {
+    log('Extracting project context...');
+    const contextResult = await getProjectContext(options.filePath);
+    projectContext = contextResult.context;
+    if (contextResult.warning) {
+      warnings.push(contextResult.warning);
+    }
+    if (projectContext) {
+      log('Project context extracted', {
+        apiType: projectContext.apiInfo?.type,
+        designSystem: projectContext.designSystemInfo?.detected
+      });
+    }
+  }
+
+  return {
+    recommendations,
+    extractedKeywords,
+    guides: autoLoadedGuides,
+    projectContext,
+    warnings
+  };
+}
+
+// ============= 요청 처리 =============
+
 rl.on('line', async (line: string) => {
   try {
     const request = JSON.parse(line) as JsonRpcRequest;
     log('Received request', { method: request.method, id: request.id });
-    
+
     // initialize 메서드: MCP 프로토콜 초기화
     if (request.method === 'initialize') {
       log('Initialize MCP server');
@@ -89,12 +361,12 @@ rl.on('line', async (line: string) => {
         }
       });
     }
-    
+
     // notifications/initialized: 초기화 완료 알림
     else if (request.method === 'notifications/initialized') {
       // 알림은 응답 불필요
     }
-    
+
     // tools/list 메서드: 사용 가능한 도구 목록
     else if (request.method === 'tools/list') {
       sendResponse({
@@ -107,31 +379,26 @@ rl.on('line', async (line: string) => {
               description: `Execute TypeScript code in sandbox with automatic RAG-based code recommendations. Anthropic MCP Code Mode approach for 98% token reduction.
 
 When autoRecommend is provided, the server automatically:
-1. Analyzes the current file
-2. Searches for similar code using RAG (vector similarity + keyword matching)
-3. Injects recommended code patterns into the sandbox context
-4. Returns recommendations along with code execution result
-
-This enables ONE call to get both recommendations and complete the implementation.
+1. Analyzes the current file and fetches similar code via RAG
+2. Loads relevant development guides based on keywords
+3. Extracts project context (API type, design system, etc.)
+4. Injects all information into sandbox context
 
 Sandbox APIs:
-- context.recommendations - Pre-loaded similar code (when autoRecommend is used)
-- filesystem.readFile/writeFile/searchFiles - File operations
-- bestcase.searchFileCases({ keywords, fileRole }) - Additional searches if needed
-- guides.searchGuides/combineGuides - Load development guides
-- metadata.extractProjectContext - Analyze project structure`,
+- context.recommendations - Pre-loaded similar code
+- context.guides - Auto-loaded development guides
+- context.projectContext - Project analysis (API type, design system)
+- context.warnings - Any issues during auto-loading
+- filesystem.readFile/writeFile/searchFiles
+- bestcase.searchFileCases({ keywords, fileRole })
+- guides.searchGuides/combineGuides
+- metadata.extractProjectContext`,
               inputSchema: {
                 type: 'object',
                 properties: {
                   code: {
                     type: 'string',
-                    description: `TypeScript code to execute in sandbox.
-
-When autoRecommend is provided, use context.recommendations:
-// context.recommendations is auto-injected with similar code
-const refs = context.recommendations;
-console.log('Reference code:', refs[0].content);
-// Complete implementation using the patterns`
+                    description: 'TypeScript code to execute in sandbox'
                   },
                   timeoutMs: {
                     type: 'number',
@@ -140,7 +407,7 @@ console.log('Reference code:', refs[0].content);
                   },
                   autoRecommend: {
                     type: 'object',
-                    description: 'Auto-fetch similar code recommendations before execution',
+                    description: 'Auto-fetch recommendations, guides, and project context',
                     properties: {
                       currentFile: {
                         type: 'string',
@@ -152,7 +419,32 @@ console.log('Reference code:', refs[0].content);
                       },
                       description: {
                         type: 'string',
-                        description: 'What to implement (e.g., "검색 페이지 완성")'
+                        description: 'What to implement'
+                      },
+                      maxGuides: {
+                        type: 'number',
+                        description: 'Maximum number of guides to load (default: 5)',
+                        default: 5
+                      },
+                      maxGuideLength: {
+                        type: 'number',
+                        description: 'Maximum total guide length in characters (default: 50000)',
+                        default: 50000
+                      },
+                      mandatoryGuideIds: {
+                        type: 'array',
+                        items: { type: 'string' },
+                        description: 'Required guide IDs (default: ["00-bestcase-priority"])'
+                      },
+                      skipGuideLoading: {
+                        type: 'boolean',
+                        description: 'Skip automatic guide loading',
+                        default: false
+                      },
+                      skipProjectContext: {
+                        type: 'boolean',
+                        description: 'Skip project context extraction',
+                        default: false
                       }
                     },
                     required: ['currentFile', 'filePath', 'description']
@@ -165,130 +457,44 @@ console.log('Reference code:', refs[0].content);
         }
       });
     }
-    
+
     // tools/call 메서드: 도구 실행
     else if (request.method === 'tools/call') {
       const { name, arguments: args } = request.params as ToolCallParams;
       log('Tool call', { tool: name, args });
-      
-      // ✅ execute 도구만 제공 (Anthropic Code Mode 방식)
+
       if (name === 'execute') {
         const execArgs = args as ExecuteParams;
-        log('Executing code', { codeLength: execArgs.code?.length, hasAutoRecommend: !!execArgs.autoRecommend });
+        log('Executing code', {
+          codeLength: execArgs.code?.length,
+          hasAutoRecommend: !!execArgs.autoRecommend
+        });
 
-        // 자동 추천 컨텍스트 생성
-        let recommendations: any[] = [];
-        let autoLoadedGuides = '';
-        let projectContext: any = null;
-        let extractedKeywords: string[] = [];
+        // 자동 컨텍스트 생성
+        let autoContext: AutoContextResult = {
+          recommendations: [],
+          extractedKeywords: [],
+          guides: '',
+          projectContext: null,
+          warnings: []
+        };
 
         if (execArgs.autoRecommend) {
-          log('Auto-recommend enabled, fetching similar code...');
-          try {
-            // Ollama 설정 (환경변수에서 가져옴)
-            const ollamaUrl = process.env.OLLAMA_URL || 'http://ollama:11434';
-            const embeddingModel = process.env.EMBEDDING_MODEL || 'nomic-embed-text';
-
-            const ragResult = await analyzeAndRecommend({
-              currentFile: execArgs.autoRecommend.currentFile,
-              filePath: execArgs.autoRecommend.filePath,
-              description: execArgs.autoRecommend.description,
-              ollamaConfig: {
-                url: ollamaUrl,
-                embeddingModel: embeddingModel
-              }
-            });
-            recommendations = ragResult.recommendations;
-            extractedKeywords = ragResult.queryInfo.extractedKeywords;
-            log('RAG recommendations fetched', { count: recommendations.length });
-
-            // ✅ 자동 가이드 로딩: 추천 결과에서 키워드 기반으로 가이드 검색
-            if (recommendations.length > 0) {
-              try {
-                log('Auto-loading guides based on recommendations...');
-
-                // 추천된 파일들에서 공통 키워드 추출
-                const allKeywords = new Set<string>(extractedKeywords);
-                recommendations.forEach((rec: any) => {
-                  if (rec.keywords) {
-                    rec.keywords.forEach((kw: string) => allKeywords.add(kw));
-                  }
-                  // 분석 정보에서도 키워드 추출
-                  if (rec.analysis?.patterns) {
-                    rec.analysis.patterns.forEach((p: string) => allKeywords.add(p));
-                  }
-                });
-
-                // API 타입 추론 (추천 파일에서)
-                let apiType: 'grpc' | 'openapi' | 'any' = 'any';
-                for (const rec of recommendations) {
-                  if (rec.analysis?.apiMethods?.some((m: string) => m.includes('grpc'))) {
-                    apiType = 'grpc';
-                    break;
-                  }
-                  if (rec.keywords?.includes('grpc')) {
-                    apiType = 'grpc';
-                    break;
-                  }
-                  if (rec.keywords?.includes('rest') || rec.keywords?.includes('openapi')) {
-                    apiType = 'openapi';
-                    break;
-                  }
-                }
-
-                // 가이드 검색 및 병합
-                const guideSearchResult = await guides.searchGuides({
-                  keywords: Array.from(allKeywords),
-                  apiType,
-                  mandatoryIds: ['00-bestcase-priority']
-                });
-
-                if (guideSearchResult.guides.length > 0) {
-                  const guideIds = guideSearchResult.guides.map((g: any) => g.id);
-                  const combineResult = await guides.combineGuides({
-                    ids: guideIds.slice(0, 5), // 최대 5개 가이드
-                    context: {
-                      project: recommendations[0]?.projectName || 'unknown',
-                      apiType
-                    }
-                  });
-                  autoLoadedGuides = combineResult.combined;
-                  log('Auto-loaded guides', { count: guideIds.length, combinedLength: autoLoadedGuides.length });
-                }
-              } catch (guideError) {
-                log('Guide auto-load failed', { error: guideError });
-              }
-            }
-
-            // ✅ 프로젝트 컨텍스트 분석 (파일 경로에서 프로젝트 경로 추론)
-            if (execArgs.autoRecommend.filePath) {
-              try {
-                const projectPath = process.env.PROJECTS_PATH || '/projects';
-                // 파일 경로에서 프로젝트 추론 (예: pages/users/search.vue -> 현재 프로젝트)
-                projectContext = await extractProjectContext(projectPath);
-                log('Project context extracted', {
-                  apiType: projectContext.apiInfo?.type,
-                  designSystem: projectContext.designSystemInfo?.detected
-                });
-              } catch (contextError) {
-                log('Project context extraction failed', { error: contextError });
-              }
-            }
-          } catch (ragError) {
-            log('RAG fetch failed', { error: ragError });
-          }
+          log('Auto-context enabled');
+          autoContext = await createAutoContext(execArgs.autoRecommend);
         }
 
-        // 추천 코드를 context에 주입하는 래퍼 코드 생성
+        // Context 주입
         const wrappedCode = `
 // Auto-injected context with RAG recommendations, guides, and project info
 const context = {
-  recommendations: ${JSON.stringify(recommendations, null, 2)},
-  hasRecommendations: ${recommendations.length > 0},
-  guides: ${JSON.stringify(autoLoadedGuides)},
-  hasGuides: ${autoLoadedGuides.length > 0},
-  projectContext: ${JSON.stringify(projectContext)},
-  extractedKeywords: ${JSON.stringify(extractedKeywords)}
+  recommendations: ${JSON.stringify(autoContext.recommendations, null, 2)},
+  hasRecommendations: ${autoContext.recommendations.length > 0},
+  guides: ${JSON.stringify(autoContext.guides)},
+  hasGuides: ${autoContext.guides.length > 0},
+  projectContext: ${JSON.stringify(autoContext.projectContext)},
+  extractedKeywords: ${JSON.stringify(autoContext.extractedKeywords)},
+  warnings: ${JSON.stringify(autoContext.warnings)}
 };
 
 // User code starts here
@@ -301,33 +507,38 @@ ${execArgs.code}
         });
         log('Execution result', { success: !result.error });
 
-        // 실행 결과를 JSON으로 변환 (추천 코드, 가이드, 프로젝트 컨텍스트 포함)
+        // 응답 생성
         const responseText = JSON.stringify({
           ok: result.ok,
           output: result.output,
           logs: result.logs,
           error: result.error,
-          // 추천 코드도 응답에 포함 (LLM이 직접 참고 가능)
-          recommendations: recommendations.length > 0 ? recommendations.map(r => ({
-            filePath: r.filePath,
-            fileRole: r.fileRole,
-            keywords: r.keywords,
-            similarity: r.similarity,
-            content: r.content,
-            analysis: r.analysis
-          })) : undefined,
-          // 자동 로드된 가이드
-          guidesLoaded: autoLoadedGuides.length > 0,
-          guidesLength: autoLoadedGuides.length,
-          // 프로젝트 컨텍스트 요약
-          projectInfo: projectContext ? {
-            apiType: projectContext.apiInfo?.type,
-            designSystem: projectContext.designSystemInfo?.detected,
-            utilityLibrary: projectContext.utilityLibraryInfo?.detected,
-            framework: projectContext.framework
+          // 자동 컨텍스트 정보
+          recommendations: autoContext.recommendations.length > 0
+            ? autoContext.recommendations.map(r => ({
+                filePath: r.filePath,
+                fileRole: r.fileRole,
+                keywords: r.keywords,
+                similarity: r.similarity,
+                content: r.content,
+                analysis: r.analysis
+              }))
+            : undefined,
+          guidesLoaded: autoContext.guides.length > 0,
+          guidesLength: autoContext.guides.length,
+          projectInfo: autoContext.projectContext ? {
+            apiType: autoContext.projectContext.apiInfo?.type,
+            designSystem: autoContext.projectContext.designSystemInfo?.detected,
+            utilityLibrary: autoContext.projectContext.utilityLibraryInfo?.detected,
+            framework: autoContext.projectContext.framework
           } : undefined,
-          // 추출된 키워드
-          extractedKeywords: extractedKeywords.length > 0 ? extractedKeywords : undefined
+          extractedKeywords: autoContext.extractedKeywords.length > 0
+            ? autoContext.extractedKeywords
+            : undefined,
+          // 경고 메시지 포함
+          warnings: autoContext.warnings.length > 0
+            ? autoContext.warnings
+            : undefined
         }, null, 2);
 
         sendResponse({
@@ -350,12 +561,12 @@ ${execArgs.code}
           id: request.id,
           error: {
             code: -32601,
-            message: `Tool not found: ${name}. Only 'execute' tool is available. Use Sandbox APIs (filesystem, bestcase, guides, metadata) within execute.`
+            message: `Tool not found: ${name}. Only 'execute' tool is available.`
           }
         });
       }
     }
-    
+
     // 지원하지 않는 메서드
     else {
       log('Unknown method', { method: request.method });
@@ -368,11 +579,10 @@ ${execArgs.code}
         }
       });
     }
-    
+
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
-    
-    // 에러 응답
+
     sendResponse({
       jsonrpc: '2.0',
       id: (error as any)?.id || null,

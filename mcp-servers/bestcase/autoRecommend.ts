@@ -88,6 +88,7 @@ interface RecommendationResult {
     description: string;
     extractedKeywords: string[];
     embeddingUsed: boolean;
+    warnings?: string[];  // 경고 메시지 (임베딩 모델 불일치 등)
   };
 
   /**
@@ -302,6 +303,7 @@ export async function autoRecommend(request: RecommendationRequest): Promise<Rec
 
   const limit = request.limit || 5;
   const extractedKeywords = extractKeywordsFromRequest(request);
+  const warnings: string[] = [];
 
   // 임베딩 서비스 초기화 (선택적)
   let embeddingService: EmbeddingService | undefined;
@@ -315,6 +317,7 @@ export async function autoRecommend(request: RecommendationRequest): Promise<Rec
     const isHealthy = await embeddingService.healthCheck();
     if (!isHealthy) {
       console.error('[autoRecommend] Embedding service not available, using keyword search only');
+      warnings.push(`Ollama embedding service not available at ${request.ollamaConfig.url}. Using keyword search only.`);
       embeddingService = undefined;
     }
   }
@@ -323,9 +326,18 @@ export async function autoRecommend(request: RecommendationRequest): Promise<Rec
   const allCases = await storage.list();
   console.error('[autoRecommend] Total FileCases:', allCases.length);
 
+  // 불일치 카운트 리셋
+  EmbeddingService.resetMismatchCount();
+
   // 하이브리드 검색
   const searchResults = await hybridSearch(request, allCases, embeddingService);
   console.error('[autoRecommend] Search results:', searchResults.length);
+
+  // 임베딩 모델 불일치 경고 수집
+  const mismatchWarning = EmbeddingService.getMismatchWarning();
+  if (mismatchWarning) {
+    warnings.push(mismatchWarning);
+  }
 
   // Top-K 결과 반환
   const topResults = searchResults.slice(0, limit);
@@ -347,7 +359,8 @@ export async function autoRecommend(request: RecommendationRequest): Promise<Rec
     queryInfo: {
       description: request.description,
       extractedKeywords,
-      embeddingUsed: !!embeddingService
+      embeddingUsed: !!embeddingService,
+      warnings: warnings.length > 0 ? warnings : undefined
     },
     totalSearched: allCases.length
   };
