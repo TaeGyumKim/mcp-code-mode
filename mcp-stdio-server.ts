@@ -69,23 +69,32 @@ interface CacheEntry<T> {
 const CACHE_TTL = parseInt(process.env.CACHE_TTL_MS || '300000', 10);  // 5분 기본
 const CACHE_MAX_ENTRIES = parseInt(process.env.CACHE_MAX_ENTRIES || '100', 10);  // 최대 100개 엔트리
 
-const cache = new Map<string, CacheEntry<any>>();
+const cache = new Map<string, CacheEntry<unknown>>();
+const cacheAccessOrder: string[] = [];  // LRU 순서 추적용
 
 /**
  * LRU 기반 캐시 정리 - 최대 엔트리 수 초과 시 가장 오래된 항목 제거
+ * 최적화: 별도 배열로 접근 순서 추적하여 O(n) 정렬 회피
  */
 function evictLRU(): void {
-  if (cache.size <= CACHE_MAX_ENTRIES) return;
-
-  // 접근 시간 기준으로 정렬하여 가장 오래된 항목 제거
-  const entries = Array.from(cache.entries())
-    .sort((a, b) => a[1].lastAccess - b[1].lastAccess);
-
-  const toRemove = cache.size - CACHE_MAX_ENTRIES;
-  for (let i = 0; i < toRemove; i++) {
-    cache.delete(entries[i][0]);
-    log('LRU cache eviction', { key: entries[i][0] });
+  while (cache.size > CACHE_MAX_ENTRIES && cacheAccessOrder.length > 0) {
+    const oldestKey = cacheAccessOrder.shift();
+    if (oldestKey && cache.has(oldestKey)) {
+      cache.delete(oldestKey);
+      log('LRU cache eviction', { key: oldestKey });
+    }
   }
+}
+
+/**
+ * 캐시 접근 순서 업데이트
+ */
+function updateAccessOrder(key: string): void {
+  const index = cacheAccessOrder.indexOf(key);
+  if (index > -1) {
+    cacheAccessOrder.splice(index, 1);
+  }
+  cacheAccessOrder.push(key);
 }
 
 function getCached<T>(key: string): T | null {
@@ -95,16 +104,27 @@ function getCached<T>(key: string): T | null {
   const now = Date.now();
   if (now - entry.timestamp > entry.ttl) {
     cache.delete(key);
+    const index = cacheAccessOrder.indexOf(key);
+    if (index > -1) cacheAccessOrder.splice(index, 1);
     return null;
   }
 
   // LRU: 접근 시간 업데이트
   entry.lastAccess = now;
+  updateAccessOrder(key);
   return entry.data as T;
 }
 
 function setCache<T>(key: string, data: T, ttl: number = CACHE_TTL): void {
   const now = Date.now();
+
+  // 이미 존재하면 접근 순서 갱신
+  if (cache.has(key)) {
+    updateAccessOrder(key);
+  } else {
+    cacheAccessOrder.push(key);
+  }
+
   cache.set(key, {
     data,
     timestamp: now,
@@ -118,6 +138,7 @@ function setCache<T>(key: string, data: T, ttl: number = CACHE_TTL): void {
 
 function clearCache(): void {
   cache.clear();
+  cacheAccessOrder.length = 0;
   log('Cache cleared');
 }
 
@@ -193,12 +214,12 @@ interface AutoContextResult {
   guides: string;
   projectContext: any;
   warnings: string[];  // NEW: 경고 메시지 수집
-  bestPracticeExamples: any[];  // NEW: 다차원 점수 기반 우수 코드 예제
+  bestPracticeExamples: BestPracticeExample[];  // NEW: 다차원 점수 기반 우수 코드 예제
   searchMetadata?: {  // NEW: 검색 메타데이터 (임계값, 평균 점수 등)
     effectiveThresholds: Record<string, number>;
     candidatesCount: number;
     avgScores: Record<string, number>;
-  };
+  } | null;
 }
 
 const rl = readline.createInterface({
@@ -530,6 +551,40 @@ function inferImportantDimensions(
 }
 
 /**
+ * 캐시에 저장할 검색 결과 타입
+ */
+interface BestPracticeSearchCache {
+  examples: BestPracticeExample[];
+  metadata: {
+    effectiveThresholds: Record<string, number>;
+    candidatesCount: number;
+    avgScores: Record<string, number>;
+  };
+}
+
+/**
+ * 우수 사례 예제 타입
+ */
+interface BestPracticeExample {
+  id: string;
+  projectName: string;
+  filePath: string;
+  fileRole: string;
+  excellentIn: Array<keyof BestCaseScores>;
+  topScore: number;
+  scores: Partial<Record<keyof BestCaseScores, number>>;
+  keywords: string[];
+  content: string;
+  analysis: {
+    linesOfCode: number;
+    apiMethods: string[];
+    componentsUsed: string[];
+    patterns: string[];
+  };
+  selectionReasons?: string[];
+}
+
+/**
  * 다차원 점수 기반 우수 코드 검색 (캐싱 + 동적 임계값 + 다중 차원 기록 + 선택 이유)
  *
  * 특정 차원에서 높은 점수를 가진 파일을 검색합니다.
@@ -545,7 +600,7 @@ async function searchBestPracticeExamples(
     includeSelectionReasons?: boolean;
   } = {}
 ): Promise<{
-  examples: any[];
+  examples: BestPracticeExample[];
   warning?: string;
   searchMetadata?: {
     effectiveThresholds: Record<string, number>;
@@ -587,25 +642,65 @@ async function searchBestPracticeExamples(
     // 캐시 키 생성 (차원별 임계값 포함)
     const thresholdKey = dimensions.map(d => `${d}:${perDimensionThresholds[d]}`).join(',');
     const cacheKey = `bestpractice:${thresholdKey}:${fileRole || 'any'}`;
-    const cached = getCached<any[]>(cacheKey);
+    const cached = getCached<BestPracticeSearchCache>(cacheKey);
     if (cached) {
       log('Best practice cache hit', { cacheKey });
-      return { examples: cached.slice(0, maxResults) };
+      return {
+        examples: cached.examples.slice(0, maxResults),
+        searchMetadata: cached.metadata  // 캐시 히트 시에도 메타데이터 반환
+      };
     }
 
-    // 전체 파일 목록 캐시
-    let allCases = getCached<any[]>('all_file_cases');
+    // 전체 파일 목록 캐시 (메모리 최적화: 필요한 필드만 캐싱)
+    interface CachedFileCase {
+      id: string;
+      projectName: string;
+      filePath: string;
+      fileRole: string;
+      scores: BestCaseScores;
+      keywords: string[];
+      content: string;
+      analysis: {
+        linesOfCode: number;
+        apiMethods: string[];
+        componentsUsed: string[];
+        patterns: string[];
+      };
+    }
+
+    let allCases = getCached<CachedFileCase[]>('all_file_cases');
     if (!allCases) {
       log('Loading all file cases...');
-      allCases = await fileCaseStorage.list();
+      const fullCases = await fileCaseStorage.list();
+
+      // 메모리 최적화: 필요한 필드만 추출하여 캐싱
+      allCases = fullCases.map((fc: any) => ({
+        id: fc.id,
+        projectName: fc.projectName,
+        filePath: fc.filePath,
+        fileRole: fc.fileRole,
+        scores: fc.scores,
+        keywords: fc.keywords || [],
+        content: fc.content,
+        analysis: {
+          linesOfCode: fc.analysis?.linesOfCode || 0,
+          apiMethods: fc.analysis?.apiMethods || [],
+          componentsUsed: fc.analysis?.componentsUsed || [],
+          patterns: fc.analysis?.patterns || []
+        }
+      }));
+
       setCache('all_file_cases', allCases, CACHE_TTL);
-      log('File cases cached', { count: allCases.length });
+      log('File cases cached', {
+        count: allCases.length,
+        memoryOptimized: true
+      });
     }
 
     // 파일 역할 필터링
     let candidates = allCases;
     if (fileRole) {
-      candidates = allCases.filter((fc: any) => fc.fileRole === fileRole);
+      candidates = allCases.filter((fc) => fc.fileRole === fileRole);
     }
 
     if (candidates.length === 0) {
@@ -740,7 +835,7 @@ async function searchBestPracticeExamples(
     const sortedResults = Array.from(fileScores.values())
       .sort((a, b) => b.topScore - a.topScore);
 
-    const results = sortedResults.slice(0, maxResults).map(({ fileCase, excellentDimensions, topScore, selectionReasons }) => ({
+    const results: BestPracticeExample[] = sortedResults.slice(0, maxResults).map(({ fileCase, excellentDimensions, topScore, selectionReasons }) => ({
       id: fileCase.id,
       projectName: fileCase.projectName,
       filePath: fileCase.filePath,
@@ -750,7 +845,7 @@ async function searchBestPracticeExamples(
       scores: {
         // 요청된 차원의 점수만 포함
         ...Object.fromEntries(dimensions.map(dim => [dim, fileCase.scores[dim] || 0]))
-      },
+      } as Partial<Record<keyof BestCaseScores, number>>,
       keywords: fileCase.keywords.slice(0, 10),
       content: fileCase.content,
       analysis: {
@@ -763,23 +858,30 @@ async function searchBestPracticeExamples(
       ...(includeReasons && { selectionReasons })
     }));
 
-    // 결과 캐싱
-    setCache(cacheKey, results, CACHE_TTL);
+    // 메타데이터 생성
+    const searchMetadata = {
+      effectiveThresholds: Object.fromEntries(dimensions.map(d => [d, effectiveThresholds[d]])) as Record<string, number>,
+      candidatesCount: candidates.length,
+      avgScores: Object.fromEntries(dimensions.map(d => [d, avgScores[d]])) as Record<string, number>
+    };
+
+    // 결과와 메타데이터를 함께 캐싱
+    const cacheData: BestPracticeSearchCache = {
+      examples: results,
+      metadata: searchMetadata
+    };
+    setCache(cacheKey, cacheData, CACHE_TTL);
 
     log('Best practice search results', {
       dimensions,
-      effectiveThresholds: Object.fromEntries(dimensions.map(d => [d, effectiveThresholds[d]])),
+      effectiveThresholds: searchMetadata.effectiveThresholds,
       candidates: candidates.length,
       found: results.length
     });
 
     return {
       examples: results,
-      searchMetadata: {
-        effectiveThresholds: Object.fromEntries(dimensions.map(d => [d, effectiveThresholds[d]])) as Record<string, number>,
-        candidatesCount: candidates.length,
-        avgScores: Object.fromEntries(dimensions.map(d => [d, avgScores[d]])) as Record<string, number>
-      }
+      searchMetadata
     };
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error);
@@ -1227,10 +1329,19 @@ ${execArgs.code}
 
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
+    let requestId: string | number | null = null;
+
+    // 요청 ID 추출 시도
+    try {
+      const parsed = JSON.parse(line);
+      requestId = parsed.id ?? null;
+    } catch {
+      // JSON 파싱 실패 시 null 유지
+    }
 
     sendResponse({
       jsonrpc: '2.0',
-      id: (error as any)?.id || null,
+      id: requestId,
       error: {
         code: -32603,
         message: 'Internal error',
