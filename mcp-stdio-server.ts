@@ -179,10 +179,18 @@ console.log('Reference code:', refs[0].content);
         if (execArgs.autoRecommend) {
           log('Auto-recommend enabled, fetching similar code...');
           try {
+            // Ollama 설정 (환경변수에서 가져옴)
+            const ollamaUrl = process.env.OLLAMA_URL || 'http://ollama:11434';
+            const embeddingModel = process.env.EMBEDDING_MODEL || 'nomic-embed-text';
+
             const ragResult = await analyzeAndRecommend({
               currentFile: execArgs.autoRecommend.currentFile,
               filePath: execArgs.autoRecommend.filePath,
-              description: execArgs.autoRecommend.description
+              description: execArgs.autoRecommend.description,
+              ollamaConfig: {
+                url: ollamaUrl,
+                embeddingModel: embeddingModel
+              }
             });
             recommendations = ragResult.recommendations;
             log('RAG recommendations fetched', { count: recommendations.length });
