@@ -8,6 +8,8 @@
 
 import { runAgentScript } from './packages/ai-runner/dist/agentRunner.js';
 import { analyzeAndRecommend } from './mcp-servers/bestcase/autoRecommend.js';
+import * as guides from './mcp-servers/guides/dist/index.js';
+import { extractProjectContext } from './packages/ai-runner/dist/projectContext.js';
 import * as readline from 'readline';
 
 interface JsonRpcRequest {
@@ -176,6 +178,10 @@ console.log('Reference code:', refs[0].content);
 
         // 자동 추천 컨텍스트 생성
         let recommendations: any[] = [];
+        let autoLoadedGuides = '';
+        let projectContext: any = null;
+        let extractedKeywords: string[] = [];
+
         if (execArgs.autoRecommend) {
           log('Auto-recommend enabled, fetching similar code...');
           try {
@@ -193,7 +199,81 @@ console.log('Reference code:', refs[0].content);
               }
             });
             recommendations = ragResult.recommendations;
+            extractedKeywords = ragResult.queryInfo.extractedKeywords;
             log('RAG recommendations fetched', { count: recommendations.length });
+
+            // ✅ 자동 가이드 로딩: 추천 결과에서 키워드 기반으로 가이드 검색
+            if (recommendations.length > 0) {
+              try {
+                log('Auto-loading guides based on recommendations...');
+
+                // 추천된 파일들에서 공통 키워드 추출
+                const allKeywords = new Set<string>(extractedKeywords);
+                recommendations.forEach((rec: any) => {
+                  if (rec.keywords) {
+                    rec.keywords.forEach((kw: string) => allKeywords.add(kw));
+                  }
+                  // 분석 정보에서도 키워드 추출
+                  if (rec.analysis?.patterns) {
+                    rec.analysis.patterns.forEach((p: string) => allKeywords.add(p));
+                  }
+                });
+
+                // API 타입 추론 (추천 파일에서)
+                let apiType: 'grpc' | 'openapi' | 'any' = 'any';
+                for (const rec of recommendations) {
+                  if (rec.analysis?.apiMethods?.some((m: string) => m.includes('grpc'))) {
+                    apiType = 'grpc';
+                    break;
+                  }
+                  if (rec.keywords?.includes('grpc')) {
+                    apiType = 'grpc';
+                    break;
+                  }
+                  if (rec.keywords?.includes('rest') || rec.keywords?.includes('openapi')) {
+                    apiType = 'openapi';
+                    break;
+                  }
+                }
+
+                // 가이드 검색 및 병합
+                const guideSearchResult = await guides.searchGuides({
+                  keywords: Array.from(allKeywords),
+                  apiType,
+                  mandatoryIds: ['00-bestcase-priority']
+                });
+
+                if (guideSearchResult.guides.length > 0) {
+                  const guideIds = guideSearchResult.guides.map((g: any) => g.id);
+                  const combineResult = await guides.combineGuides({
+                    ids: guideIds.slice(0, 5), // 최대 5개 가이드
+                    context: {
+                      project: recommendations[0]?.projectName || 'unknown',
+                      apiType
+                    }
+                  });
+                  autoLoadedGuides = combineResult.combined;
+                  log('Auto-loaded guides', { count: guideIds.length, combinedLength: autoLoadedGuides.length });
+                }
+              } catch (guideError) {
+                log('Guide auto-load failed', { error: guideError });
+              }
+            }
+
+            // ✅ 프로젝트 컨텍스트 분석 (파일 경로에서 프로젝트 경로 추론)
+            if (execArgs.autoRecommend.filePath) {
+              try {
+                const projectPath = process.env.PROJECTS_PATH || '/projects';
+                // 파일 경로에서 프로젝트 추론 (예: pages/users/search.vue -> 현재 프로젝트)
+                projectContext = await extractProjectContext(projectPath);
+                log('Project context extracted', {
+                  apiType: projectContext.apiInfo?.type,
+                  designSystem: projectContext.designSystemInfo?.detected
+                });
+              } catch (contextError) {
+                log('Project context extraction failed', { error: contextError });
+              }
+            }
           } catch (ragError) {
             log('RAG fetch failed', { error: ragError });
           }
@@ -201,10 +281,14 @@ console.log('Reference code:', refs[0].content);
 
         // 추천 코드를 context에 주입하는 래퍼 코드 생성
         const wrappedCode = `
-// Auto-injected context with RAG recommendations
+// Auto-injected context with RAG recommendations, guides, and project info
 const context = {
   recommendations: ${JSON.stringify(recommendations, null, 2)},
-  hasRecommendations: ${recommendations.length > 0}
+  hasRecommendations: ${recommendations.length > 0},
+  guides: ${JSON.stringify(autoLoadedGuides)},
+  hasGuides: ${autoLoadedGuides.length > 0},
+  projectContext: ${JSON.stringify(projectContext)},
+  extractedKeywords: ${JSON.stringify(extractedKeywords)}
 };
 
 // User code starts here
@@ -217,7 +301,7 @@ ${execArgs.code}
         });
         log('Execution result', { success: !result.error });
 
-        // 실행 결과를 JSON으로 변환 (추천 코드 포함)
+        // 실행 결과를 JSON으로 변환 (추천 코드, 가이드, 프로젝트 컨텍스트 포함)
         const responseText = JSON.stringify({
           ok: result.ok,
           output: result.output,
@@ -231,7 +315,19 @@ ${execArgs.code}
             similarity: r.similarity,
             content: r.content,
             analysis: r.analysis
-          })) : undefined
+          })) : undefined,
+          // 자동 로드된 가이드
+          guidesLoaded: autoLoadedGuides.length > 0,
+          guidesLength: autoLoadedGuides.length,
+          // 프로젝트 컨텍스트 요약
+          projectInfo: projectContext ? {
+            apiType: projectContext.apiInfo?.type,
+            designSystem: projectContext.designSystemInfo?.detected,
+            utilityLibrary: projectContext.utilityLibraryInfo?.detected,
+            framework: projectContext.framework
+          } : undefined,
+          // 추출된 키워드
+          extractedKeywords: extractedKeywords.length > 0 ? extractedKeywords : undefined
         }, null, 2);
 
         sendResponse({
