@@ -90,13 +90,32 @@ rl.on('line', async (line: string) => {
           tools: [
             {
               name: 'execute',
-              description: 'Execute TypeScript code in sandbox. Access filesystem, bestcase, guides, and metadata APIs within the sandbox. Anthropic MCP Code Mode approach for 98% token reduction.',
+              description: `Execute TypeScript code in sandbox for code analysis and generation. Anthropic MCP Code Mode approach for 98% token reduction.
+
+Key APIs in sandbox:
+- bestcase.analyzeAndRecommend({ currentFile, filePath, description }) - Auto-analyze current file and get similar code recommendations using RAG
+- bestcase.autoRecommend({ description, entities, fileRole }) - Search for similar code by semantic similarity
+- bestcase.searchFileCases({ keywords, fileRole }) - Search by keywords
+- filesystem.readFile/writeFile/searchFiles - File operations
+- guides.searchGuides/combineGuides - Load development guides
+- metadata.extractProjectContext - Analyze project structure
+
+IMPORTANT: When asked to complete/implement a page or feature, ALWAYS use bestcase.analyzeAndRecommend() first to get reference code from similar implementations. This provides best practices and patterns from existing codebase.`,
               inputSchema: {
                 type: 'object',
                 properties: {
                   code: {
                     type: 'string',
-                    description: 'TypeScript code to execute. Available APIs: filesystem (read/write/search), bestcase (save/load/list), guides (search/load/combine), metadata (createAnalyzer)'
+                    description: `TypeScript code to execute in sandbox.
+
+Example for completing a page:
+const result = await bestcase.analyzeAndRecommend({
+  currentFile: \`<template><!-- TODO: implement search --></template>\`,
+  filePath: 'pages/users/index.vue',
+  description: '사용자 검색 페이지 완성'
+});
+// Returns: recommendations with similar code, keywords, and patterns
+// Use this reference code to complete the implementation`
                   },
                   timeoutMs: {
                     type: 'number',
