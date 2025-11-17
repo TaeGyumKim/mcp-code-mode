@@ -24,6 +24,9 @@ dist/
 .cache/
 build/
 
+# Compiled JS in mcp-servers (source is .ts)
+mcp-servers/**/*.js
+
 # Logs
 logs/
 *.log
