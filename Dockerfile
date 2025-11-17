@@ -25,9 +25,11 @@ COPY mcp-stdio-server.ts ./
 
 # 스크립트 파일 복사 (scripts 디렉토리는 이미 위에서 복사됨)
 COPY scripts/scan/cron-scan.sh ./cron-scan.sh
+COPY scripts/scan/docker-entrypoint.sh ./docker-entrypoint.sh
 
 # 실행 권한 부여
 RUN chmod +x /app/cron-scan.sh \
+             /app/docker-entrypoint.sh \
              /app/scripts/scan/init-scan.sh \
              /app/scripts/scan/validate-bestcases.ts
 
@@ -53,6 +55,9 @@ VOLUME ["/projects"]
 ENV PROJECTS_PATH=/projects
 ENV BESTCASE_STORAGE_PATH=/projects/.bestcases
 ENV NODE_ENV=production
+
+# 시작 시 BestCase 버전 체크 및 마이그레이션 실행
+ENTRYPOINT ["/app/docker-entrypoint.sh"]
 
 # MCP STDIO 서버만 실행 (BestCase 자동 업데이트 제거)
 # AI 분석은 크론잡(일요일) 또는 수동 실행으로만 수행

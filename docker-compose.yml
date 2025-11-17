@@ -56,6 +56,9 @@ services:
       - LLM_MODEL=${LLM_MODEL:-qwen2.5-coder:7b}
       - CONCURRENCY=${CONCURRENCY:-2}
       - DESIGN_SYSTEMS=${DESIGN_SYSTEMS:-openerd-nuxt3,element-plus,vuetify}
+      # BestCase 마이그레이션 설정 (시작 시 자동 체크)
+      - AUTO_MIGRATE_ON_STARTUP=${AUTO_MIGRATE_ON_STARTUP:-true}
+      - REANALYZE_OLD_VERSIONS=${REANALYZE_OLD_VERSIONS:-false}
     deploy:
       resources:
         limits:
@@ -136,6 +139,10 @@ services:
       - LLM_MODEL=${LLM_MODEL:-qwen2.5-coder:7b}
       - CONCURRENCY=${CONCURRENCY:-2}
       - DESIGN_SYSTEMS=${DESIGN_SYSTEMS:-openerd-nuxt3,element-plus,vuetify}
+      # BestCase 마이그레이션 설정 (시작 시 자동 체크 및 재분석)
+      - AUTO_MIGRATE_ON_STARTUP=${AUTO_MIGRATE_ON_STARTUP:-true}
+      - REANALYZE_OLD_VERSIONS=${REANALYZE_OLD_VERSIONS:-true}
+      - MAX_REANALYZE_COUNT=${MAX_REANALYZE_COUNT:-10}
     deploy:
       resources:
         limits:
@@ -153,11 +160,16 @@ services:
       touch /var/log/cron.log &&
       chmod +x /app/scripts/scan/init-scan.sh &&
       chmod +x /app/cron-scan.sh &&
+      chmod +x /app/docker-entrypoint.sh &&
+      echo '🚀 Starting cron-scheduler with migration support...' >> /var/log/cron.log &&
       sh /app/scripts/scan/init-scan.sh >> /var/log/cron.log 2>&1 &&
+      echo '🔍 Checking BestCase versions on startup...' >> /var/log/cron.log &&
+      node --experimental-specifier-resolution=node /app/scripts/dist/scan/migrate-bestcases.js --dry-run >> /var/log/cron.log 2>&1 || true &&
       echo '0 2 * * 0 /app/cron-scan.sh >> /var/log/cron.log 2>&1' | crontab - &&
       cron &&
       echo 'Initialization complete. Weekly cron scheduler started (Every Sunday at 2:00 AM)' &&
       echo 'Next run: Sunday 02:00' &&
+      echo 'Features: Auto-migration + Re-analysis enabled' &&
       tail -f /var/log/cron.log
       "
 
