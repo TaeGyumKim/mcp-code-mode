@@ -48,6 +48,13 @@ export interface BestCase {
   excellentIn?: Array<keyof BestCaseScores>;
 
   /**
+   * 점수 계산 로직 버전
+   * 이 버전이 다르면 재분석이 필요합니다.
+   * 예: "2.0.0"
+   */
+  scoringVersion?: string;
+
+  /**
    * 패턴 및 메타데이터
    *
    * ✅ 메타데이터 기반 BestCase (권장):

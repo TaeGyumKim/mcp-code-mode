@@ -17,7 +17,7 @@ import {
   getExcellentCategories,
   shouldSaveBestCase
 } from '../../packages/bestcase-db/dist/index.js';
-import { calculateScoresFromMetadata } from '../../packages/llm-analyzer/dist/index.js';
+import { calculateScoresFromMetadata, SCORING_VERSION } from '../../packages/llm-analyzer/dist/index.js';
 
 const BESTCASE_STORAGE_PATH = process.env.BESTCASE_STORAGE_PATH || '/projects/.bestcases';
 
@@ -29,6 +29,8 @@ export interface VersionCheckResult {
   hasScores: boolean;
   hasMetadata: boolean;
   hasMultiDimensionalScores: boolean;
+  scoringVersion?: string;
+  scoringVersionOutdated: boolean;
 }
 
 export interface MigrationResult {
@@ -77,8 +79,12 @@ export function checkBestCaseVersion(bestCase: any): VersionCheckResult {
     version = '1.0';
   }
 
-  // 마이그레이션 필요 여부
-  const needsMigration = version !== '2.0' || missingFields.length > 0;
+  // 점수 계산 로직 버전 체크
+  const scoringVersion = bestCase.scoringVersion;
+  const scoringVersionOutdated = hasScores && scoringVersion !== SCORING_VERSION;
+
+  // 마이그레이션 필요 여부 (형식 또는 점수 로직 버전이 다른 경우)
+  const needsMigration = version !== '2.0' || missingFields.length > 0 || scoringVersionOutdated;
 
   return {
     id: bestCase.id || 'unknown',
@@ -87,7 +93,9 @@ export function checkBestCaseVersion(bestCase: any): VersionCheckResult {
     missingFields,
     hasScores,
     hasMetadata,
-    hasMultiDimensionalScores
+    hasMultiDimensionalScores,
+    scoringVersion,
+    scoringVersionOutdated
   };
 }
 
@@ -255,18 +263,21 @@ export async function migrateAllBestCases(options: {
   migrated: number;
   failed: number;
   skipped: number;
+  outdatedScoringVersion: number;
   results: MigrationResult[];
 }> {
   const storage = new BestCaseStorage(BESTCASE_STORAGE_PATH);
   const allCases = await storage.list();
 
-  console.log(`\n🔍 Checking ${allCases.length} BestCases for version compatibility...\n`);
+  console.log(`\n🔍 Checking ${allCases.length} BestCases for version compatibility...`);
+  console.log(`   Current Scoring Version: ${SCORING_VERSION}\n`);
 
   const results: MigrationResult[] = [];
   let needsMigration = 0;
   let migrated = 0;
   let failed = 0;
   let skipped = 0;
+  let outdatedScoringVersion = 0;
 
   for (const bestCase of allCases) {
     const versionCheck = checkBestCaseVersion(bestCase);
@@ -274,16 +285,24 @@ export async function migrateAllBestCases(options: {
     if (options.verbose) {
       console.log(`📦 ${bestCase.id}`);
       console.log(`   Version: ${versionCheck.version}`);
+      console.log(`   Scoring Version: ${versionCheck.scoringVersion || 'N/A'}`);
       console.log(`   Needs Migration: ${versionCheck.needsMigration}`);
+      if (versionCheck.scoringVersionOutdated) {
+        console.log(`   ⚠️ Scoring version outdated (${versionCheck.scoringVersion} → ${SCORING_VERSION})`);
+      }
       if (versionCheck.missingFields.length > 0) {
         console.log(`   Missing Fields: ${versionCheck.missingFields.join(', ')}`);
       }
     }
 
+    if (versionCheck.scoringVersionOutdated) {
+      outdatedScoringVersion++;
+    }
+
     if (!versionCheck.needsMigration) {
       skipped++;
       if (options.verbose) {
-        console.log(`   ✅ Already v2.0\n`);
+        console.log(`   ✅ Already v2.0 with current scoring version\n`);
       }
       continue;
     }
@@ -291,11 +310,15 @@ export async function migrateAllBestCases(options: {
     needsMigration++;
 
     if (options.dryRun) {
-      console.log(`   ⚠️ [DRY RUN] Would migrate from ${versionCheck.version} to 2.0`);
+      if (versionCheck.scoringVersionOutdated) {
+        console.log(`   ⚠️ [DRY RUN] Would re-analyze (scoring version ${versionCheck.scoringVersion || 'N/A'} → ${SCORING_VERSION})`);
+      } else {
+        console.log(`   ⚠️ [DRY RUN] Would migrate from ${versionCheck.version} to 2.0`);
+      }
       continue;
     }
 
-    // 실제 마이그레이션
+    // 실제 마이그레이션 (형식만 변환, 점수 재계산은 AI 분석 필요)
     const result = await migrateBestCase(bestCase);
     results.push(result);
 
@@ -316,13 +339,19 @@ export async function migrateAllBestCases(options: {
 
   console.log('\n📊 Migration Summary:');
   console.log(`   Total BestCases: ${allCases.length}`);
-  console.log(`   Already v2.0: ${skipped}`);
+  console.log(`   Already up-to-date: ${skipped}`);
   console.log(`   Needs Migration: ${needsMigration}`);
+  console.log(`   Outdated Scoring Version: ${outdatedScoringVersion}`);
   if (!options.dryRun) {
     console.log(`   Successfully Migrated: ${migrated}`);
     console.log(`   Failed: ${failed}`);
   } else {
     console.log(`   [DRY RUN] No changes made`);
+  }
+
+  if (outdatedScoringVersion > 0) {
+    console.log(`\n⚠️ ${outdatedScoringVersion} BestCase(s) need AI re-analysis due to scoring version change.`);
+    console.log(`   Run cronjob or manual scan to re-calculate scores with v${SCORING_VERSION} logic.`);
   }
 
   return {
@@ -331,6 +360,7 @@ export async function migrateAllBestCases(options: {
     migrated,
     failed,
     skipped,
+    outdatedScoringVersion,
     results
   };
 }
@@ -346,6 +376,7 @@ async function main() {
   console.log('🔄 BestCase Version Migration Tool');
   console.log('===================================');
   console.log(`Storage Path: ${BESTCASE_STORAGE_PATH}`);
+  console.log(`Current Scoring Version: ${SCORING_VERSION}`);
   console.log(`Dry Run: ${dryRun}`);
   console.log(`Verbose: ${verbose}`);
 

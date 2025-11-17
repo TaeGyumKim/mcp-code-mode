@@ -7,6 +7,7 @@ import {
 } from '../../packages/bestcase-db/dist/index.js';
 import {
   calculateScoresFromMetadata,
+  SCORING_VERSION,
   type ProjectMetadata
 } from '../../packages/llm-analyzer/dist/index.js';
 
@@ -160,6 +161,8 @@ export async function saveBestCase(input: SaveBestCaseInput): Promise<SaveBestCa
   // 계산된 점수 추가
   if (scores) {
     bestCase.scores = scores;
+    // 점수가 계산되면 현재 계산 로직 버전도 저장
+    bestCase.scoringVersion = SCORING_VERSION;
   }
   if (totalScore !== undefined) {
     bestCase.totalScore = totalScore;
