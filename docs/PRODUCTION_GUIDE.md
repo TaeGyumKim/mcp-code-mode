@@ -127,14 +127,14 @@ ollama list
 ### 5단계: 초기 스캔 실행
 
 ```bash
-# 전체 프로젝트 자동 스캔 (첫 실행)
-yarn scan:auto-ai
+# 전체 프로젝트 자동 스캔 (v3.0 파일 기반)
+yarn scan
 
 # 진행 상황:
 # - 66개 프로젝트 탐색
 # - Nuxt 프로젝트 자동 감지
-# - AI 분석 (각 프로젝트당 10-50개 파일)
-# - BestCase 저장
+# - AI 분석 (각 파일별 분석 + 변경 감지)
+# - FileCase 저장 (RAG 임베딩 포함)
 # - 예상 소요 시간: 3-6시간 (GPU 사용 시)
 ```
 
@@ -535,14 +535,14 @@ docker-compose -f docker-compose.ai.yml logs -f
 
 ### 스캔 스크립트
 ```bash
-# 자동 스캔 (66개 프로젝트)
-yarn scan:auto-ai
+# 자동 스캔 (v3.0 파일 기반, 변경 감지 포함)
+yarn scan
 
-# 특정 프로젝트 분석
-node run-ai-analysis.js
+# 마이그레이션 (기존 BestCase → FileCase)
+yarn scan:migrate
 
-# BestCase 목록
-node -e "const { BestCaseStorage } = require('./packages/bestcase-db/dist/index.js'); new BestCaseStorage().list().then(console.log)"
+# FileCase 목록
+node -e "const { FileCaseStorage } = require('./packages/bestcase-db/dist/index.js'); new FileCaseStorage().list().then(console.log)"
 ```
 
 ### GPU 모니터링

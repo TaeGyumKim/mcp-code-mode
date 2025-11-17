@@ -33,15 +33,12 @@ const matchingCase = allBestCases.find(bc => ...);
 #### After (해결)
 
 ```
-✅ 실제 MCP 도구 호출 명령
+✅ 실제 MCP 도구 호출 (v3.0 Code Mode)
 
-도구: mcp_mcp-code-mode_list_bestcases
-파라미터: (없음)
-
-도구: mcp_mcp-code-mode_load_bestcase
-파라미터:
-  projectName: "49.airian/frontend-admin"
-  category: "auto-scan-ai"
+도구: execute (단일 도구)
+코드:
+  const cases = await bestcase.search({ keyword: 'product list' });
+  const fileCase = await bestcase.load(cases[0].id);
 ```
 
 ---
@@ -54,18 +51,20 @@ const matchingCase = allBestCases.find(bc => ...);
 User: "상품 목록 페이지 만들어줘"
 ```
 
-### Step 2: AI가 자동 실행 (00-bestcase-priority.md 참조)
+### Step 2: AI가 자동 실행 (v3.0 RAG 자동 추천 포함)
 
 ```
-1. BestCase 로드
-   mcp_mcp-code-mode_list_bestcases
-   → 결과: 66개 프로젝트 BestCase 목록
-   → 매칭: "49.airian/frontend-admin"
+1. execute 도구 호출 (autoRecommend 파라미터 사용)
+   → RAG 기반 유사 코드 자동 검색
+   → context.recommendations에 참조 코드 주입
 
-2. mcp_mcp-code-mode_load_bestcase
-   projectName: "49.airian/frontend-admin"
-   category: "auto-scan-ai"
-   
+2. Sandbox API 활용
+   bestcase.search({ keyword: 'product' })
+   → 결과: FileCase 목록 (유사도 점수 포함)
+
+3. 선택된 FileCase 로드
+   bestcase.load('project::path/to/file.vue')
+
    → 결과:
    {
      "patterns": {
@@ -145,19 +144,19 @@ const { data: productList } = await client.getProductList({
 
 **코드 생성 전 반드시 실행:**
 
-### BestCase 확인
+### FileCase 확인 (v3.0 Code Mode)
 
-- [ ] 1. `mcp_mcp-code-mode_list_bestcases` 실행
-- [ ] 2. 현재 워크스페이스에서 프로젝트명 추출
-- [ ] 3. 목록에서 매칭되는 BestCase 찾기
-- [ ] 4. `mcp_mcp-code-mode_load_bestcase` 실행
-- [ ] 5. `patterns.apiInfo.apiType` 확인 (gRPC/OpenAPI)
-- [ ] 6. `patterns.componentUsage` 통계 확인
-- [ ] 7. `patterns.aiAnalysis.excellentSnippets` 참고
+- [ ] 1. `execute` 도구로 `bestcase.search()` 실행
+- [ ] 2. RAG 기반 유사 코드 자동 검색 (autoRecommend 사용)
+- [ ] 3. 목록에서 유사도 높은 FileCase 선택
+- [ ] 4. `bestcase.load()` 로 상세 정보 로드
+- [ ] 5. `analysis.apiMethods` 확인 (gRPC/REST)
+- [ ] 6. `analysis.componentsUsed` 통계 확인
+- [ ] 7. `content`에서 실제 코드 참고
 
-### openerd-nuxt3 확인
+### 가이드 확인
 
-- [ ] 8. `mcp_openerd-nuxt3-search_search`로 컴포넌트 검색
+- [ ] 8. `guides.search()`로 관련 가이드 검색
 - [ ] 9. `mcp_openerd-nuxt3-lib_read_file`로 소스 읽기
 - [ ] 10. Props, v-model, Slots, Events 확인
 - [ ] 11. `mcp_reference-tailwind-nuxt3-search_search`로 사용 예시 찾기

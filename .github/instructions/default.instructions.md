@@ -529,11 +529,11 @@ CMD ["tail", "-f", "/dev/null"]
 # 전체 빌드
 yarn build:all
 
-# 프로젝트 스캔
-yarn scan:advanced
+# AI 파일 기반 스캔 (v3.0)
+yarn scan
 
-# AI 분석 스캔
-yarn scan:auto-ai
+# 기존 BestCase 마이그레이션 (필요 시)
+yarn scan:migrate
 
 # Docker GPU 확인
 docker exec ollama-code-analyzer nvidia-smi

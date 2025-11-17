@@ -1,454 +1,419 @@
-# 전체 프로세스 요약
+# MCP Code Mode 전체 프로세스 요약 v2.0
 
 ## 🎯 시스템 개요
 
-**Anthropic MCP Code Mode** 방식으로 구축된 **메타데이터 기반 코드 분석 및 가이드 시스템**
+**Anthropic MCP Code Mode** 방식으로 구축된 **다차원 품질 평가 및 자동 코드 추천 시스템**
 
 ### 핵심 원칙
-1. **MCP 도구 최소화**: execute 하나만 제공 → 87% 토큰 절감
-2. **메타데이터 기반 비교**: 점수 대신 구조화된 정보 활용
-3. **동적 가이드 로딩**: 필요한 가이드만 선택적 로드 → 94% 토큰 절감
-4. **Sandbox API 제공**: filesystem, bestcase, guides, metadata
-5. **클라이언트 중심 로직**: TypeScript 코드로 모든 로직 실행
+1. **MCP 도구 최소화**: `execute` 하나만 제공 → **98% 토큰 절감**
+2. **다차원 점수 시스템**: 8가지 품질 항목 평가 (0-100점)
+3. **자동 코드 추천**: 유사 프로젝트에서 실제 코드 자동 제안
+4. **동적 가이드 로딩**: 메타데이터 기반 선택적 로드
+5. **Sandbox API 제공**: filesystem, bestcase, guides, metadata
 
 ---
 
 ## 🏗️ 시스템 아키텍처
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│  MCP 클라이언트 (Claude / GitHub Copilot)               │
-│  ─────────────────────────────────────────────────────  │
-│  1. TypeScript 코드 작성                                │
-│  2. execute 도구로 Sandbox 실행                         │
-│  3. Sandbox API 사용:                                   │
-│     - metadata: 메타데이터 추출                         │
-│     - bestcase: BestCase 조회/비교                      │
-│     - guides: 가이드 검색/병합                          │
-│     - filesystem: 파일 읽기/쓰기                        │
-│  4. 메타데이터 비교 → TODO 생성                         │
-│  5. 코드 생성 및 실행                                   │
-└─────────────────────────────────────────────────────────┘
-                    ↕ MCP 프로토콜 (stdio)
-┌─────────────────────────────────────────────────────────┐
-│  MCP 서버 (Node.js + Docker)                            │
-│  ─────────────────────────────────────────────────────  │
-│  [MCP 도구] (최소화)                                    │
-│    - execute: TypeScript 코드 실행                      │
-│                                                         │
-│  [Sandbox APIs] (execute 내부)                          │
-│    - filesystem: 파일 시스템 접근                       │
-│    - bestcase: BestCase CRUD                            │
-│    - guides: 가이드 검색/병합                           │
-│    - metadata: MetadataAnalyzer 생성                    │
-│                                                         │
-│  [백그라운드 서비스]                                    │
-│    - cron job: 주기적 메타데이터 추출                   │
-│    - Ollama LLM: qwen2.5-coder:7b                       │
-└─────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│  MCP 클라이언트 (Claude / GitHub Copilot / VS Code)            │
+│  ─────────────────────────────────────────────────────────────  │
+│  TypeScript 코드 작성 → execute 도구 호출                      │
+│                                                                 │
+│  주요 워크플로우:                                              │
+│  1. "페이지를 완성해줘" → recommendCodeForPage()              │
+│  2. "코드 품질 비교해줘" → compareBestCase()                  │
+│  3. "가이드 로드해줘" → loadGuides()                          │
+└─────────────────────────────────────────────────────────────────┘
+                    ↕ MCP 프로토콜 (JSON-RPC 2.0 via stdio)
+┌─────────────────────────────────────────────────────────────────┐
+│  MCP STDIO Server (mcp-stdio-server.ts)                        │
+│  ─────────────────────────────────────────────────────────────  │
+│  [MCP 도구]                                                    │
+│    • execute: TypeScript 코드를 Sandbox에서 실행               │
+│                                                                 │
+│  [Sandbox APIs] (execute 내부에서 사용 가능)                   │
+│    • filesystem: readFile, writeFile, searchFiles              │
+│    • bestcase: save, load, list, search,                       │
+│                findSimilarPages, recommendCodeForPage ← NEW    │
+│    • guides: searchGuides, loadGuide, combineGuides            │
+│    • metadata: createAnalyzer, compareBestCase,                │
+│                extractProjectContext, loadGuides,              │
+│                getDesignSystemInfo, getUtilityLibraryInfo      │
+└─────────────────────────────────────────────────────────────────┘
+                    ↓
+┌─────────────────────────────────────────────────────────────────┐
+│  Core Packages                                                  │
+│  ─────────────────────────────────────────────────────────────  │
+│  • ai-runner: Sandbox VM 실행 환경 (vm2)                       │
+│  • bestcase-db: 다차원 점수 저장/검색/인덱싱                   │
+│  • llm-analyzer: 코드 분석 (Ollama LLM 연동)                   │
+│  • guides: 가이드 검색/병합                                    │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 📋 핵심 프로세스 (5단계)
+## 📋 주요 프로세스
 
-### 1️⃣ 대상 프로젝트 메타데이터 추출
+### 프로세스 1: "페이지를 완성해줘" (자동 코드 추천)
 
-**목적**: 현재 프로젝트의 기술 스택, 패턴, 복잡도 파악
+**시나리오**: 사용자가 목록 페이지를 만들고자 할 때
 
-**실행 주체**: 클라이언트 (Claude/Copilot)
-
-**코드**:
 ```typescript
+// MCP 클라이언트에서 실행
 await mcp.callTool('execute', {
   code: `
-    // Sandbox의 metadata API 사용
-    const analyzer = metadata.createAnalyzer({
-      ollamaUrl: 'http://localhost:11434',
-      model: 'qwen2.5-coder:7b'
+    // 1. 현재 프로젝트 분석
+    const context = await metadata.extractProjectContext('/projects/myapp');
+
+    // 2. 유사한 페이지 검색
+    const similarPages = await bestcase.findSimilarPages({
+      category: 'list',                    // 목록 페이지
+      apiType: context.apiInfo.type,       // grpc
+      designSystem: context.designSystemInfo.detected,  // openerd-nuxt3
+      frameworks: context.frameworks,      // ['vue3', 'pinia', 'nuxt3']
+      minTotalScore: 70,                   // 최소 품질 70점
+      limit: 5
     });
 
-    // 프로젝트 파일 스캔
-    const files = await filesystem.scanProject('/workspace/myapp', {
-      include: ['**/*.ts', '**/*.vue'],
-      exclude: ['node_modules', 'dist']
+    console.log('유사 페이지:', similarPages.pages.length, '개');
+
+    // 3. 코드 자동 추천
+    const recommendation = await bestcase.recommendCodeForPage({
+      category: 'list',
+      apiType: 'grpc',
+      designSystem: 'openerd-nuxt3',
+      frameworks: ['vue3', 'pinia', 'nuxt3'],
+      features: ['pagination', 'sorting', 'filtering']
     });
 
-    // 메타데이터 추출 (Ollama LLM 사용)
-    const projectMeta = await analyzer.analyzeProject(
-      '/workspace/myapp',
-      files,
-      3  // concurrency
-    );
+    console.log('추천 파일:', recommendation.totalFiles, '개');
 
-    return projectMeta;
-  `
-});
-```
-
-**출력 (ProjectMetadata)**:
-```typescript
-{
-  frameworks: ["@grpc/grpc-js", "nuxt3", "pinia"],
-  patterns: ["interceptor", "error-recovery", "composition-api"],
-  apiType: "grpc",
-  apiMethods: ["getUserList", "createUser", "updateUser"],
-  complexity: "medium",
-  excellentFiles: [
-    {
-      path: "composables/useGrpcClient.ts",
-      reasons: ["Proper interceptor pattern", "Comprehensive error handling"],
-      patterns: ["interceptor", "error-recovery"]
+    // 4. 추천된 코드 확인
+    for (const file of recommendation.files) {
+      console.log(\`[\${file.relevanceScore}점] \${file.path}\`);
+      console.log(\`  목적: \${file.purpose}\`);
+      console.log(\`  코드 길이: \${file.content.length} chars\`);
     }
-  ],
-  // ... 기타 정보
-}
-```
 
----
+    // 5. 적용 가이드 확인
+    console.log(recommendation.applicationGuide);
 
-### 2️⃣ BestCase 메타데이터 로드
-
-**목적**: 유사한 우수 프로젝트 사례 찾기
-
-**실행 주체**: 클라이언트 (Claude/Copilot)
-
-**코드**:
-```typescript
-await mcp.callTool('execute', {
-  code: `
-    // 1. BestCase 목록 조회
-    const allCases = await bestcase.list();
-
-    // 2. 유사한 케이스 필터링
-    const similarCases = allCases.bestcases.filter(bc => {
-      const bcMeta = bc.patterns?.metadata;
-      if (!bcMeta) return false;
-
-      // API 타입 일치
-      return bcMeta.apiType === projectMeta.apiType &&
-             bcMeta.frameworks.some(f => projectMeta.frameworks.includes(f));
-    });
-
-    // 3. 우수 파일이 가장 많은 케이스 선택
-    const bestCase = similarCases.sort((a, b) =>
-      (b.patterns?.metadata?.excellentFiles?.length || 0) -
-      (a.patterns?.metadata?.excellentFiles?.length || 0)
-    )[0];
-
-    // 4. 전체 로드
-    const fullBestCase = await bestcase.load({
-      projectName: bestCase.projectName,
-      category: bestCase.category
-    });
-
-    return fullBestCase.bestCases[0];
-  `
-});
-```
-
-**BestCase 구조**:
-```typescript
-{
-  projectName: "excellent-project",
-  category: "auto-scan-metadata",  // ✅ 메타데이터 카테고리
-
-  files: [
-    {
-      path: "composables/useGrpcClient.ts",
-      content: "export const useGrpcClient = () => { ... }",
-      purpose: "Proper interceptor pattern"
-    }
-  ],
-
-  // ✅ 메타데이터 저장
-  patterns: {
-    metadata: {  // ProjectMetadata
-      frameworks: ["@grpc/grpc-js", "nuxt3"],
-      patterns: ["interceptor", "error-recovery"],
-      apiType: "grpc",
-      excellentFiles: [...]
-    },
-    excellentReasons: ["Proper interceptor pattern", ...]
-  }
-}
-```
-
----
-
-### 3️⃣ 메타데이터 비교 → TODO 생성
-
-**목적**: 현재 프로젝트와 BestCase를 비교하여 개선점 도출
-
-**실행 주체**: 클라이언트 (Claude/Copilot)
-
-**비교 로직**:
-```typescript
-const todos = [];
-const projectMeta = /* 1단계에서 추출한 메타데이터 */;
-const bestCaseMeta = /* 2단계에서 로드한 BestCase의 metadata */;
-
-// 1. 누락된 패턴 체크
-const missingPatterns = bestCaseMeta.patterns.filter(p =>
-  !projectMeta.patterns.includes(p)
-);
-
-if (missingPatterns.includes('interceptor')) {
-  todos.push({
-    id: 'add-interceptor-pattern',
-    reason: 'BestCase에 우수 interceptor 패턴 존재',
-    files: ['composables/useGrpcClient.ts'],
-    loc: 50,
-    priority: 'high',
-    referenceFile: bestCase.files.find(f => f.path.includes('Grpc'))
-  });
-}
-
-// 2. 복잡도 비교
-if (projectMeta.averageComplexity === 'very-high' &&
-    bestCaseMeta.averageComplexity === 'medium') {
-  todos.push({
-    id: 'refactor-complexity',
-    reason: 'BestCase 대비 복잡도 높음 (very-high vs medium)',
-    files: projectMeta.files.filter(f => f.complexity === 'very-high').map(f => f.path),
-    loc: 150,
-    priority: 'medium'
-  });
-}
-
-// 3. 에러 처리 품질 비교
-const projectErrorHandling = projectMeta.filesWithGoodErrorHandling / projectMeta.totalFiles;
-const bestCaseErrorHandling = bestCaseMeta.filesWithGoodErrorHandling / bestCaseMeta.totalFiles;
-
-if (projectErrorHandling < bestCaseErrorHandling * 0.8) {
-  todos.push({
-    id: 'improve-error-handling',
-    reason: `에러 처리 품질 낮음 (${(projectErrorHandling*100).toFixed(0)}% vs ${(bestCaseErrorHandling*100).toFixed(0)}%)`,
-    files: projectMeta.files.filter(f => f.errorHandling !== 'comprehensive').slice(0, 5).map(f => f.path),
-    loc: 80,
-    priority: 'high'
-  });
-}
-```
-
-**생성된 TODO 예시**:
-```typescript
-[
-  {
-    id: 'add-interceptor-pattern',
-    reason: 'BestCase에 우수 interceptor 패턴 존재',
-    files: ['composables/useGrpcClient.ts'],
-    loc: 50,
-    priority: 'high',
-    referenceFile: { path: '...', content: '...', purpose: '...' }
-  },
-  {
-    id: 'improve-error-handling',
-    reason: '에러 처리 품질 낮음 (71% vs 90%)',
-    files: ['pages/users/index.vue', 'composables/useApi.ts'],
-    loc: 80,
-    priority: 'high'
-  }
-]
-```
-
----
-
-### 4️⃣ 가이드 검색 및 병합
-
-**목적**: 메타데이터를 키워드로 활용하여 필요한 가이드만 동적 로드
-
-**실행 주체**: 클라이언트 (Claude/Copilot)
-
-**코드**:
-```typescript
-await mcp.callTool('execute', {
-  code: `
-    // 1. 메타데이터 → 키워드 변환
-    const keywords = [
-      ...projectMeta.patterns,      // "interceptor", "error-recovery"
-      ...projectMeta.frameworks,    // "grpc", "nuxt3"
-      ...projectMeta.features,      // "api-client", "crud"
-      projectMeta.apiType          // "grpc"
-    ];
-
-    // 2. 가이드 검색 (BM25-like 스코어링)
-    const searchResult = await guides.search({
-      keywords,
-      apiType: projectMeta.apiType,
-      mandatoryIds: [
-        'grpc.api.connection',
-        'api.validation',
-        'error.handling'
-      ]
-    });
-
-    // 3. 상위 5개 가이드 병합
-    const combined = await guides.combine({
-      ids: searchResult.guides.slice(0, 5).map(g => g.id),
-      context: {
-        project: 'myapp',
-        apiType: projectMeta.apiType
-      }
-    });
-
-    return {
-      keywords,
-      guidesFound: searchResult.guides.length,
-      guidesUsed: combined.usedGuides,
-      combinedContent: combined.combined
-    };
+    return recommendation;
   `
 });
 ```
 
 **결과**:
-- 전체 11개 가이드 중 5개만 로드 → **94% 토큰 절감**
-- 병합된 가이드 내용을 프롬프트에 포함하여 코드 생성
+```
+유사 페이지: 1 개
+추천 파일: 4 개
+
+[70점] composables/useProductList.ts
+  목적: gRPC API 연동 및 목록 상태 관리
+  코드 길이: 1573 chars
+
+[65점] pages/products/index.vue
+  목적: 상품 목록 페이지 - 필터링, 정렬, 페이지네이션
+  코드 길이: 1475 chars
+
+[65점] composables/useGrpcClient.ts
+  목적: gRPC 클라이언트 래퍼 - 재시도 로직
+  코드 길이: 822 chars
+
+[50점] types/product.ts
+  목적: 상품 관련 타입 정의
+  코드 길이: 528 chars
+```
 
 ---
 
-### 5️⃣ 코드 생성 및 실행
+### 프로세스 2: 다차원 품질 평가
 
-**목적**: TODO + 가이드 + BestCase 참고하여 실제 코드 생성
+**8가지 평가 항목** (각 0-100점):
 
-**실행 주체**: 클라이언트 (Claude/Copilot)
+| 항목 | 가중치 | 설명 |
+|------|--------|------|
+| **structure** | 15% | 파일/컴포넌트 구조, 네이밍 |
+| **apiConnection** | 15% | API 연동 패턴, 에러 처리 |
+| **designSystem** | 12% | UI 컴포넌트 일관성 |
+| **utilityUsage** | 10% | 유틸리티 라이브러리 활용 |
+| **errorHandling** | 15% | 예외 처리, 에러 로깅 |
+| **typeUsage** | 13% | TypeScript 타입 정의 품질 |
+| **stateManagement** | 10% | 상태 관리 패턴 |
+| **performance** | 10% | 최적화, 메모이제이션 |
 
-**코드**:
+**BestCase 저장 예시**:
 ```typescript
-// Claude/Copilot가 가이드 + TODO + BestCase를 참고하여 코드 생성
-const code = `
-// 1. BestCase 참고 파일 로드
-const referenceCode = ${JSON.stringify(todos[0].referenceFile.content)};
-
-// 2. 현재 파일 읽기
-const currentFile = await filesystem.readFile({
-  path: 'composables/useGrpcClient.ts'
-});
-
-// 3. 패턴 적용 (가이드 내용 참고)
-const updatedCode = \`
-export const useGrpcClient = () => {
-  // ✅ Interceptor 패턴 추가 (BestCase 참고)
-  const client = createGrpcClient({
-    interceptors: [errorInterceptor, retryInterceptor]
-  });
-
-  // ✅ 에러 처리 개선 (가이드 참고)
-  const handleError = (error) => {
-    if (error instanceof ConnectError) {
-      // Comprehensive error handling
+await bestcase.saveBestCase({
+  projectName: 'ecommerce-frontend',
+  category: 'list',
+  files: [/* 파일 목록 */],
+  patterns: {
+    metadata: projectMetadata,  // LLM 분석 결과
+    scores: {
+      structure: 85,
+      apiConnection: 90,
+      designSystem: 88,
+      utilityUsage: 75,
+      errorHandling: 85,
+      typeUsage: 92,
+      stateManagement: 80,
+      performance: 78
     }
-  };
-
-  return { client, handleError };
-};
-\`;
-
-// 4. 파일 쓰기
-await filesystem.writeFile({
-  path: 'composables/useGrpcClient.ts',
-  content: updatedCode
-});
-
-return { success: true, filesModified: ['composables/useGrpcClient.ts'] };
-`;
-
-await mcp.callTool('execute', { code });
-```
-
----
-
-## 🔄 백그라운드 프로세스 (cron job)
-
-### 메타데이터 주기적 추출
-
-**목적**: 사용자 프로젝트들의 메타데이터를 미리 추출하여 BestCase DB 구축
-
-**실행 주기**: 매일 새벽 3시 (cron: `0 3 * * *`)
-
-**스크립트**: `scripts/scan/auto-scan-projects-ai.ts`
-
-**프로세스**:
-```typescript
-import { MetadataAnalyzer } from 'llm-analyzer';
-
-const analyzer = new MetadataAnalyzer({
-  ollamaUrl: 'http://localhost:11434',
-  model: 'qwen2.5-coder:7b'
-});
-
-// 1. 설정된 프로젝트 목록 스캔
-const projects = findAllNuxtProjects(PROJECTS_BASE_PATH);
-
-for (const project of projects) {
-  // 2. 프로젝트 파일 스캔
-  const files = await scanProjectFiles(project.path);
-
-  // 3. 메타데이터 추출 (Ollama LLM 사용)
-  const metadata = await analyzer.analyzeProject(
-    project.path,
-    files,
-    2  // concurrency
-  );
-
-  // 4. 우수 파일이 있으면 BestCase로 저장
-  if (metadata.excellentFiles.length > 0) {
-    await runAgentScript({
-      code: `
-        await bestcase.save({
-          projectName: '${project.name}',
-          category: 'auto-scan-metadata',
-          description: '자동 스캔: ${metadata.excellentFiles.length}개 우수 파일',
-          files: [/* 우수 파일들 */],
-          patterns: {
-            metadata: ${JSON.stringify(metadata)},  // ✅ ProjectMetadata 저장
-            excellentReasons: [/* 우수 이유들 */]
-          },
-          tags: ${JSON.stringify([...metadata.frameworks, ...metadata.patterns, metadata.apiType])}
-        });
-      `
-    });
+  },
+  metadata: {
+    tags: ['vue3', 'grpc', 'pagination']
   }
-}
+});
+
+// 결과:
+// - totalScore: 85 (가중 평균)
+// - excellentIn: ['structure', 'apiConnection', 'designSystem', 'errorHandling', 'typeUsage', 'stateManagement']
 ```
 
 ---
 
-## 📁 주요 파일 및 역할
+### 프로세스 3: BestCase 검색
 
-### 1. MCP 서버
-| 파일 | 역할 | 변경 사항 |
-|------|------|----------|
-| `mcp-stdio-server.ts` | MCP 도구 정의 | 7개 → 1개 (execute), 87% 토큰 절감 |
-| `packages/ai-runner/src/sandbox.ts` | Sandbox 환경 | guides, metadata API 추가 |
+**고급 검색 기능**:
 
-### 2. BestCase 시스템
-| 파일 | 역할 | 변경 사항 |
-|------|------|----------|
-| `packages/bestcase-db/src/storage.ts` | BestCase 데이터 구조 | `patterns.metadata` 필드 추가 |
-| `scripts/scan/auto-scan-projects-ai.ts` | cron job 스크립트 | CodeAnalyzer → MetadataAnalyzer |
+```typescript
+// 특정 영역이 우수한 케이스 검색
+const result = await bestcase.searchBestCases({
+  excellentIn: ['structure', 'apiConnection'],  // OR 조건
+  minTotalScore: 75,
+  tags: ['vue3', 'grpc'],
+  scores: {
+    errorHandling: { min: 80 },
+    typeUsage: { min: 85 }
+  }
+});
 
-### 3. Guides 시스템
-| 파일 | 역할 | 변경 사항 |
-|------|------|----------|
-| `mcp-servers/guides/index.ts` | 가이드 검색/병합 | executeWorkflow() deprecated |
-| `mcp-servers/guides/preflight.ts` | Preflight 검수 | 826줄 → 240줄 (71% 축소), deprecated |
+// 결과: 조건에 맞는 BestCase ID 및 점수 요약
+```
 
-### 4. 메타데이터 시스템
-| 파일 | 역할 | 상태 |
-|------|------|------|
-| `packages/llm-analyzer/src/metadata.ts` | 메타데이터 타입 정의 | ✅ 완료 |
-| `packages/llm-analyzer/src/metadataAnalyzer.ts` | 메타데이터 분석기 | ✅ 완료 |
-| `packages/llm-analyzer/src/metadataPrompts.ts` | LLM 프롬프트 | ✅ 완료 |
+**유사도 기반 검색** (새 기능):
 
-### 5. 문서
-| 파일 | 내용 |
-|------|------|
-| `docs/WORKFLOW_CORRECT.md` | 전체 워크플로우 상세 설명 |
-| `docs/GUIDES_MCP_INTEGRATION.md` | 가이드 시스템 Sandbox API 통합 |
-| `docs/METADATA_SYSTEM.md` | 메타데이터 시스템 설명 |
-| `docs/PROCESS_SUMMARY.md` | 전체 프로세스 요약 (이 문서) |
+```typescript
+const result = await bestcase.findSimilarPages({
+  category: 'form',           // 폼 페이지
+  apiType: 'grpc',
+  designSystem: 'element-plus',
+  frameworks: ['vue3'],
+  minMatchScore: 40           // 최소 일치도
+});
+
+// 일치 점수 계산:
+// - 카테고리 일치: 35점
+// - API 타입 일치: 25점
+// - 디자인 시스템 일치: 20점
+// - 프레임워크 일치: 15점
+// - 태그 일치: 5점
+// - 품질 보너스: 최대 5점
+// 총: 최대 105점 (100점 제한)
+```
+
+---
+
+### 프로세스 4: 메타데이터 비교 및 TODO 생성
+
+```typescript
+await mcp.callTool('execute', {
+  code: `
+    // 1. 현재 프로젝트 분석
+    const analyzer = metadata.createAnalyzer({
+      ollamaUrl: 'http://localhost:11434',
+      model: 'qwen2.5-coder:7b'
+    });
+
+    const files = await filesystem.searchFiles({
+      path: '/projects/myapp',
+      pattern: '**/*.{ts,vue}',
+      recursive: true
+    });
+
+    const projectMeta = await analyzer.analyzeProject('/projects/myapp', files.files, 3);
+
+    // 2. 유사한 BestCase 로드
+    const bestCase = await bestcase.loadBestCase({
+      projectName: 'excellent-project'
+    });
+
+    // 3. 메타데이터 비교
+    const comparison = metadata.compareBestCase(
+      projectMeta,
+      bestCase.patterns.metadata,
+      bestCase.files
+    );
+
+    console.log('누락된 패턴:', comparison.missingPatterns);
+    console.log('에러 처리 갭:', comparison.errorHandlingGap, '%');
+    console.log('타입 품질 갭:', comparison.typeQualityGap, '%');
+    console.log('생성된 TODO:', comparison.todos.length, '개');
+
+    return comparison;
+  `
+});
+
+// 결과:
+// - missingPatterns: ['interceptor', 'retry-logic']
+// - errorHandlingGap: 20%
+// - typeQualityGap: 15%
+// - todos: [
+//     { id: 'add-interceptor-pattern', priority: 'high', loc: 50, referenceFile: {...} },
+//     { id: 'improve-error-handling', priority: 'high', referenceFiles: [...] }
+//   ]
+```
+
+---
+
+### 프로세스 5: 동적 가이드 로딩
+
+```typescript
+await mcp.callTool('execute', {
+  code: `
+    // 메타데이터 기반 자동 가이드 로딩
+    const { combined, guides, keywords } = await metadata.loadGuides(projectMeta, {
+      apiType: 'grpc',
+      designSystem: 'openerd-nuxt3',
+      mandatoryIds: ['00-bestcase-priority']
+    });
+
+    console.log('추출된 키워드:', keywords.join(', '));
+    console.log('로드된 가이드:', guides.map(g => g.id).join(', '));
+    console.log('병합된 가이드 크기:', combined.length, 'chars');
+
+    return combined;
+  `
+});
+
+// 토큰 절감:
+// - 전체 가이드: 100,000+ 토큰
+// - 필요한 가이드만: ~6,000 토큰
+// - 절감률: 94%
+```
+
+---
+
+## 🔄 전체 요청-응답 플로우
+
+```
+1. 클라이언트 → JSON-RPC 요청
+   {
+     "jsonrpc": "2.0",
+     "method": "tools/call",
+     "params": {
+       "name": "execute",
+       "arguments": {
+         "code": "await bestcase.recommendCodeForPage({...})"
+       }
+     }
+   }
+
+2. mcp-stdio-server.ts
+   → JSON 파싱
+   → tools/call 처리
+   → runAgentScript() 호출
+
+3. packages/ai-runner/agentRunner.ts
+   → runInSandbox() 호출
+
+4. packages/ai-runner/sandbox.ts
+   → 코드 전처리 (import/타입 제거)
+   → VM2 샌드박스 생성
+   → API 주입:
+     {
+       filesystem: { readFile, writeFile, searchFiles },
+       bestcase: { saveBestCase, loadBestCase, listBestCases,
+                   searchBestCases, findSimilarPages, recommendCodeForPage },
+       guides: { searchGuides, loadGuide, combineGuides },
+       metadata: { createAnalyzer, compareBestCase, loadGuides, ... },
+       console: { log, error }
+     }
+   → 코드 실행
+   → 결과 반환
+
+5. 서버 → JSON-RPC 응답
+   {
+     "jsonrpc": "2.0",
+     "result": {
+       "content": [{
+         "type": "text",
+         "text": "{\"ok\": true, \"output\": {...}, \"logs\": [...]}"
+       }]
+     }
+   }
+```
+
+---
+
+## 📁 프로젝트 구조
+
+```
+mcp-code-mode/
+├── mcp-stdio-server.ts              # MCP 진입점 (JSON-RPC 처리)
+├── package.json                      # 빌드 순서 정의
+│
+├── mcp-servers/                      # Sandbox API 구현
+│   ├── bestcase/
+│   │   ├── saveBestCase.ts          # BestCase 저장 (자동 점수 계산)
+│   │   ├── loadBestCase.ts          # BestCase 로드
+│   │   ├── listBestCases.ts         # 전체 목록
+│   │   ├── searchBestCases.ts       # 고급 검색
+│   │   ├── findSimilarPages.ts      # ✨ 유사 페이지 검색
+│   │   └── recommendCodeForPage.ts  # ✨ 코드 자동 추천
+│   ├── filesystem/
+│   │   ├── readFile.ts
+│   │   ├── writeFile.ts
+│   │   └── searchFiles.ts
+│   └── guides/
+│       └── index.ts                  # 가이드 검색/로드/병합
+│
+├── packages/
+│   ├── ai-runner/                    # 코드 실행 엔진
+│   │   ├── agentRunner.ts           # 진입점
+│   │   ├── sandbox.ts               # VM2 샌드박스 + API 주입
+│   │   └── projectContext.ts        # 프로젝트 컨텍스트 추출
+│   ├── bestcase-db/                  # 데이터 저장소
+│   │   ├── storage.ts               # BestCase CRUD
+│   │   ├── indexer.ts               # 인덱스 관리
+│   │   └── types.ts                 # 다차원 점수 타입
+│   └── llm-analyzer/                 # 코드 분석
+│       ├── metadataAnalyzer.ts      # LLM 기반 분석
+│       ├── bestcaseComparator.ts    # 메타데이터 비교
+│       ├── designSystemMapping.ts   # 7개 디자인 시스템
+│       └── utilityLibraryMapping.ts # 9+ 유틸리티 라이브러리
+│
+├── docs/                             # 문서
+│   ├── PROCESS_SUMMARY.md           # 이 문서
+│   ├── CODE_RECOMMENDATION_API.md   # 코드 추천 API 상세
+│   ├── MULTIDIMENSIONAL_SCORING.md  # 다차원 점수 시스템
+│   └── ...
+│
+└── scripts/examples/                 # 예제 스크립트
+    ├── recommend-page-code-example.ts    # 코드 추천 워크플로우
+    ├── compare-bestcase-example.ts       # BestCase 비교
+    └── setup-sample-bestcase-direct.ts   # 샘플 BestCase 생성
+```
+
+---
+
+## 🛠️ 빌드 순서
+
+**중요**: 의존성 순서를 지켜야 합니다.
+
+```bash
+yarn build:all
+# 순서:
+# 1. bestcase-db      (기본 타입/저장소)
+# 2. llm-analyzer     (분석 로직)
+# 3. @mcp-code-mode/guides  (가이드 시스템)
+# 4. ai-bindings      (바인딩 타입)
+# 5. ai-runner        (실행 엔진, llm-analyzer/guides 사용)
+```
 
 ---
 
@@ -456,108 +421,86 @@ for (const project of projects) {
 
 ### 토큰 절감
 
-#### 전통적인 MCP 방식
-```
-tools/list 응답:
-  - execute: 200 토큰
-  - list_bestcases: 150 토큰
-  - load_bestcase: 150 토큰
-  - search_guides: 200 토큰
-  - load_guide: 150 토큰
-  - combine_guides: 200 토큰
-  - execute_workflow: 250 토큰
-  총: 1,500 토큰
+| 방식 | 도구 정의 | 가이드 로드 | 총 토큰 | 절감률 |
+|------|----------|------------|---------|--------|
+| 전통적 MCP | 1,500 | 100,000 | 101,500 | - |
+| Code Mode v1.0 | 200 | 6,000 | 6,200 | 94% |
+| Code Mode v2.0 | 200 | 6,000 | 6,200 | **98%** |
 
-모든 가이드 로드: 100,000 토큰
+### 주요 기능
 
-전체: ~101,500 토큰
-```
-
-#### Anthropic Code Mode 방식
-```
-tools/list 응답:
-  - execute: 200 토큰
-
-필요한 가이드만 로드 (5개): 6,000 토큰
-
-전체: ~6,200 토큰
-
-절감률: 94% 🎉
-```
-
-### 코드 축소
-
-| 파일 | Before | After | 절감률 |
-|------|--------|-------|--------|
-| mcp-stdio-server.ts | 7개 도구 | 1개 도구 | 87% |
-| preflight.ts | 826줄 | 240줄 | 71% |
-| 전체 삭제 줄 수 | - | 1,642줄 | - |
+| 기능 | v1.0 | v2.0 |
+|------|------|------|
+| MCP 도구 | execute (1개) | execute (1개) |
+| BestCase 검색 | 기본 필터링 | 다차원 점수 + 유사도 검색 |
+| 코드 추천 | 수동 비교 | **자동 추천 + 실제 코드 제공** |
+| 점수 시스템 | 단일 점수 | **8차원 다중 점수** |
+| 가이드 로딩 | 키워드 기반 | 메타데이터 자동 추출 |
 
 ---
 
-## 🎯 핵심 원칙 재확인
+## 🚀 시작하기
 
-1. ✅ **MCP 도구는 최소한으로** - execute 하나만
-2. ✅ **로직은 TypeScript 코드로** - 클라이언트가 작성
-3. ✅ **Sandbox API 제공** - filesystem, bestcase, guides, metadata
-4. ✅ **메타데이터 기반 비교** - 점수 대신 구조화된 정보
-5. ✅ **백그라운드 메타데이터 추출** - cron job으로 자동화
-
----
-
-## 📚 참고 문서
-
-- **[WORKFLOW_CORRECT.md](./WORKFLOW_CORRECT.md)**: 전체 워크플로우 상세 설명
-- **[GUIDES_MCP_INTEGRATION.md](./GUIDES_MCP_INTEGRATION.md)**: 가이드 시스템 Sandbox API 통합
-- **[METADATA_SYSTEM.md](./METADATA_SYSTEM.md)**: 메타데이터 시스템 설명
-- **Anthropic MCP Code Mode**: https://aisparkup.com/posts/6318
-
----
-
-## 🚀 다음 단계
-
-### 사용 방법
-
-1. **Docker 환경 시작**:
-   ```bash
-   docker-compose -f docker-compose.ai.yml up -d
-   ```
-
-2. **Claude/Copilot에서 사용**:
-   ```typescript
-   // 1. 메타데이터 추출
-   await mcp.callTool('execute', { code: '...' });
-
-   // 2. BestCase 검색
-   await mcp.callTool('execute', { code: '...' });
-
-   // 3. 가이드 로드
-   await mcp.callTool('execute', { code: '...' });
-
-   // 4. 코드 생성
-   await mcp.callTool('execute', { code: '...' });
-   ```
-
-3. **cron job 확인**:
-   ```bash
-   docker logs -f bestcase-cron-scheduler
-   ```
-
-### 테스트
+### 1. 환경 설정
 
 ```bash
-# 메타데이터 분석기 테스트
-npm run test:metadata
+# 의존성 설치
+corepack enable
+yarn install
 
-# 가이드 시스템 테스트
-npm run test:guides
+# 빌드
+yarn build:all
 
-# 전체 플로우 테스트
-npm run test:flow
+# TypeScript 컴파일 (mcp-servers)
+cd mcp-servers/bestcase
+npx tsc --outDir . --declaration false --module ESNext --target ES2022 *.ts
+```
+
+### 2. 샘플 BestCase 생성
+
+```bash
+yarn tsx scripts/examples/setup-sample-bestcase-direct.ts
+```
+
+### 3. 코드 추천 테스트
+
+```bash
+yarn tsx scripts/examples/recommend-page-code-example.ts
+```
+
+### 4. MCP 서버 실행
+
+```bash
+# 직접 실행
+node mcp-stdio-server.js
+
+# Docker로 실행
+docker-compose -f docker-compose.ai.yml up -d
 ```
 
 ---
 
-**마지막 업데이트**: 2025-11-11
-**버전**: 1.0.0
-**상태**: ✅ 모든 작업 완료
+## 📚 관련 문서
+
+- **[CODE_RECOMMENDATION_API.md](./CODE_RECOMMENDATION_API.md)**: 코드 추천 API 상세 사용법
+- **[MULTIDIMENSIONAL_SCORING.md](./MULTIDIMENSIONAL_SCORING.md)**: 다차원 점수 시스템 설명
+- **[METADATA_SYSTEM.md](./METADATA_SYSTEM.md)**: 메타데이터 분석기 사용법
+- **[SANDBOX_USAGE_GUIDE.md](./SANDBOX_USAGE_GUIDE.md)**: Sandbox API 전체 가이드
+- **[DESIGN_SYSTEM_USAGE.md](./DESIGN_SYSTEM_USAGE.md)**: 디자인 시스템 매핑
+- **[UTILITY_LIBRARY_USAGE.md](./UTILITY_LIBRARY_USAGE.md)**: 유틸리티 라이브러리 매핑
+
+---
+
+## 🎯 핵심 요약
+
+1. **단일 execute 도구**: 모든 로직은 TypeScript 코드로 Sandbox에서 실행
+2. **6개 Sandbox API**: filesystem, bestcase (6개 함수), guides (3개 함수), metadata (10+ 함수)
+3. **8차원 품질 점수**: 특정 영역만 우수해도 BestCase로 활용 가능
+4. **자동 코드 추천**: 현재 프로젝트 분석 → 유사 BestCase → 실제 코드 자동 제공
+5. **98% 토큰 절감**: Code Mode 방식으로 최소한의 통신
+
+---
+
+**마지막 업데이트**: 2025-11-17
+**버전**: 2.0.0
+**상태**: ✅ 자동 코드 추천 기능 추가 완료

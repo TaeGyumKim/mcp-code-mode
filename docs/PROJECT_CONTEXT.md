@@ -228,7 +228,7 @@ console.log('TODOs:', comparison.todos);
 // 로컬 패키지 분석 필요 시
 if (projectContext.localPackageInfo.needsAnalysis > 0) {
   console.log('⚠️ 로컬 패키지 분석이 필요합니다');
-  console.log('npm run scan:auto-ai 실행을 권장합니다');
+  console.log('yarn scan 실행을 권장합니다');
 }
 
 // 이미 분석된 로컬 패키지 활용

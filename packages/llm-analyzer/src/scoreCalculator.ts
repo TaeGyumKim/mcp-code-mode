@@ -8,6 +8,18 @@ import type { BestCaseScores } from '../../bestcase-db/src/types.js';
 import type { ProjectMetadata, FileMetadata } from './metadata.js';
 
 /**
+ * 점수 계산 로직 버전
+ *
+ * 이 버전을 올리면 기존 BestCase들이 자동으로 재분석 대상이 됩니다.
+ *
+ * 버전 히스토리:
+ * - 1.0.0: 초기 다차원 점수 계산 로직
+ * - 1.1.0: 구조 점수 카테고리 다양성 가중치 조정
+ * - 2.0.0: 전체 가중치 시스템 재설계 (현재)
+ */
+export const SCORING_VERSION = '2.0.0';
+
+/**
  * 메타데이터 기반 자동 점수 계산
  */
 export function calculateScoresFromMetadata(
