@@ -44,11 +44,11 @@ if [ -d "$BESTCASE_STORAGE_PATH" ]; then
       # 재분석이 활성화된 경우 자동 재분석
       if [ "$REANALYZE_OLD_VERSIONS" = "true" ]; then
         echo ""
-        echo "🧠 Re-analyzing projects with migrated BestCases..."
+        echo "🧠 Re-analyzing projects with AI file-based scan (v3.0)..."
 
         # Ollama가 사용 가능한지 확인
         if curl -sf http://ollama:11434/api/tags > /dev/null 2>&1; then
-          node --experimental-specifier-resolution=node /app/scripts/dist/scan/auto-scan-with-migration.js 2>/dev/null || true
+          node --experimental-specifier-resolution=node /app/scripts/dist/scan/scan-files-ai.js 2>/dev/null || true
         else
           echo "⚠️ Ollama not available, skipping re-analysis"
         fi
