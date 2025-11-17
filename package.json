@@ -42,6 +42,7 @@
     "scan:auto-ai": "tsx scripts/scan/auto-scan-projects-ai.ts",
     "scan:auto-migrate": "tsx scripts/scan/auto-scan-with-migration.ts",
     "scan:files": "tsx scripts/scan/scan-files.ts",
+    "scan:files-ai": "tsx scripts/scan/scan-files-ai.ts",
     "scan:migrate": "tsx scripts/scan/migrate-bestcases.ts",
     "scan:migrate:dry": "tsx scripts/scan/migrate-bestcases.ts --dry-run",
     "scan:validate": "tsx scripts/scan/validate-bestcases.ts",
