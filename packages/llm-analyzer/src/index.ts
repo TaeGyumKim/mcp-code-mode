@@ -30,3 +30,16 @@ export type {
   ErrorHandlingLevel,
   TypeDefinitionQuality
 } from './metadata.js';
+
+// BestCase 비교 유틸리티 ⭐ NEW
+export { compareBestCaseMetadata } from './bestcaseComparator.js';
+export type {
+  ComparisonResult,
+  TodoItem
+} from './bestcaseComparator.js';
+
+// 다차원 점수 계산기 ⭐ NEW
+export { calculateScoresFromMetadata } from './scoreCalculator.js';
+
+// BestCase 점수 타입 (scoreCalculator에서 사용)
+export type { BestCaseScores } from '../../bestcase-db/src/types.js';

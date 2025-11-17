@@ -9,7 +9,9 @@
     "baseUrl": ".",
     "paths": {
       "ai-bindings/*": ["packages/ai-bindings/*"],
-      "ai-runner/*": ["packages/ai-runner/*"]
+      "ai-runner/*": ["packages/ai-runner/*"],
+      "bestcase-db/*": ["packages/bestcase-db/*"],
+      "llm-analyzer/*": ["packages/llm-analyzer/*"]
     }
   }
 }

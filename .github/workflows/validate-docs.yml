@@ -1,0 +1,49 @@
+name: Validate Documentation Links
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+      - 'claude/**'
+    paths:
+      - '**.md'
+      - 'docs/**'
+      - '.github/workflows/validate-docs.yml'
+  pull_request:
+    paths:
+      - '**.md'
+      - 'docs/**'
+
+jobs:
+  validate-links:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Install dependencies
+        run: yarn install --immutable
+
+      - name: Validate documentation links
+        run: yarn ci:validate-docs
+
+      - name: Report results
+        if: success()
+        run: echo "✅ All documentation links are valid!"
+
+      - name: Report failures
+        if: failure()
+        run: |
+          echo "❌ Documentation link validation failed!"
+          echo "Please check the logs above for broken links and fix them."
+          exit 1

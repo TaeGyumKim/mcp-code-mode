@@ -55,6 +55,14 @@ export interface ExcellentCodeSnippet {
   tags: string[];
 }
 
+/**
+ * @deprecated 점수 기반 분석기는 더 이상 권장되지 않습니다.
+ * 대신 MetadataAnalyzer를 사용하세요.
+ *
+ * MetadataAnalyzer는 더 빠르고 효율적인 메타데이터 추출 방식을 제공합니다.
+ *
+ * @see MetadataAnalyzer
+ */
 export class CodeAnalyzer {
   private llm: OllamaClient;
   private model: string;

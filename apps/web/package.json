@@ -10,8 +10,7 @@
     "postinstall": "nuxt prepare"
   },
   "dependencies": {
-    "ai-bindings": "workspace:^",
-    "ai-runner": "workspace:^",
+    "ai-runner": "workspace:*",
     "nuxt": "^4.2.0",
     "vue": "^3.5.22",
     "vue-router": "^4.6.3"

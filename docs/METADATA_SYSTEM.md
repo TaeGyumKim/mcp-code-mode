@@ -562,16 +562,63 @@ npm run test:metadata
 npm run test:flow
 ```
 
-## 📈 점수 vs 메타데이터 비교
+## 📈 메타데이터 → 다차원 점수 변환 ⭐ NEW
 
-| 측면 | 점수 기반 | 메타데이터 기반 |
-|------|-----------|----------------|
-| **출력** | 0-100 점수 | 구조화된 정보 |
-| **활용** | 순위 매기기 | 키워드 검색, 필터링 |
-| **통합** | 제한적 | 동적 지침 로딩 연동 |
-| **재사용** | 낮음 | 높음 (패턴 추출) |
-| **확장성** | 낮음 | 높음 (필드 추가 용이) |
-| **가독성** | 추상적 | 명확 (what, not how) |
+메타데이터는 점수의 **기반**이 됩니다. 메타데이터를 추출한 후, 자동으로 8가지 카테고리 점수를 계산합니다.
+
+### 메타데이터 → 점수 계산
+
+```typescript
+import { calculateScoresFromMetadata } from 'llm-analyzer';
+
+// 1. 메타데이터 추출
+const projectMeta = await analyzer.analyzeProject(projectPath, files);
+
+// 2. 다차원 점수 자동 계산 (LLM 호출 불필요!)
+const scores = calculateScoresFromMetadata(projectMeta, true);
+// {
+//   structure: 92,        // 메타데이터의 filesByCategory, patterns로부터 계산
+//   apiConnection: 88,    // apiType, apiMethods, excellentFiles로부터 계산
+//   designSystem: 75,     // designSystem, componentsUsed로부터 계산
+//   utilityUsage: 82,     // utilityLibrary, composablesUsed로부터 계산
+//   errorHandling: 70,    // filesWithGoodErrorHandling로부터 계산
+//   typeUsage: 85,        // filesWithGoodTypes로부터 계산
+//   stateManagement: 68,  // frameworks (pinia/vuex)로부터 계산
+//   performance: 78       // averageComplexity, patterns로부터 계산
+// }
+```
+
+### 점수 vs 메타데이터 비교
+
+| 측면 | 단일 점수 | 메타데이터 | 다차원 점수 (메타데이터 기반) |
+|------|----------|-----------|---------------------------|
+| **출력** | 0-100 점수 | 구조화된 정보 | 8개 카테고리 × 0-100 점수 |
+| **활용** | 순위 매기기 | 키워드 검색, 필터링 | 카테고리별 검색 + 순위 |
+| **통합** | 제한적 | 동적 지침 로딩 연동 | 동적 지침 + 세밀한 필터링 |
+| **재사용** | 낮음 | 높음 (패턴 추출) | 높음 (메타데이터 기반) |
+| **확장성** | 낮음 | 높음 (필드 추가 용이) | 높음 (카테고리 추가 용이) |
+| **가독성** | 추상적 | 명확 (what, not how) | 명확 + 정량적 |
+| **검색** | ≥ 70점만 | 패턴/프레임워크/엔티티 | 특정 카테고리 우수 코드 |
+
+### 실전 예시: 메타데이터 → 점수 → 검색
+
+```typescript
+// 1단계: 메타데이터 추출
+const projectMeta = await analyzer.analyzeProject(projectPath, files);
+
+// 2단계: 자동 점수 계산
+const scores = calculateScoresFromMetadata(projectMeta);
+// structure: 65, errorHandling: 35
+
+// 3단계: 약점 파악
+if (scores.errorHandling < 60) {
+  // 4단계: 에러 핸들링 우수 사례 검색
+  const examples = await storage.findExcellentInCategory('errorHandling');
+  console.log(`개선 참고: ${examples.length}개 우수 사례 발견`);
+}
+```
+
+**상세 가이드**: [MULTIDIMENSIONAL_SCORING.md](./MULTIDIMENSIONAL_SCORING.md)
 
 ## 🎨 메타데이터 예시
 

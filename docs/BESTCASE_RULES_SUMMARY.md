@@ -2,6 +2,29 @@
 
 > **AI 에이전트가 gRPC/OpenAPI 코드 작성 시 반드시 따라야 할 규칙**
 
+## 🎯 다차원 점수 시스템 ⭐ NEW
+
+BestCase는 이제 **8가지 카테고리별 점수**를 가지고 있어, 특정 영역에서 우수한 코드를 찾을 수 있습니다.
+
+**검색 예시**:
+```typescript
+// 구조가 우수한 케이스만
+const structureExamples = await storage.findExcellentInCategory('structure');
+
+// API 연결이 우수한 케이스만
+const apiExamples = await storage.findExcellentInCategory('apiConnection');
+
+// 복합 조건 검색
+const results = await storage.searchByIndex({
+  projectName: 'my-project',
+  excellentIn: ['structure', 'apiConnection']
+});
+```
+
+**상세 가이드**: [MULTIDIMENSIONAL_SCORING.md](./MULTIDIMENSIONAL_SCORING.md)
+
+---
+
 ## ⚠️ 문제 상황
 
 **AI가 다음과 같이 작동하면 안됩니다:**

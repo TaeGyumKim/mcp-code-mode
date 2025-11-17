@@ -9,7 +9,23 @@ export interface ListBestCasesOutput {
     createdAt: string;
     updatedAt: string;
     tags: string[];
+    /** 다차원 점수 (v2.0+) */
     scores?: {
+      structure: number;
+      apiConnection: number;
+      designSystem: number;
+      utilityUsage: number;
+      errorHandling: number;
+      typeUsage: number;
+      stateManagement: number;
+      performance: number;
+    };
+    /** 가중 평균 총점 */
+    totalScore?: number;
+    /** 우수 영역 (80점 이상) */
+    excellentIn?: string[];
+    /** 하위 호환: 기존 점수 (deprecated) */
+    legacyScores?: {
       total: number;
       api: number;
       component: number;
@@ -20,20 +36,24 @@ export interface ListBestCasesOutput {
 }
 
 /**
- * 모든 BestCase 목록 조회 (점수 정보 포함)
+ * 모든 BestCase 목록 조회 (다차원 점수 정보 포함)
  * @example
  * const list = await bestcase.listBestCases();
  * console.log(`Total: ${list.total}`);
  * list.bestcases.forEach(bc => {
+ *   console.log(`${bc.projectName}: ${bc.totalScore}/100`);
+ *   if (bc.excellentIn && bc.excellentIn.length > 0) {
+ *     console.log(`  Excellent in: ${bc.excellentIn.join(', ')}`);
+ *   }
  *   if (bc.scores) {
- *     console.log(`${bc.projectName}: Tier ${bc.scores.tier} (${bc.scores.total}/100)`);
+ *     console.log(`  Structure: ${bc.scores.structure}, API: ${bc.scores.apiConnection}`);
  *   }
  * });
  */
 export async function listBestCases(): Promise<ListBestCasesOutput> {
   const storage = new BestCaseStorage();
   const allCases = await storage.list();
-  
+
   const bestcases = allCases.map(bc => {
     const item: any = {
       id: bc.id,
@@ -44,44 +64,57 @@ export async function listBestCases(): Promise<ListBestCasesOutput> {
       updatedAt: bc.metadata.updatedAt,
       tags: bc.metadata.tags
     };
-    
-    // 점수 정보가 있으면 포함
-    if (bc.patterns && bc.patterns.scores) {
-      item.scores = bc.patterns.scores;
+
+    // 다차원 점수 정보 (v2.0+)
+    if (bc.scores) {
+      item.scores = bc.scores;
     }
-    
+
+    if (bc.totalScore !== undefined) {
+      item.totalScore = bc.totalScore;
+    }
+
+    if (bc.excellentIn && bc.excellentIn.length > 0) {
+      item.excellentIn = bc.excellentIn;
+    }
+
+    // 하위 호환: 기존 점수 (deprecated)
+    if (bc.patterns && bc.patterns.scores) {
+      item.legacyScores = bc.patterns.scores;
+    }
+
     return item;
   });
-  
-  // 점수 기반 정렬: tier → total → api → component
+
+  // 점수 기반 정렬: totalScore → excellentIn 개수 → 이름순
   bestcases.sort((a, b) => {
-    const tierOrder: Record<string, number> = { S: 5, A: 4, B: 3, C: 2, D: 1 };
-    
-    if (a.scores && b.scores) {
-      // Tier 비교
-      const tierDiff = (tierOrder[b.scores.tier] || 0) - (tierOrder[a.scores.tier] || 0);
-      if (tierDiff !== 0) return tierDiff;
-      
-      // Total 점수 비교
-      const totalDiff = b.scores.total - a.scores.total;
-      if (totalDiff !== 0) return totalDiff;
-      
-      // API 점수 비교
-      const apiDiff = b.scores.api - a.scores.api;
-      if (apiDiff !== 0) return apiDiff;
-      
-      // Component 점수 비교
-      return b.scores.component - a.scores.component;
+    // totalScore가 있으면 우선 비교
+    if (a.totalScore !== undefined && b.totalScore !== undefined) {
+      const scoreDiff = b.totalScore - a.totalScore;
+      if (scoreDiff !== 0) return scoreDiff;
+
+      // 같은 총점이면 우수 영역 개수로 비교
+      const aExcellent = a.excellentIn?.length || 0;
+      const bExcellent = b.excellentIn?.length || 0;
+      const excellentDiff = bExcellent - aExcellent;
+      if (excellentDiff !== 0) return excellentDiff;
     }
-    
-    // 점수 없는 항목은 뒤로
-    if (a.scores && !b.scores) return -1;
-    if (!a.scores && b.scores) return 1;
-    
+
+    // 점수 있는 항목이 앞으로
+    if (a.totalScore !== undefined && b.totalScore === undefined) return -1;
+    if (a.totalScore === undefined && b.totalScore !== undefined) return 1;
+
+    // 하위 호환: 기존 tier 비교
+    if (a.legacyScores && b.legacyScores) {
+      const tierOrder: Record<string, number> = { S: 5, A: 4, B: 3, C: 2, D: 1 };
+      const tierDiff = (tierOrder[b.legacyScores.tier] || 0) - (tierOrder[a.legacyScores.tier] || 0);
+      if (tierDiff !== 0) return tierDiff;
+    }
+
     // 둘 다 점수 없으면 이름순
     return a.projectName.localeCompare(b.projectName);
   });
-  
+
   return {
     bestcases,
     total: bestcases.length

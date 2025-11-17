@@ -360,3 +360,72 @@ const result = await guides.search({
   designSystem: 'openerd-nuxt3'  // +25~40점 부스트
 });
 ```
+
+## 📊 Guides 검색 부스트 실제 예시
+
+디자인 시스템이 감지되면, guides 검색 시 해당 디자인 시스템에 맞는 가이드가 자동으로 부스트됩니다.
+
+### 부스트 없이 검색
+
+```typescript
+const searchResult = await guides.search({
+  keywords: ['crud', 'table']
+});
+
+// 결과 (점수순):
+// 1. [25pts] crud-best-practices
+// 2. [20pts] table-pagination-guide
+// 3. [15pts] vuetify-table-guide
+// 4. [15pts] element-plus-table-guide
+// 5. [10pts] general-ui-patterns
+```
+
+### 디자인 시스템 부스트 적용
+
+```typescript
+const searchResult = await guides.search({
+  keywords: ['crud', 'table'],
+  designSystem: 'element-plus'  // ⭐ +40점 부스트
+});
+
+// 결과 (점수순):
+// 1. [95pts] element-plus-table-guide ⭐ (15 + 40(완전 매칭) + 40(유틸리티 매칭))
+// 2. [65pts] element-plus-crud-patterns ⭐ (25 + 40(완전 매칭))
+// 3. [30pts] crud-best-practices (부스트 없음)
+// 4. [25pts] table-pagination-guide (부스트 없음)
+// 5. [15pts] vuetify-table-guide (다른 디자인 시스템)
+```
+
+### 부스트 규칙
+
+| 매칭 유형 | 부스트 점수 | 설명 |
+|----------|-----------|------|
+| **ID 완전 매칭** | +40점 | `guide.id === designSystem` (예: `element-plus` 가이드 ID가 `element-plus`) |
+| **태그 매칭** | +35점 | `guide.tags.includes(designSystem)` (예: 가이드 태그에 `element-plus` 포함) |
+| **요약/내용 매칭** | +25점 | 가이드 요약이나 내용에 디자인 시스템 언급 |
+
+### 프로젝트 컨텍스트와 자동 연동
+
+프로젝트 컨텍스트가 자동으로 추출되면, guides 검색에 자동 반영됩니다.
+
+```typescript
+// MCP execute 도구 응답에 프로젝트 컨텍스트 포함
+{
+  "projectContext": {
+    "designSystemInfo": {
+      "detected": ["element-plus"],
+      "recommended": "element-plus"
+    }
+  }
+}
+
+// 이후 guides 검색 시 자동으로 부스트
+const searchResult = await guides.search({
+  keywords: ['table', 'crud'],
+  designSystem: projectContext.designSystemInfo.recommended  // ⭐ 자동 설정
+});
+
+// → element-plus 가이드가 자동으로 최우선 선택됨
+```
+
+이를 통해 **프로젝트에 맞는 가이드가 자동으로 우선 선택**되어, 일관된 코드 생성이 가능합니다.

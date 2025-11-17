@@ -24,7 +24,8 @@
 - � **동적 지침 로딩**: 메타데이터 기반 지침 검색/병합 시스템 (클로드 스킬과 유사)
 - 🛡️ **프리플라이트 검수**: API/의존성/쓰기범위 검증 + 리스크 스코어링
 - �🔒 **안전한 실행**: vm2 샌드박스 격리
-- 📊 **스마트 스코어링**: API 품질 + 컴포넌트 사용도 자동 평가 (S/A/B/C/D 티어)
+- 📊 **다차원 스코어링**: 8가지 품질 항목별 점수 (구조/API/디자인/에러처리/타입/상태관리/성능/유틸리티)
+- 🔍 **세밀한 BestCase 검색**: 카테고리별 우수 코드 검색 (구조 우수, API 우수, 디자인 우수 등)
 - 🐳 **Docker 배포**: GPU 지원 + 자동 스캔 스케줄러
 - ⚡ **98% 토큰 절감**: 중간 데이터 격리, 최종 결과만 반환
 - 🏗️ **Yarn Berry Workspace**: 모노레포 패키지 관리 (workspaces)
@@ -167,11 +168,46 @@ Code Mode는 LLM이 직접 tool calling을 하는 대신, **TypeScript 코드를
 
 > Claude는 이 정보를 매번 자동으로 받아서 프로젝트 특성에 맞는 코드를 생성합니다.
 
-### 6. BestCase 관리
+### 6. BestCase 관리 ⭐ ENHANCED
 
-- **자동 저장**: 프로젝트 패턴, 샘플 코드, 점수 저장
-- **스마트 로드**: 현재 프로젝트의 BestCase 자동 로드
+**핵심**: 전체 점수가 낮아도 특정 영역에서 우수한 코드를 저장하고 검색
+
+- **다차원 점수**: 8가지 품질 항목별 점수 (0-100점)
+  - structure (구조): 파일/컴포넌트 분리, 네이밍
+  - apiConnection (API 연결): gRPC/REST 활용, 에러 처리
+  - designSystem (디자인 시스템): UI 일관성
+  - utilityUsage (유틸리티): 라이브러리 활용
+  - errorHandling (에러 핸들링): 예외 처리, 사용자 경험
+  - typeUsage (타입 활용): TypeScript 품질
+  - stateManagement (상태 관리): Pinia/Vuex 활용
+  - performance (성능): 최적화
+
+- **유연한 저장 기준**: 하나라도 우수하면 저장
+  - 전체 70점 이상 OR
+  - 특정 카테고리 80점 이상 OR
+  - 중요 카테고리(구조/API/에러) 85점 이상 OR
+  - 최소 기준 40점 이상
+
+- **세밀한 검색**: 카테고리별 우수 코드 검색
+  ```typescript
+  // 구조가 우수한 케이스
+  const structureExamples = await storage.findExcellentInCategory('structure');
+
+  // API 연결이 우수한 케이스
+  const apiExamples = await storage.findExcellentInCategory('apiConnection');
+
+  // 복합 조건 검색
+  const results = await storage.searchByIndex({
+    projectName: 'my-project',
+    excellentIn: ['structure', 'apiConnection'],
+    minTotalScore: 70
+  });
+  ```
+
+- **자동 인덱싱**: 프로젝트별, 카테고리별, 태그별, 점수대별 인덱스 자동 생성
 - **버전 관리**: 타임스탬프 기반 버전 추적
+
+**상세 가이드**: [docs/MULTIDIMENSIONAL_SCORING.md](./docs/MULTIDIMENSIONAL_SCORING.md)
 
 ### 7. 동적 지침 로딩 시스템 (MCP 통합 완료)
 
@@ -184,12 +220,49 @@ Code Mode는 LLM이 직접 tool calling을 하는 대신, **TypeScript 코드를
 - **감사 추적**: 사용된 지침 id/version/scope 자동 로깅
 - **11개 지침 파일**: API, UI, 에러 처리, 워크플로우 등
 
-### 8. 점수 시스템
+### 8. 다차원 점수 시스템 ⭐ NEW
 
-- **API 품질** (0-100점): gRPC/OpenAPI 사용도 평가
-- **컴포넌트 품질** (0-100점): openerd-nuxt3 활용도 평가
-- **종합 점수**: API 40% + 컴포넌트 20% + 패턴 40%
-- **티어 시스템**: S (90+), A (80-89), B (70-79), C (60-69), D (0-59)
+**핵심**: 전체 점수가 낮아도 특정 영역에서 우수하면 저장/검색
+
+**8가지 평가 카테고리** (각 0-100점):
+
+1. **structure** (15%): 파일 구조, 컴포넌트 분리, 네이밍
+2. **apiConnection** (15%): API 활용, 에러 처리, 타입 안정성
+3. **designSystem** (12%): UI 일관성, 컴포넌트 사용
+4. **utilityUsage** (10%): 라이브러리 활용, 재사용성
+5. **errorHandling** (15%): 예외 처리, 사용자 경험
+6. **typeUsage** (13%): TypeScript 품질, any 최소화
+7. **stateManagement** (10%): Pinia/Vuex, 상태 불변성
+8. **performance** (10%): 최적화, lazy loading
+
+**저장 기준** (하나만 만족하면 저장):
+- ✅ 총점 70점 이상
+- ✅ 특정 카테고리 80점 이상
+- ✅ 중요 카테고리(구조/API/에러) 85점 이상
+- ✅ 최소 기준 40점 이상
+
+**검색 예시**:
+```typescript
+// 구조가 우수한 케이스만
+await storage.findExcellentInCategory('structure');
+
+// 75점 이상 고품질 케이스
+await storage.findByMinScore(75);
+
+// 프로젝트의 API 우수 케이스
+await storage.searchByIndex({
+  projectName: 'my-project',
+  excellentIn: ['apiConnection']
+});
+```
+
+**장점**:
+- 🎯 특정 영역 우수 코드 보존 (구조 100점이면 전체 점수 낮아도 저장)
+- 🔍 필요한 영역만 골라서 검색 (API 우수 사례만 찾기)
+- 📊 프로젝트 강점/약점 파악 (어떤 영역이 부족한지 확인)
+- ⚡ 효율적 학습 (부족한 영역 우수 사례로 개선)
+
+**상세 가이드**: [docs/MULTIDIMENSIONAL_SCORING.md](./docs/MULTIDIMENSIONAL_SCORING.md)
 
 ### 9. 자동화
 
@@ -597,19 +670,19 @@ MIT License - 자세한 내용은 [LICENSE](./LICENSE) 파일을 참조하세요
 ### 설정 가이드
 
 - **[docs/MCP_SETUP_GUIDE.md](./docs/MCP_SETUP_GUIDE.md)** - Docker 및 VS Code MCP 설정
-- **[docs/DOCKER_SETUP_COMPLETE.md](./docs/DOCKER_SETUP_COMPLETE.md)** - Docker 설정 완료 가이드
+- **[docs/DOCKER_REBUILD_GUIDE.md](./docs/DOCKER_REBUILD_GUIDE.md)** - Docker 재빌드 가이드
 - **[docs/VSCODE_MCP_GUIDE.md](./docs/VSCODE_MCP_GUIDE.md)** - VS Code 통합 상세 가이드
 
 ### 기타 문서
 
-- **[docs/AI_QUICK_START.md](./docs/AI_QUICK_START.md)** - AI 기반 코드 분석 빠른 시작
-- **[docs/AUTO_UPDATE_GUIDE.md](./docs/AUTO_UPDATE_GUIDE.md)** - 자동 BestCase 업데이트 가이드
-- **[docs/COMPLETION_SUMMARY.md](./docs/COMPLETION_SUMMARY.md)** - 구현 요약
+- **[docs/QUICK_START_OTHER_PROJECTS.md](./docs/QUICK_START_OTHER_PROJECTS.md)** - 다른 프로젝트에서 빠른 시작
+- **[docs/WEEKLY_SCAN_GUIDE.md](./docs/WEEKLY_SCAN_GUIDE.md)** - 자동 주간 스캔 가이드
+- **[docs/ENVIRONMENT_VARIABLES.md](./docs/ENVIRONMENT_VARIABLES.md)** - 환경변수 설정 가이드
 
 ### Deprecated (참고용)
 
 - **[docs/deprecated/SCORING_SYSTEM.md](./docs/deprecated/SCORING_SYSTEM.md)** - 점수 시스템 (메타데이터 시스템으로 대체됨)
-- **[docs/deprecated/AI_CODE_ANALYZER.md](./docs/deprecated/AI_CODE_ANALYZER.md)** - CodeAnalyzer (MetadataAnalyzer로 대체됨)
+- **[docs/deprecated/AI-SCORING-GUIDE.md](./docs/deprecated/AI-SCORING-GUIDE.md)** - AI 스코어링 가이드
 - **[.github/instructions/default.instructions.md](./.github/instructions/default.instructions.md)** - AI 코딩 가이드라인
 
 ## 📚 참고
@@ -617,7 +690,6 @@ MIT License - 자세한 내용은 [LICENSE](./LICENSE) 파일을 참조하세요
 - [Anthropic - MCP Code Mode](https://www.anthropic.com/research/building-effective-agents)
 - [Cloudflare - MCP Deep Dive](https://blog.cloudflare.com/mcp-deep-dive)
 - [AI Sparkup - MCP Code Mode](https://aisparkup.com/articles/mcp-code-mode)
-- [STRUCTURE_CHANGE_SUMMARY.md](./STRUCTURE_CHANGE_SUMMARY.md) - 동적 지침 로딩 시스템 구현 요약
 
 ## 기여
 

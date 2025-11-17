@@ -220,9 +220,9 @@ docker-compose logs -f
 
 ### 프로젝트 문서
 
-1. **초급**: README.md → USAGE_GUIDE.md → AI_QUICK_START.md
-2. **중급**: SCORING_SYSTEM.md → AI_CODE_ANALYZER.md → AUTO_UPDATE_GUIDE.md
-3. **고급**: DOCKER_SETUP_COMPLETE.md → VSCODE_MCP_GUIDE.md → default.instructions.md
+1. **초급**: README.md → USAGE_GUIDE.md → QUICK_START_OTHER_PROJECTS.md
+2. **중급**: deprecated/SCORING_SYSTEM.md → deprecated/AI-SCORING-GUIDE.md → WEEKLY_SCAN_GUIDE.md
+3. **고급**: MCP_SETUP_GUIDE.md → VSCODE_MCP_GUIDE.md → default.instructions.md
 
 ## 🐛 문제 해결
 
