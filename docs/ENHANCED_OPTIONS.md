@@ -332,6 +332,51 @@ const result = await execute({
 | OLLAMA_URL | http://ollama:11434 | Ollama 서버 URL |
 | EMBEDDING_MODEL | nomic-embed-text | 임베딩 모델 |
 | PROJECTS_PATH | /projects | 프로젝트 경로 |
+| MASK_SENSITIVE_LOGS | false | 민감 데이터 마스킹 활성화 |
+| MAX_LOG_PREVIEW_LENGTH | 200 | 로그 미리보기 최대 길이 |
+| NODE_ENV | development | 환경 (production이면 자동 마스킹) |
+
+---
+
+## 보안 기능
+
+### 민감 데이터 마스킹
+
+운영 환경에서 로그에 민감한 정보가 노출되지 않도록 합니다.
+
+```bash
+# 민감 데이터 마스킹 활성화
+export MASK_SENSITIVE_LOGS=true
+
+# 또는 production 환경에서 자동 활성화
+export NODE_ENV=production
+```
+
+**마스킹되는 패턴:**
+- 이메일 주소 → `[EMAIL_MASKED]`
+- API 키/토큰/비밀번호 → `[MASKED]`
+- Bearer 토큰 → `Bearer [TOKEN_MASKED]`
+- JWT 토큰 → `[JWT_MASKED]`
+- 신용카드 번호 → `[CARD_MASKED]`
+- 주민등록번호 → `[SSN_MASKED]`
+
+### 파일 시스템 감시자
+
+BestCase 저장소 변경을 자동으로 감지하여 캐시를 무효화합니다.
+
+**기능:**
+- **자동 디렉토리 생성**: 저장 경로가 없으면 자동 생성
+- **지수 백오프 재시도**: 오류 발생 시 최대 5회 재시도 (1s, 2s, 4s, 8s, 16s)
+- **디바운싱**: 연속적인 파일 변경을 1초 단위로 통합 처리
+
+```typescript
+// 감시자가 자동으로 시작됩니다
+// 로그에서 상태 확인 가능:
+// [timestamp] BestCase watcher started: {"path":"/projects/.bestcases"}
+
+// 오류 발생 시 자동 재시도:
+// [timestamp] Attempting to restart BestCase watcher: {"attempt":1,"maxAttempts":5,"delayMs":1000}
+```
 
 ---
 

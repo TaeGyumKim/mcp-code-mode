@@ -158,6 +158,13 @@ function getCacheStats(): { size: number; maxSize: number; ttlMs: number } {
 onFileCaseSaved = clearCache;
 
 // ============= 파일 시스템 감시자 (외부 BestCase 변경 감지) =============
+
+// 감시자 상태 관리
+let currentWatcher: fs.FSWatcher | null = null;
+let watcherRetryCount = 0;
+const MAX_WATCHER_RETRIES = 5;
+const WATCHER_RETRY_DELAYS = [1000, 2000, 4000, 8000, 16000];  // 지수 백오프
+
 /**
  * BestCase 저장소 디렉토리를 감시하여 외부 변경 시 캐시 무효화
  *
@@ -167,10 +174,22 @@ onFileCaseSaved = clearCache;
 function setupBestCaseWatcher(): void {
   const bestCasePath = process.env.BESTCASE_STORAGE_PATH || '/projects/.bestcases';
 
-  // 디렉토리 존재 확인
+  // 디렉토리 존재 확인 및 자동 생성
   if (!fs.existsSync(bestCasePath)) {
-    log('BestCase storage path does not exist yet, watcher not started', { path: bestCasePath });
-    return;
+    log('BestCase storage path does not exist, attempting to create', { path: bestCasePath });
+
+    try {
+      fs.mkdirSync(bestCasePath, { recursive: true });
+      log('BestCase storage path created successfully', { path: bestCasePath });
+    } catch (mkdirError) {
+      const errorMsg = mkdirError instanceof Error ? mkdirError.message : String(mkdirError);
+      log('Failed to create BestCase storage path', {
+        path: bestCasePath,
+        error: errorMsg,
+        hint: 'Ensure the parent directory exists and has write permissions. The watcher will not start until the path is available.'
+      });
+      return;
+    }
   }
 
   try {
@@ -197,18 +216,65 @@ function setupBestCaseWatcher(): void {
 
     watcher.on('error', (error) => {
       log('BestCase watcher error', { error: error.message });
+
+      // 오류 복구: 감시자 재시작 시도
+      if (watcherRetryCount < MAX_WATCHER_RETRIES) {
+        const delay = WATCHER_RETRY_DELAYS[watcherRetryCount] || 16000;
+        watcherRetryCount++;
+
+        log('Attempting to restart BestCase watcher', {
+          attempt: watcherRetryCount,
+          maxAttempts: MAX_WATCHER_RETRIES,
+          delayMs: delay
+        });
+
+        // 기존 감시자 정리
+        watcher.close();
+        currentWatcher = null;
+
+        // 지연 후 재시작
+        setTimeout(() => {
+          setupBestCaseWatcher();
+        }, delay);
+      } else {
+        log('BestCase watcher max retries reached, giving up', {
+          totalAttempts: watcherRetryCount,
+          hint: 'Cache invalidation for external changes will not work. Restart the server to retry.'
+        });
+      }
     });
 
+    currentWatcher = watcher;
+    watcherRetryCount = 0;  // 성공 시 재시도 카운트 초기화
     log('BestCase watcher started', { path: bestCasePath });
 
     // 프로세스 종료 시 감시자 정리
     process.on('exit', () => {
-      watcher.close();
+      if (currentWatcher) {
+        currentWatcher.close();
+        currentWatcher = null;
+      }
     });
 
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error);
     log('Failed to setup BestCase watcher', { error: errorMsg });
+
+    // 설정 실패 시 재시도
+    if (watcherRetryCount < MAX_WATCHER_RETRIES) {
+      const delay = WATCHER_RETRY_DELAYS[watcherRetryCount] || 16000;
+      watcherRetryCount++;
+
+      log('Retrying BestCase watcher setup', {
+        attempt: watcherRetryCount,
+        maxAttempts: MAX_WATCHER_RETRIES,
+        delayMs: delay
+      });
+
+      setTimeout(() => {
+        setupBestCaseWatcher();
+      }, delay);
+    }
   }
 }
 
@@ -287,10 +353,69 @@ const rl = readline.createInterface({
   terminal: false
 });
 
+// ============= 로깅 및 보안 =============
+
+// 환경 변수로 민감 데이터 마스킹 제어
+const MASK_SENSITIVE_DATA = process.env.MASK_SENSITIVE_LOGS === 'true' || process.env.NODE_ENV === 'production';
+const MAX_LOG_PREVIEW_LENGTH = parseInt(process.env.MAX_LOG_PREVIEW_LENGTH || '200', 10);
+
+/**
+ * 민감한 데이터 패턴 마스킹
+ *
+ * 운영 환경에서 로그에 민감한 정보가 노출되지 않도록 합니다.
+ */
+function maskSensitiveData(text: string): string {
+  if (!MASK_SENSITIVE_DATA) return text;
+
+  // 이메일 주소 마스킹
+  text = text.replace(/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/g, '[EMAIL_MASKED]');
+
+  // API 키 패턴 마스킹 (일반적인 형식)
+  text = text.replace(/\b(api[_-]?key|apikey|token|secret|password|auth)['":\s]*[=:]\s*['"]?[A-Za-z0-9_\-\.]{20,}['"]?/gi, '$1=[MASKED]');
+
+  // Bearer 토큰 마스킹
+  text = text.replace(/Bearer\s+[A-Za-z0-9_\-\.]+/gi, 'Bearer [TOKEN_MASKED]');
+
+  // JWT 토큰 마스킹 (xxx.xxx.xxx 형식)
+  text = text.replace(/\beyJ[A-Za-z0-9_-]*\.[A-Za-z0-9_-]*\.[A-Za-z0-9_-]*/g, '[JWT_MASKED]');
+
+  // 신용카드 번호 패턴 마스킹
+  text = text.replace(/\b\d{4}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{4}\b/g, '[CARD_MASKED]');
+
+  // 주민등록번호 패턴 마스킹 (한국)
+  text = text.replace(/\b\d{6}[-]?\d{7}\b/g, '[SSN_MASKED]');
+
+  return text;
+}
+
+/**
+ * 로그용 안전한 미리보기 생성
+ */
+function safePreview(text: string, maxLength: number = MAX_LOG_PREVIEW_LENGTH): string {
+  const truncated = text.length > maxLength
+    ? text.substring(0, maxLength) + '...[truncated]'
+    : text;
+
+  return maskSensitiveData(truncated);
+}
+
 function log(message: string, data?: any): void {
   const timestamp = new Date().toISOString();
-  const logMessage = data
-    ? `[${timestamp}] ${message}: ${JSON.stringify(data)}`
+
+  // 데이터 내 민감 정보 마스킹
+  let safeData = data;
+  if (data && MASK_SENSITIVE_DATA) {
+    try {
+      const dataStr = JSON.stringify(data);
+      safeData = JSON.parse(maskSensitiveData(dataStr));
+    } catch {
+      // JSON 변환 실패 시 원본 사용
+      safeData = data;
+    }
+  }
+
+  const logMessage = safeData
+    ? `[${timestamp}] ${message}: ${JSON.stringify(safeData)}`
     : `[${timestamp}] ${message}`;
   process.stderr.write(logMessage + '\n');
 }
@@ -1092,7 +1217,9 @@ rl.on('line', async (line: string) => {
     request = JSON.parse(line) as JsonRpcRequest;
   } catch (parseError) {
     const errorMsg = parseError instanceof Error ? parseError.message : String(parseError);
-    log('JSON parse error', { error: errorMsg, lineLength: line.length, linePreview: line.substring(0, 100) });
+    // 민감 데이터 마스킹된 미리보기 사용
+    const maskedPreview = safePreview(line, 100);
+    log('JSON parse error', { error: errorMsg, lineLength: line.length, linePreview: maskedPreview });
 
     sendResponse({
       jsonrpc: '2.0',
@@ -1103,7 +1230,8 @@ rl.on('line', async (line: string) => {
         data: {
           parseError: errorMsg,
           receivedLength: line.length,
-          preview: line.substring(0, 200) + (line.length > 200 ? '...' : '')
+          // 민감 데이터 마스킹된 미리보기
+          preview: safePreview(line, MAX_LOG_PREVIEW_LENGTH)
         }
       }
     });
