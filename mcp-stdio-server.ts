@@ -13,6 +13,7 @@ import { extractProjectContext } from './packages/ai-runner/dist/projectContext.
 import { FileCaseStorage } from './packages/bestcase-db/dist/index.js';
 import type { BestCaseScores } from './packages/bestcase-db/dist/index.js';
 import * as readline from 'readline';
+import * as fs from 'fs';
 
 const _fileCaseStorage = new FileCaseStorage();
 
@@ -155,6 +156,64 @@ function getCacheStats(): { size: number; maxSize: number; ttlMs: number } {
 
 // FileCaseStorage 저장 시 캐시 클리어 콜백 설정
 onFileCaseSaved = clearCache;
+
+// ============= 파일 시스템 감시자 (외부 BestCase 변경 감지) =============
+/**
+ * BestCase 저장소 디렉토리를 감시하여 외부 변경 시 캐시 무효화
+ *
+ * 외부 스크립트(예: scan-files-ai.ts)가 FileCaseStorage를 직접 사용하여
+ * BestCase를 저장/삭제할 때도 캐시가 자동으로 무효화됩니다.
+ */
+function setupBestCaseWatcher(): void {
+  const bestCasePath = process.env.BESTCASE_STORAGE_PATH || '/projects/.bestcases';
+
+  // 디렉토리 존재 확인
+  if (!fs.existsSync(bestCasePath)) {
+    log('BestCase storage path does not exist yet, watcher not started', { path: bestCasePath });
+    return;
+  }
+
+  try {
+    let debounceTimer: NodeJS.Timeout | null = null;
+
+    const watcher = fs.watch(bestCasePath, { persistent: false }, (eventType, filename) => {
+      // .json 파일 변경만 감지 (인덱스 파일 제외)
+      if (filename && filename.endsWith('.json') && !filename.includes('index')) {
+        // 디바운싱: 연속적인 변경을 하나로 처리
+        if (debounceTimer) {
+          clearTimeout(debounceTimer);
+        }
+
+        debounceTimer = setTimeout(() => {
+          log('External BestCase change detected, clearing cache', {
+            eventType,
+            filename
+          });
+          clearCache();
+          debounceTimer = null;
+        }, 1000);  // 1초 디바운스
+      }
+    });
+
+    watcher.on('error', (error) => {
+      log('BestCase watcher error', { error: error.message });
+    });
+
+    log('BestCase watcher started', { path: bestCasePath });
+
+    // 프로세스 종료 시 감시자 정리
+    process.on('exit', () => {
+      watcher.close();
+    });
+
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    log('Failed to setup BestCase watcher', { error: errorMsg });
+  }
+}
+
+// 서버 시작 시 감시자 설정
+setupBestCaseWatcher();
 
 interface JsonRpcRequest {
   jsonrpc: string;
@@ -1026,8 +1085,61 @@ async function createAutoContext(options: AutoRecommendOptions): Promise<AutoCon
 // ============= 요청 처리 =============
 
 rl.on('line', async (line: string) => {
+  let request: JsonRpcRequest;
+
+  // JSON 파싱 시도 - 상세한 오류 메시지 제공
   try {
-    const request = JSON.parse(line) as JsonRpcRequest;
+    request = JSON.parse(line) as JsonRpcRequest;
+  } catch (parseError) {
+    const errorMsg = parseError instanceof Error ? parseError.message : String(parseError);
+    log('JSON parse error', { error: errorMsg, lineLength: line.length, linePreview: line.substring(0, 100) });
+
+    sendResponse({
+      jsonrpc: '2.0',
+      id: null,
+      error: {
+        code: -32700,
+        message: 'Parse error: Invalid JSON',
+        data: {
+          parseError: errorMsg,
+          receivedLength: line.length,
+          preview: line.substring(0, 200) + (line.length > 200 ? '...' : '')
+        }
+      }
+    });
+    return;
+  }
+
+  // JSON-RPC 요청 유효성 검증
+  if (!request.jsonrpc || request.jsonrpc !== '2.0') {
+    log('Invalid JSON-RPC version', { received: request.jsonrpc });
+    sendResponse({
+      jsonrpc: '2.0',
+      id: request.id || null,
+      error: {
+        code: -32600,
+        message: 'Invalid Request: jsonrpc must be "2.0"',
+        data: { received: request.jsonrpc }
+      }
+    });
+    return;
+  }
+
+  if (!request.method || typeof request.method !== 'string') {
+    log('Invalid method', { received: request.method });
+    sendResponse({
+      jsonrpc: '2.0',
+      id: request.id || null,
+      error: {
+        code: -32600,
+        message: 'Invalid Request: method must be a string',
+        data: { received: typeof request.method }
+      }
+    });
+    return;
+  }
+
+  try {
     log('Received request', { method: request.method, id: request.id });
 
     // initialize 메서드: MCP 프로토콜 초기화
@@ -1210,6 +1322,60 @@ Sandbox APIs:
           hasAutoRecommend: !!execArgs.autoRecommend
         });
 
+        // 입력 검증
+        if (!execArgs.code || typeof execArgs.code !== 'string') {
+          sendResponse({
+            jsonrpc: '2.0',
+            id: request.id,
+            error: {
+              code: -32602,
+              message: 'Invalid params: code must be a non-empty string',
+              data: { received: typeof execArgs.code }
+            }
+          });
+          return;
+        }
+
+        if (execArgs.autoRecommend) {
+          const { currentFile, filePath, description } = execArgs.autoRecommend;
+          if (!currentFile || typeof currentFile !== 'string') {
+            sendResponse({
+              jsonrpc: '2.0',
+              id: request.id,
+              error: {
+                code: -32602,
+                message: 'Invalid params: autoRecommend.currentFile must be a non-empty string',
+                data: { received: typeof currentFile }
+              }
+            });
+            return;
+          }
+          if (!filePath || typeof filePath !== 'string') {
+            sendResponse({
+              jsonrpc: '2.0',
+              id: request.id,
+              error: {
+                code: -32602,
+                message: 'Invalid params: autoRecommend.filePath must be a non-empty string',
+                data: { received: typeof filePath }
+              }
+            });
+            return;
+          }
+          if (!description || typeof description !== 'string') {
+            sendResponse({
+              jsonrpc: '2.0',
+              id: request.id,
+              error: {
+                code: -32602,
+                message: 'Invalid params: autoRecommend.description must be a non-empty string',
+                data: { received: typeof description }
+              }
+            });
+            return;
+          }
+        }
+
         // 자동 컨텍스트 생성
         let autoContext: AutoContextResult = {
           recommendations: [],
@@ -1222,7 +1388,13 @@ Sandbox APIs:
 
         if (execArgs.autoRecommend) {
           log('Auto-context enabled');
-          autoContext = await createAutoContext(execArgs.autoRecommend);
+          try {
+            autoContext = await createAutoContext(execArgs.autoRecommend);
+          } catch (contextError) {
+            const errorMsg = contextError instanceof Error ? contextError.message : String(contextError);
+            log('Auto-context creation failed', { error: errorMsg });
+            autoContext.warnings.push(`Auto-context creation failed: ${errorMsg}. Proceeding with empty context.`);
+          }
         }
 
         // Context 주입
@@ -1329,23 +1501,26 @@ ${execArgs.code}
 
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
-    let requestId: string | number | null = null;
+    const errorStack = error instanceof Error ? error.stack : undefined;
 
-    // 요청 ID 추출 시도
-    try {
-      const parsed = JSON.parse(line);
-      requestId = parsed.id ?? null;
-    } catch {
-      // JSON 파싱 실패 시 null 유지
-    }
+    log('Request processing error', {
+      error: errorMessage,
+      stack: errorStack,
+      requestMethod: request.method,
+      requestId: request.id
+    });
 
     sendResponse({
       jsonrpc: '2.0',
-      id: requestId,
+      id: request.id || null,
       error: {
         code: -32603,
         message: 'Internal error',
-        data: errorMessage
+        data: {
+          message: errorMessage,
+          method: request.method,
+          hint: 'Check server logs for more details'
+        }
       }
     });
   }
