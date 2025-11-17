@@ -21,6 +21,9 @@ export CONCURRENCY="${CONCURRENCY:-2}"
 export BESTCASE_STORAGE_PATH="${BESTCASE_STORAGE_PATH:-/projects/.bestcases}"
 export MAX_FILES_PER_PROJECT="${MAX_FILES_PER_PROJECT:-50}"
 export OLLAMA_URL="${OLLAMA_URL:-http://ollama:11434}"
+# RAG 임베딩 설정
+export EMBEDDING_MODEL="${EMBEDDING_MODEL:-nomic-embed-text}"
+export GENERATE_EMBEDDINGS="${GENERATE_EMBEDDINGS:-true}"
 
 # Ollama가 실행 중인지 확인
 if ! curl -sf http://ollama:11434/api/tags > /dev/null 2>&1; then

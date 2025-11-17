@@ -30,8 +30,7 @@ COPY scripts/scan/docker-entrypoint.sh ./docker-entrypoint.sh
 # 실행 권한 부여
 RUN chmod +x /app/cron-scan.sh \
              /app/docker-entrypoint.sh \
-             /app/scripts/scan/init-scan.sh \
-             /app/scripts/scan/validate-bestcases.ts
+             /app/scripts/scan/init-scan.sh
 
 # Yarn cache 디렉토리 생성 및 의존성 설치
 RUN yarn install --inline-builds

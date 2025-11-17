@@ -19,6 +19,9 @@ export OLLAMA_URL="${OLLAMA_URL:-http://ollama:11434}"
 export LLM_MODEL="${LLM_MODEL:-qwen2.5-coder:7b}"
 export CONCURRENCY="${CONCURRENCY:-2}"
 export MAX_FILES_PER_PROJECT="${MAX_FILES_PER_PROJECT:-50}"
+# RAG 임베딩 설정
+export EMBEDDING_MODEL="${EMBEDDING_MODEL:-nomic-embed-text}"
+export GENERATE_EMBEDDINGS="${GENERATE_EMBEDDINGS:-true}"
 
 echo "📁 BestCase Storage: $BESTCASE_STORAGE_PATH"
 echo "🔄 Auto-scan on startup: $AUTO_MIGRATE_ON_STARTUP"

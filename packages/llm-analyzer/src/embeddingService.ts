@@ -143,10 +143,18 @@ export class EmbeddingService {
 
   /**
    * 코사인 유사도 계산
+   *
+   * 벡터 길이가 다르면 0을 반환 (다른 모델로 생성된 임베딩 호환)
    */
   static cosineSimilarity(a: number[], b: number[]): number {
+    if (!a || !b || a.length === 0 || b.length === 0) {
+      return 0;
+    }
+
     if (a.length !== b.length) {
-      throw new Error('Vectors must have the same length');
+      // 다른 모델로 생성된 임베딩일 수 있음 - 0 반환
+      console.error(`[EmbeddingService] Vector dimension mismatch: ${a.length} vs ${b.length}`);
+      return 0;
     }
 
     let dotProduct = 0;

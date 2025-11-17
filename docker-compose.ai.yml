@@ -45,8 +45,8 @@ services:
       - OLLAMA_URL=http://ollama:11434
       - LLM_PROVIDER=ollama
       - LLM_MODEL=qwen2.5-coder:7b  # 7B 모델 (더 정교한 분석)
-      # LLM 분석 설정
-      - OLLAMA_HOST=http://ollama-code-analyzer:11434
+      # LLM 분석 설정 (OLLAMA_URL과 동일하게 통일)
+      - OLLAMA_HOST=http://ollama:11434
       - OLLAMA_MODEL=qwen2.5-coder:7b
       - CONCURRENCY=2  # 7B 모델은 더 크므로 동시 실행 수 줄임
       # RAG 임베딩 설정

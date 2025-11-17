@@ -489,13 +489,15 @@ export class FileCaseStorage {
 }
 
 /**
- * 파일 경로를 ID로 변환
+ * 파일 경로를 ID로 변환 (결정적, 타임스탬프 없음)
+ *
+ * 동일한 프로젝트 + 파일 경로는 항상 같은 ID를 생성합니다.
+ * 이를 통해 재스캔 시 기존 FileCase를 찾아 업데이트할 수 있습니다.
  */
 export function filePathToId(projectName: string, filePath: string): string {
   const sanitizedProject = projectName.replace(/[\/\\]/g, '-');
   const sanitizedPath = filePath.replace(/[\/\\]/g, '-').replace(/\./g, '-');
-  const timestamp = Date.now();
-  return `${sanitizedProject}-${sanitizedPath}-${timestamp}`;
+  return `${sanitizedProject}--${sanitizedPath}`;
 }
 
 /**
