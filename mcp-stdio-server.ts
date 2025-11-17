@@ -16,6 +16,41 @@ import * as readline from 'readline';
 
 const fileCaseStorage = new FileCaseStorage();
 
+// ============= 캐싱 시스템 =============
+interface CacheEntry<T> {
+  data: T;
+  timestamp: number;
+  ttl: number;  // Time to live in milliseconds
+}
+
+const cache = new Map<string, CacheEntry<any>>();
+const CACHE_TTL = 5 * 60 * 1000;  // 5분 기본 캐시 TTL
+
+function getCached<T>(key: string): T | null {
+  const entry = cache.get(key);
+  if (!entry) return null;
+
+  const now = Date.now();
+  if (now - entry.timestamp > entry.ttl) {
+    cache.delete(key);
+    return null;
+  }
+
+  return entry.data as T;
+}
+
+function setCache<T>(key: string, data: T, ttl: number = CACHE_TTL): void {
+  cache.set(key, {
+    data,
+    timestamp: Date.now(),
+    ttl
+  });
+}
+
+function clearCache(): void {
+  cache.clear();
+}
+
 interface JsonRpcRequest {
   jsonrpc: string;
   id?: string | number;
@@ -50,8 +85,10 @@ interface AutoRecommendOptions {
   skipGuideLoading?: boolean;      // 가이드 로딩 건너뛰기
   skipProjectContext?: boolean;    // 프로젝트 컨텍스트 분석 건너뛰기
   // NEW: 다차원 검색 옵션
-  maxBestPractices?: number;       // 최대 우수 사례 수 (기본: 3)
+  maxBestPractices?: number;       // 최대 우수 사례 수 (기본: 3, 0이면 비활성화)
   skipBestPracticeSearch?: boolean; // 다차원 검색 건너뛰기
+  minScoreThreshold?: number;      // 최소 점수 임계값 (기본: 75, 자동 조정됨)
+  enableDynamicThreshold?: boolean; // 동적 임계값 활성화 (기본: true)
 }
 
 interface ExecuteParams {
@@ -276,7 +313,53 @@ async function getProjectContext(filePath: string): Promise<{
 }
 
 /**
- * 요청에서 중요한 점수 차원 추론
+ * 확장된 키워드 사전 (한글/영문 혼용 지원)
+ */
+const DIMENSION_KEYWORDS: Record<keyof BestCaseScores, string[]> = {
+  apiConnection: [
+    'api', 'grpc', 'rest', 'fetch', 'axios', 'client', 'server', 'endpoint', 'request', 'response',
+    'http', 'websocket', 'graphql', 'backend', 'service', 'call', 'invoke',
+    '서버', '클라이언트', '요청', '응답', '호출', '통신', '연결', '엔드포인트'
+  ],
+  errorHandling: [
+    'error', 'try', 'catch', 'throw', 'exception', 'validation', 'validate', 'check', 'guard',
+    'handle', 'handler', 'fallback', 'retry', 'recover', 'fail', 'success',
+    '에러', '오류', '예외', '검증', '유효성', '처리', '실패', '성공', '재시도'
+  ],
+  typeUsage: [
+    'type', 'interface', 'generic', 'typescript', 'typing', 'typed', 'schema', 'model', 'dto',
+    'class', 'enum', 'union', 'intersection', 'extends', 'implements',
+    '타입', '인터페이스', '제네릭', '스키마', '모델', '정의', '타입스크립트'
+  ],
+  stateManagement: [
+    'state', 'store', 'pinia', 'vuex', 'reactive', 'ref', 'computed', 'watch', 'action', 'mutation',
+    'getter', 'setter', 'persist', 'hydrate', 'subscribe', 'dispatch',
+    '상태', '스토어', '반응형', '액션', '뮤테이션', '구독', '저장', '관리'
+  ],
+  designSystem: [
+    'element', 'el-', 'ui', 'component', 'button', 'input', 'form', 'table', 'dialog', 'modal',
+    'layout', 'style', 'css', 'scss', 'tailwind', 'theme', 'icon', 'card', 'menu', 'nav',
+    '컴포넌트', '디자인', '레이아웃', '스타일', '테마', '아이콘', 'UI', '화면'
+  ],
+  structure: [
+    'structure', 'pattern', 'architecture', 'composable', 'hook', 'mixin', 'plugin', 'module',
+    'organize', 'layout', 'hierarchy', 'dependency', 'inject', 'provide', 'factory', 'singleton',
+    '구조', '패턴', '아키텍처', '컴포저블', '훅', '모듈', '구성', '조직', '계층'
+  ],
+  performance: [
+    'performance', 'optimize', 'lazy', 'cache', 'memo', 'virtual', 'debounce', 'throttle',
+    'async', 'await', 'promise', 'concurrent', 'parallel', 'batch', 'chunk', 'stream',
+    '성능', '최적화', '캐시', '지연', '비동기', '병렬', '메모이제이션', '가상화'
+  ],
+  utilityUsage: [
+    'utility', 'helper', 'util', 'common', 'shared', 'lib', 'tool', 'format', 'parse', 'convert',
+    'transform', 'sanitize', 'escape', 'encode', 'decode', 'serialize', 'deserialize',
+    '유틸', '헬퍼', '도우미', '공통', '변환', '포맷', '파싱', '직렬화'
+  ]
+};
+
+/**
+ * 요청에서 중요한 점수 차원 추론 (확장된 키워드 사전 사용)
  *
  * 사용자 요청을 분석하여 어떤 점수 차원이 중요한지 결정합니다.
  */
@@ -286,56 +369,38 @@ function inferImportantDimensions(description: string, keywords: string[]): Arra
   const allKeywords = keywords.map(k => k.toLowerCase());
   const combined = descLower + ' ' + allKeywords.join(' ');
 
-  // API 연결 관련
-  if (combined.includes('api') || combined.includes('grpc') || combined.includes('rest') ||
-      combined.includes('fetch') || combined.includes('axios') || combined.includes('client')) {
-    dimensions.push('apiConnection');
+  // 각 차원별 매칭 점수 계산
+  const dimensionScores: Record<keyof BestCaseScores, number> = {
+    apiConnection: 0,
+    errorHandling: 0,
+    typeUsage: 0,
+    stateManagement: 0,
+    designSystem: 0,
+    structure: 0,
+    performance: 0,
+    utilityUsage: 0
+  };
+
+  // 키워드 매칭으로 점수 계산
+  for (const [dimension, keywordList] of Object.entries(DIMENSION_KEYWORDS)) {
+    for (const keyword of keywordList) {
+      if (combined.includes(keyword)) {
+        dimensionScores[dimension as keyof BestCaseScores]++;
+      }
+    }
   }
 
-  // 에러 처리 관련
-  if (combined.includes('error') || combined.includes('에러') || combined.includes('try') ||
-      combined.includes('catch') || combined.includes('예외') || combined.includes('validation')) {
-    dimensions.push('errorHandling');
-  }
+  // 점수가 있는 차원만 추가 (높은 점수 순)
+  const sortedDimensions = Object.entries(dimensionScores)
+    .filter(([, score]) => score > 0)
+    .sort((a, b) => b[1] - a[1])
+    .map(([dim]) => dim as keyof BestCaseScores);
 
-  // 타입 관련
-  if (combined.includes('type') || combined.includes('interface') || combined.includes('타입') ||
-      combined.includes('typescript') || combined.includes('정의')) {
-    dimensions.push('typeUsage');
-  }
-
-  // 상태 관리 관련
-  if (combined.includes('state') || combined.includes('store') || combined.includes('pinia') ||
-      combined.includes('상태') || combined.includes('reactive') || combined.includes('ref')) {
-    dimensions.push('stateManagement');
-  }
-
-  // 디자인 시스템 관련
-  if (combined.includes('element') || combined.includes('el-') || combined.includes('ui') ||
-      combined.includes('component') || combined.includes('컴포넌트') || combined.includes('디자인')) {
-    dimensions.push('designSystem');
-  }
-
-  // 구조/패턴 관련
-  if (combined.includes('structure') || combined.includes('pattern') || combined.includes('구조') ||
-      combined.includes('패턴') || combined.includes('아키텍처') || combined.includes('composable')) {
-    dimensions.push('structure');
-  }
-
-  // 성능 관련
-  if (combined.includes('performance') || combined.includes('성능') || combined.includes('최적화') ||
-      combined.includes('optimize') || combined.includes('lazy') || combined.includes('cache')) {
-    dimensions.push('performance');
-  }
-
-  // 유틸리티 관련
-  if (combined.includes('utility') || combined.includes('helper') || combined.includes('util') ||
-      combined.includes('유틸') || combined.includes('헬퍼')) {
-    dimensions.push('utilityUsage');
-  }
-
-  // 기본값: 구조와 API 연결
-  if (dimensions.length === 0) {
+  if (sortedDimensions.length > 0) {
+    // 최대 3개 차원만 선택 (너무 많으면 검색 부하 증가)
+    dimensions.push(...sortedDimensions.slice(0, 3));
+  } else {
+    // 기본값: 구조와 API 연결
     dimensions.push('structure', 'apiConnection');
   }
 
@@ -343,62 +408,184 @@ function inferImportantDimensions(description: string, keywords: string[]): Arra
 }
 
 /**
- * 다차원 점수 기반 우수 코드 검색
+ * 다차원 점수 기반 우수 코드 검색 (캐싱 + 동적 임계값 + 다중 차원 기록)
  *
  * 특정 차원에서 높은 점수를 가진 파일을 검색합니다.
  */
 async function searchBestPracticeExamples(
   dimensions: Array<keyof BestCaseScores>,
   fileRole?: string,
-  maxResults: number = 3
+  maxResults: number = 3,
+  options: {
+    minScoreThreshold?: number;
+    enableDynamicThreshold?: boolean;
+  } = {}
 ): Promise<{
   examples: any[];
   warning?: string;
 }> {
+  const minThreshold = options.minScoreThreshold ?? 75;
+  const enableDynamic = options.enableDynamicThreshold ?? true;
+
   try {
-    const results: any[] = [];
-    const seenIds = new Set<string>();
+    // 캐시 키 생성
+    const cacheKey = `bestpractice:${dimensions.join(',')}:${fileRole || 'any'}:${minThreshold}`;
+    const cached = getCached<any[]>(cacheKey);
+    if (cached) {
+      log('Best practice cache hit', { cacheKey });
+      return { examples: cached.slice(0, maxResults) };
+    }
 
-    // 각 차원별로 최고 점수 파일 검색
-    for (const dimension of dimensions) {
-      if (results.length >= maxResults) break;
+    // 전체 파일 목록 캐시 (5분간 유효)
+    let allCases = getCached<any[]>('all_file_cases');
+    if (!allCases) {
+      log('Loading all file cases...');
+      allCases = await fileCaseStorage.list();
+      setCache('all_file_cases', allCases, CACHE_TTL);
+      log('File cases cached', { count: allCases.length });
+    }
 
-      const query: any = {
-        minScores: { [dimension]: 75 },  // 75점 이상인 파일
-        limit: 2  // 차원당 최대 2개
+    // 파일 역할 필터링
+    let candidates = allCases;
+    if (fileRole) {
+      candidates = allCases.filter((fc: any) => fc.fileRole === fileRole);
+    }
+
+    if (candidates.length === 0) {
+      return {
+        examples: [],
+        warning: `No files found for role: ${fileRole || 'any'}`
+      };
+    }
+
+    // 각 파일별 차원 점수 및 우수 차원 기록
+    const fileScores: Map<string, {
+      fileCase: any;
+      excellentDimensions: Array<keyof BestCaseScores>;
+      topScore: number;
+    }> = new Map();
+
+    // 동적 임계값: 상위 N% 선택을 위한 점수 계산
+    let effectiveThreshold = minThreshold;
+    if (enableDynamic && candidates.length > 0) {
+      // 각 차원별 평균 점수 계산
+      const avgScores: Record<keyof BestCaseScores, number> = {
+        apiConnection: 0,
+        errorHandling: 0,
+        typeUsage: 0,
+        stateManagement: 0,
+        designSystem: 0,
+        structure: 0,
+        performance: 0,
+        utilityUsage: 0
       };
 
-      if (fileRole) {
-        query.fileRole = fileRole;
+      for (const dimension of dimensions) {
+        const scores = candidates.map((fc: any) => fc.scores[dimension] || 0);
+        const avg = scores.reduce((a: number, b: number) => a + b, 0) / scores.length;
+        avgScores[dimension] = avg;
       }
 
-      const cases = await fileCaseStorage.search(query);
-
-      // 중복 제거하며 추가
-      for (const fileCase of cases) {
-        if (!seenIds.has(fileCase.id) && results.length < maxResults) {
-          seenIds.add(fileCase.id);
-          results.push({
-            id: fileCase.id,
-            projectName: fileCase.projectName,
-            filePath: fileCase.filePath,
-            fileRole: fileCase.fileRole,
-            excellentIn: dimension,
-            score: fileCase.scores[dimension],
-            keywords: fileCase.keywords.slice(0, 10),
-            content: fileCase.content,
-            analysis: {
-              linesOfCode: fileCase.analysis.linesOfCode,
-              apiMethods: fileCase.analysis.apiMethods,
-              componentsUsed: fileCase.analysis.componentsUsed,
-              patterns: fileCase.analysis.patterns
-            }
-          });
-        }
+      // 평균이 임계값보다 낮으면 동적으로 조정 (상위 25% 기준)
+      const lowestAvg = Math.min(...dimensions.map(d => avgScores[d]));
+      if (lowestAvg < minThreshold) {
+        effectiveThreshold = Math.max(lowestAvg * 1.1, lowestAvg + 10);  // 평균 + 10% 또는 +10점
+        log('Dynamic threshold adjusted', {
+          original: minThreshold,
+          effective: effectiveThreshold,
+          lowestAvg
+        });
       }
     }
 
-    log('Best practice search results', { dimensions, found: results.length });
+    // 각 파일의 차원별 점수 평가
+    for (const fileCase of candidates) {
+      const excellentDimensions: Array<keyof BestCaseScores> = [];
+      let topScore = 0;
+
+      for (const dimension of dimensions) {
+        const score = fileCase.scores[dimension] || 0;
+        if (score >= effectiveThreshold) {
+          excellentDimensions.push(dimension);
+          topScore = Math.max(topScore, score);
+        }
+      }
+
+      if (excellentDimensions.length > 0) {
+        fileScores.set(fileCase.id, {
+          fileCase,
+          excellentDimensions,
+          topScore
+        });
+      }
+    }
+
+    // Fallback: 임계값을 낮춰서 재검색
+    if (fileScores.size === 0 && enableDynamic) {
+      log('No files found above threshold, falling back to top percentile');
+
+      // 상위 10% 파일 선택
+      const percentile = Math.ceil(candidates.length * 0.1);
+      const sortedByAvg = candidates
+        .map((fc: any) => ({
+          fileCase: fc,
+          avgScore: dimensions.reduce((sum, dim) => sum + (fc.scores[dim] || 0), 0) / dimensions.length
+        }))
+        .sort((a: any, b: any) => b.avgScore - a.avgScore)
+        .slice(0, percentile);
+
+      for (const { fileCase } of sortedByAvg) {
+        const excellentDimensions: Array<keyof BestCaseScores> = [];
+        let topScore = 0;
+
+        for (const dimension of dimensions) {
+          const score = fileCase.scores[dimension] || 0;
+          excellentDimensions.push(dimension);
+          topScore = Math.max(topScore, score);
+        }
+
+        fileScores.set(fileCase.id, {
+          fileCase,
+          excellentDimensions,
+          topScore
+        });
+      }
+    }
+
+    // 점수순 정렬 및 결과 생성
+    const sortedResults = Array.from(fileScores.values())
+      .sort((a, b) => b.topScore - a.topScore);
+
+    const results = sortedResults.slice(0, maxResults).map(({ fileCase, excellentDimensions, topScore }) => ({
+      id: fileCase.id,
+      projectName: fileCase.projectName,
+      filePath: fileCase.filePath,
+      fileRole: fileCase.fileRole,
+      excellentIn: excellentDimensions,  // 배열로 변경: 여러 차원 기록
+      topScore,
+      scores: {
+        // 요청된 차원의 점수만 포함
+        ...Object.fromEntries(dimensions.map(dim => [dim, fileCase.scores[dim] || 0]))
+      },
+      keywords: fileCase.keywords.slice(0, 10),
+      content: fileCase.content,
+      analysis: {
+        linesOfCode: fileCase.analysis.linesOfCode,
+        apiMethods: fileCase.analysis.apiMethods,
+        componentsUsed: fileCase.analysis.componentsUsed,
+        patterns: fileCase.analysis.patterns
+      }
+    }));
+
+    // 결과 캐싱 (캐시는 최대 결과보다 많이 저장)
+    setCache(cacheKey, results, CACHE_TTL);
+
+    log('Best practice search results', {
+      dimensions,
+      threshold: effectiveThreshold,
+      candidates: candidates.length,
+      found: results.length
+    });
 
     return { examples: results };
   } catch (error) {
@@ -474,7 +661,10 @@ async function createAutoContext(options: AutoRecommendOptions): Promise<AutoCon
 
   // 4. 다차원 점수 기반 우수 코드 검색
   let bestPracticeExamples: any[] = [];
-  if (!options.skipBestPracticeSearch && (recommendations.length > 0 || extractedKeywords.length > 0)) {
+  const maxBestPractices = options.maxBestPractices !== undefined ? options.maxBestPractices : 3;
+
+  // maxBestPractices가 0이면 명시적으로 비활성화
+  if (!options.skipBestPracticeSearch && maxBestPractices > 0 && (recommendations.length > 0 || extractedKeywords.length > 0)) {
     log('Searching best practice examples...');
 
     // 파일 역할 추론
@@ -488,11 +678,15 @@ async function createAutoContext(options: AutoRecommendOptions): Promise<AutoCon
     const importantDimensions = inferImportantDimensions(options.description, extractedKeywords);
     log('Important dimensions', { dimensions: importantDimensions });
 
-    // 다차원 검색
+    // 다차원 검색 (캐싱 + 동적 임계값 + 다중 차원 기록)
     const bestPracticeResult = await searchBestPracticeExamples(
       importantDimensions,
       inferredRole,
-      options.maxBestPractices || 3  // 기본값 3개 예제
+      maxBestPractices,
+      {
+        minScoreThreshold: options.minScoreThreshold ?? 75,
+        enableDynamicThreshold: options.enableDynamicThreshold ?? true
+      }
     );
 
     bestPracticeExamples = bestPracticeResult.examples;
@@ -506,6 +700,8 @@ async function createAutoContext(options: AutoRecommendOptions): Promise<AutoCon
     });
   } else if (options.skipBestPracticeSearch) {
     log('Best practice search skipped by user');
+  } else if (maxBestPractices === 0) {
+    log('Best practice search disabled (maxBestPractices=0)');
   }
 
   return {
@@ -633,13 +829,23 @@ Sandbox APIs:
                       },
                       maxBestPractices: {
                         type: 'number',
-                        description: 'Maximum number of best practice examples to load (default: 3)',
+                        description: 'Maximum number of best practice examples to load (default: 3, 0 to disable)',
                         default: 3
                       },
                       skipBestPracticeSearch: {
                         type: 'boolean',
                         description: 'Skip multi-dimensional best practice search',
                         default: false
+                      },
+                      minScoreThreshold: {
+                        type: 'number',
+                        description: 'Minimum score threshold for best practices (default: 75, auto-adjusted if dynamic)',
+                        default: 75
+                      },
+                      enableDynamicThreshold: {
+                        type: 'boolean',
+                        description: 'Enable dynamic threshold adjustment based on average scores (default: true)',
+                        default: true
                       }
                     },
                     required: ['currentFile', 'filePath', 'description']
