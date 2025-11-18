@@ -478,7 +478,8 @@ export async function analyzeAndRecommend(input: {
     if (cleaned && cleaned !== 'index' && cleaned.length > 2) {
       // PascalCase로 변환
       const entity = cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
-      if (!['Pages', 'Components', 'Composables', 'Stores'].includes(entity)) {
+      // 프레임워크 디렉토리 및 베이스 컨테이너 제외
+      if (!['Pages', 'Components', 'Composables', 'Stores', 'Projects'].includes(entity)) {
         entities.push(entity);
       }
     }
