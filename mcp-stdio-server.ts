@@ -27,7 +27,7 @@ interface CacheEntry<T> {
 }
 
 const CACHE_TTL = parseInt(process.env.CACHE_TTL_MS || '300000');  // 기본 5분, 환경변수로 제어
-const MAX_CACHE_SIZE = parseInt(process.env.MAX_CACHE_SIZE || '100');  // 최대 캐시 엔트리 수
+const MAX_CACHE_SIZE = parseInt(process.env.CACHE_MAX_ENTRIES || '100');  // 최대 캐시 엔트리 수
 
 const cache = new Map<string, CacheEntry<any>>();
 
@@ -85,6 +85,14 @@ function clearCache(): void {
   const size = cache.size;
   cache.clear();
   log('Cache cleared', { clearedEntries: size });
+}
+
+function getCacheStats(): { size: number; maxSize: number; ttlMs: number } {
+  return {
+    size: cache.size,
+    maxSize: MAX_CACHE_SIZE,
+    ttlMs: CACHE_TTL
+  };
 }
 
 // FileCaseStorage 저장 시 캐시 클리어 콜백 설정
