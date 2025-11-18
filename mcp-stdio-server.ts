@@ -14,8 +14,41 @@ import { FileCaseStorage } from './packages/bestcase-db/dist/index.js';
 import type { BestCaseScores } from './packages/bestcase-db/dist/index.js';
 import * as readline from 'readline';
 import * as fs from 'fs';
+import * as path from 'path';
 
 const fileCaseStorage = new FileCaseStorage();
+
+// ============= 설정 파일 로딩 =============
+
+interface MCPConfig {
+  projectMarkers?: string[];
+  dimensionFloors?: Partial<Record<keyof BestCaseScores, number>>;
+  cacheOptions?: {
+    ttlMs?: number;
+    maxEntries?: number;
+  };
+  autoRecommendDefaults?: Partial<AutoRecommendOptions>;
+}
+
+/**
+ * MCP 설정 파일 로드 (mcp.json)
+ * 프로젝트 루트에서 mcp.json을 찾아 설정을 로드합니다.
+ */
+function loadMCPConfig(projectRoot: string): MCPConfig | null {
+  try {
+    const configPath = path.join(projectRoot, 'mcp.json');
+    if (fs.existsSync(configPath)) {
+      const configContent = fs.readFileSync(configPath, 'utf-8');
+      const config = JSON.parse(configContent) as MCPConfig;
+      log('MCP config loaded', { path: configPath, config });
+      return config;
+    }
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    log('Failed to load MCP config', { error: errorMsg });
+  }
+  return null;
+}
 
 // ============= LRU 캐싱 시스템 (환경 변수 제어) =============
 interface CacheEntry<T> {
@@ -996,9 +1029,24 @@ async function searchBestPracticeExamples(
 async function createAutoContext(options: AutoRecommendOptions): Promise<AutoContextResult> {
   const warnings: string[] = [];
 
+  // 0. 설정 파일 로드 및 옵션 병합
+  const projectRoot = inferProjectRoot(options.filePath, options.projectMarkers);
+  const mcpConfig = loadMCPConfig(projectRoot);
+
+  // 설정 파일 값과 사용자 옵션 병합 (사용자 옵션이 우선)
+  const mergedOptions: AutoRecommendOptions = {
+    ...options,
+    projectMarkers: options.projectMarkers || mcpConfig?.projectMarkers,
+    dimensionFloors: { ...mcpConfig?.dimensionFloors, ...options.dimensionFloors },
+    ...mcpConfig?.autoRecommendDefaults,
+    ...options  // 사용자 옵션이 최우선
+  };
+
+  log('Merged options with config', { hasConfig: !!mcpConfig, projectRoot });
+
   // 1. RAG 추천 가져오기
   log('Fetching RAG recommendations...');
-  const ragResult = await fetchRecommendations(options);
+  const ragResult = await fetchRecommendations(mergedOptions);
   if (ragResult.warnings.length > 0) {
     warnings.push(...ragResult.warnings);
   }
@@ -1009,13 +1057,13 @@ async function createAutoContext(options: AutoRecommendOptions): Promise<AutoCon
 
   // 2. 가이드 자동 로딩 (개선: 추천이 없어도 키워드나 설명이 있으면 로딩)
   let autoLoadedGuides = '';
-  const hasSearchableContent = recommendations.length > 0 || extractedKeywords.length > 0 || options.description;
+  const hasSearchableContent = recommendations.length > 0 || extractedKeywords.length > 0 || mergedOptions.description;
 
-  if (!options.skipGuideLoading && hasSearchableContent) {
+  if (!mergedOptions.skipGuideLoading && hasSearchableContent) {
     log('Auto-loading guides...', {
       hasRecommendations: recommendations.length > 0,
       hasKeywords: extractedKeywords.length > 0,
-      hasDescription: !!options.description
+      hasDescription: !!mergedOptions.description
     });
 
     const { allKeywords, apiType } = recommendations.length > 0
@@ -1027,9 +1075,9 @@ async function createAutoContext(options: AutoRecommendOptions): Promise<AutoCon
       apiType,
       recommendations[0]?.projectName || 'unknown',
       {
-        maxGuides: options.maxGuides || 5,
-        maxLength: options.maxGuideLength || 50000,
-        mandatoryIds: options.mandatoryGuideIds || ['00-bestcase-priority']
+        maxGuides: mergedOptions.maxGuides || 5,
+        maxLength: mergedOptions.maxGuideLength || 50000,
+        mandatoryIds: mergedOptions.mandatoryGuideIds || ['00-bestcase-priority']
       }
     );
 
@@ -1044,9 +1092,9 @@ async function createAutoContext(options: AutoRecommendOptions): Promise<AutoCon
 
   // 3. 프로젝트 컨텍스트 분석 (커스텀 마커 지원)
   let projectContext = null;
-  if (!options.skipProjectContext) {
-    log('Extracting project context...', { customMarkers: options.projectMarkers });
-    const contextResult = await getProjectContext(options.filePath, options.projectMarkers);
+  if (!mergedOptions.skipProjectContext) {
+    log('Extracting project context...', { customMarkers: mergedOptions.projectMarkers });
+    const contextResult = await getProjectContext(mergedOptions.filePath, mergedOptions.projectMarkers);
     projectContext = contextResult.context;
     if (contextResult.warning) {
       warnings.push(contextResult.warning);
@@ -1062,23 +1110,23 @@ async function createAutoContext(options: AutoRecommendOptions): Promise<AutoCon
   // 4. 다차원 점수 기반 우수 코드 검색
   let bestPracticeExamples: any[] = [];
   let searchMetadata: any = null;
-  const maxBestPractices = options.maxBestPractices !== undefined ? options.maxBestPractices : 3;
+  const maxBestPractices = mergedOptions.maxBestPractices !== undefined ? mergedOptions.maxBestPractices : 3;
 
   // 개선: skipBestPracticeSearch가 명시적으로 true일 때만 생략
   // 그렇지 않으면 설명과 키워드에 기반해 베스트 프랙티스 검색
-  const shouldSearch = options.forceBestPracticeSearch ||
-    (!options.skipBestPracticeSearch && maxBestPractices > 0 && hasSearchableContent);
+  const shouldSearch = mergedOptions.forceBestPracticeSearch ||
+    (!mergedOptions.skipBestPracticeSearch && maxBestPractices > 0 && hasSearchableContent);
 
   if (shouldSearch) {
     log('Searching best practice examples...', {
-      forced: options.forceBestPracticeSearch,
+      forced: mergedOptions.forceBestPracticeSearch,
       hasRecommendations: recommendations.length > 0,
       hasKeywords: extractedKeywords.length > 0
     });
 
     // 파일 역할 추론 (개선: 더 정교한 패턴 매칭 + projectContext 활용)
     let inferredRole: string | undefined;
-    const normalizedPath = options.filePath.toLowerCase();
+    const normalizedPath = mergedOptions.filePath.toLowerCase();
 
     // 정확한 디렉토리 경계 확인 (pages-edit 같은 오탐 방지)
     if (/\/pages\//.test(normalizedPath) || normalizedPath.endsWith('/pages')) inferredRole = 'page';
@@ -1094,7 +1142,7 @@ async function createAutoContext(options: AutoRecommendOptions): Promise<AutoCon
     if (!inferredRole && projectContext) {
       // projectContext의 패턴 정보 활용
       const patterns = projectContext.patterns || {};
-      const relativePath = options.filePath.replace(/^\/projects\/[^/]+\//, '');
+      const relativePath = mergedOptions.filePath.replace(/^\/projects\/[^/]+\//, '');
 
       // API 타입에 따른 추론
       if (patterns.pages && patterns.pages.some((p: string) => relativePath.includes(p))) {
@@ -1106,13 +1154,13 @@ async function createAutoContext(options: AutoRecommendOptions): Promise<AutoCon
       }
     }
 
-    log('Inferred file role', { role: inferredRole, path: options.filePath });
+    log('Inferred file role', { role: inferredRole, path: mergedOptions.filePath });
 
     // 중요 차원 추론 (사용자 정의 키워드 지원)
     const importantDimensions = inferImportantDimensions(
-      options.description,
+      mergedOptions.description,
       extractedKeywords,
-      options.customKeywords
+      mergedOptions.customKeywords
     );
     log('Important dimensions', { dimensions: importantDimensions });
 
@@ -1122,10 +1170,10 @@ async function createAutoContext(options: AutoRecommendOptions): Promise<AutoCon
       inferredRole,
       maxBestPractices,
       {
-        minScoreThreshold: options.minScoreThreshold ?? 75,
-        minScoreFloor: options.minScoreFloor ?? 50,
-        enableDynamicThreshold: options.enableDynamicThreshold ?? true,
-        dimensionFloors: options.dimensionFloors  // 차원별 하한선 전달
+        minScoreThreshold: mergedOptions.minScoreThreshold ?? 75,
+        minScoreFloor: mergedOptions.minScoreFloor ?? 50,
+        enableDynamicThreshold: mergedOptions.enableDynamicThreshold ?? true,
+        dimensionFloors: mergedOptions.dimensionFloors  // 차원별 하한선 전달 (설정 파일 + 사용자 옵션)
       }
     );
 
@@ -1141,14 +1189,14 @@ async function createAutoContext(options: AutoRecommendOptions): Promise<AutoCon
       excellentIn: bestPracticeExamples.map(e => e.excellentIn),
       metadata: searchMetadata
     });
-  } else if (options.skipBestPracticeSearch) {
+  } else if (mergedOptions.skipBestPracticeSearch) {
     log('Best practice search skipped by user');
   } else if (maxBestPractices === 0) {
     log('Best practice search disabled (maxBestPractices=0)');
   }
 
   // 메타데이터 노출 여부 결정
-  const includeMetadata = options.includeMetadata ?? false;
+  const includeMetadata = mergedOptions.includeMetadata ?? false;
 
   // 베스트 프랙티스 예제에서 상세 정보 선택적 노출
   const finalBestPracticeExamples = includeMetadata

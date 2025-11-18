@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "description": "MCP Code Mode configuration file - Place this as 'mcp.json' in your project root",
+
+  "projectMarkers": [
+    "modules",
+    "features",
+    "domains"
+  ],
+
+  "dimensionFloors": {
+    "performance": 60,
+    "errorHandling": 70,
+    "typeUsage": 65,
+    "apiConnection": 60
+  },
+
+  "cacheOptions": {
+    "ttlMs": 600000,
+    "maxEntries": 200
+  },
+
+  "autoRecommendDefaults": {
+    "maxBestPractices": 5,
+    "maxGuides": 7,
+    "enableDynamicThreshold": true,
+    "includeMetadata": false,
+    "customKeywords": {
+      "apiConnection": ["rest-api", "axios-client", "grpc-service"],
+      "performance": ["cache", "lazy-load", "virtual-scroll"],
+      "errorHandling": ["try-catch", "error-boundary", "validation"]
+    }
+  }
+}

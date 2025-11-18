@@ -444,3 +444,264 @@ autoRecommend: {
 ```
 
 모든 새 옵션은 선택적이며 기본값이 제공되므로, 기존 코드는 수정 없이 동작합니다.
+
+---
+
+## 고급 설정 옵션 (v3.0+)
+
+### mcp.json 설정 파일
+
+프로젝트 루트에 `mcp.json` 파일을 배치하여 프로젝트별 설정을 관리할 수 있습니다.
+
+**파일 위치:** `/projects/your-project/mcp.json`
+
+#### 설정 파일 예시
+
+```json
+{
+  "projectMarkers": [
+    "modules",
+    "features",
+    "domains"
+  ],
+
+  "dimensionFloors": {
+    "performance": 60,
+    "errorHandling": 70,
+    "typeUsage": 65,
+    "apiConnection": 60
+  },
+
+  "cacheOptions": {
+    "ttlMs": 600000,
+    "maxEntries": 200
+  },
+
+  "autoRecommendDefaults": {
+    "maxBestPractices": 5,
+    "maxGuides": 7,
+    "enableDynamicThreshold": true,
+    "includeMetadata": false,
+    "customKeywords": {
+      "apiConnection": ["rest-api", "axios-client"],
+      "performance": ["cache", "lazy-load"]
+    }
+  }
+}
+```
+
+### 프로젝트 마커 커스터마이징
+
+**목적**: Monorepo나 커스텀 프로젝트 구조에서 프로젝트 루트를 정확히 인식
+
+```json
+{
+  "projectMarkers": ["modules", "features", "domains", "workspaces"]
+}
+```
+
+**기본 마커** (항상 포함):
+- `pages`, `components`, `composables`, `stores`, `src`, `app`, `lib`, `packages`, `apps`
+
+**사용자 정의 마커**는 기본 마커와 병합되어 사용됩니다.
+
+### 차원별 하한선 설정 (dimensionFloors)
+
+**목적**: 특정 차원의 최소 품질 기준을 프로젝트별로 설정
+
+```json
+{
+  "dimensionFloors": {
+    "performance": 65,
+    "errorHandling": 70,
+    "typeUsage": 60,
+    "apiConnection": 60
+  }
+}
+```
+
+**적용 규칙:**
+1. `dimensionFloors`에 명시된 값이 최우선 (차원별)
+2. 설정되지 않은 차원은 `minScoreFloor` (기본: 50) 사용
+3. 동적 임계값 조정 시 해당 하한선 이하로 내려가지 않음
+
+**예시 시나리오:**
+```
+평균 performance 점수: 55점
+기본 minScoreFloor: 50점
+dimensionFloors.performance: 65점
+
+→ 동적 임계값: max(55 * 1.1, 55 + 10, 65) = 65점
+  (하한선 65점 보장)
+```
+
+### 메타데이터 노출 옵션 (includeMetadata)
+
+**목적**: 추천 결과에 상세 정보 포함 여부 제어
+
+**기본값** (`false`): 토큰 절약, 메타데이터 제외
+```json
+{
+  "bestPracticeExamples": [
+    {
+      "id": "abc123",
+      "filePath": "/projects/app/pages/users.vue",
+      "fileRole": "page",
+      "excellentIn": ["apiConnection", "errorHandling"],
+      "scores": { "apiConnection": 85, "errorHandling": 92 },
+      "content": "..."
+    }
+  ]
+}
+```
+
+**`includeMetadata: true`**: 상세 정보 포함
+```json
+{
+  "bestPracticeExamples": [
+    {
+      "id": "abc123",
+      "filePath": "/projects/app/pages/users.vue",
+      "fileRole": "page",
+      "excellentIn": ["apiConnection", "errorHandling"],
+      "excellentDetails": [
+        {
+          "dimension": "apiConnection",
+          "score": 85,
+          "threshold": 75,
+          "reason": "apiConnection: 85 (threshold: 75, +10.0)"
+        },
+        {
+          "dimension": "errorHandling",
+          "score": 92,
+          "threshold": 75,
+          "reason": "errorHandling: 92 (threshold: 75, +17.0)"
+        }
+      ],
+      "scores": { "apiConnection": 85, "errorHandling": 92 },
+      "content": "..."
+    }
+  ],
+  "searchMetadata": {
+    "dimensionsSearched": ["apiConnection", "errorHandling"],
+    "thresholdsUsed": { "apiConnection": 75, "errorHandling": 75 },
+    "candidateCount": 150,
+    "cacheHit": false
+  }
+}
+```
+
+**토큰 비교:**
+- `includeMetadata: false` → ~1,500 tokens (예시 코드 1개)
+- `includeMetadata: true` → ~1,800 tokens (+300 tokens)
+
+**권장 사용 시나리오:**
+- 디버깅 모드
+- 추천 이유 확인 필요
+- 품질 검증
+- 개발 환경
+
+### 우선순위 규칙
+
+설정 값의 적용 우선순위:
+
+```
+API 호출 시 직접 전달 > mcp.json > 환경 변수 > 기본값
+```
+
+**예시:**
+```typescript
+// 1. mcp.json
+{
+  "dimensionFloors": { "performance": 60 },
+  "autoRecommendDefaults": { "includeMetadata": false }
+}
+
+// 2. API 호출
+execute({
+  autoRecommend: {
+    dimensionFloors: { "errorHandling": 70 },  // 추가됨
+    includeMetadata: true  // 덮어씀
+  }
+})
+
+// 3. 최종 병합 결과
+{
+  dimensionFloors: {
+    performance: 60,      // from mcp.json
+    errorHandling: 70     // from API
+  },
+  includeMetadata: true   // from API (overrides mcp.json)
+}
+```
+
+### 설정 파일 위치 감지
+
+프로젝트 루트는 다음 순서로 추론됩니다:
+
+1. **filePath에서 projectMarker 탐색**
+   ```
+   /projects/my-app/pages/users.vue
+   → 'pages' 마커 발견 → /projects/my-app
+   ```
+
+2. **mcp.json 로드**
+   ```
+   /projects/my-app/mcp.json
+   ```
+
+3. **설정 적용 및 로깅**
+   ```
+   [timestamp] MCP config loaded: {"path":"/projects/my-app/mcp.json"}
+   [timestamp] Merged options with config: {"hasConfig":true}
+   ```
+
+### 설정 파일 검증
+
+올바른 JSON 형식과 타입을 사용해야 합니다:
+
+```json
+{
+  "projectMarkers": ["string", "array"],          // ✅ 문자열 배열
+  "dimensionFloors": {
+    "performance": 60                              // ✅ 숫자
+  },
+  "autoRecommendDefaults": {
+    "maxBestPractices": 5,                         // ✅ 숫자
+    "includeMetadata": true                        // ✅ 불리언
+  }
+}
+```
+
+**오류 시:**
+- JSON 파싱 실패 → 설정 파일 무시, 기본값 사용
+- 타입 불일치 → 해당 옵션 무시, 나머지 적용
+- 로그에 오류 메시지 출력
+
+---
+
+## 설정 파일 템플릿
+
+프로젝트 루트에 복사하여 사용하세요:
+
+**파일:** `mcp.json` (프로젝트 루트)
+
+```json
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "description": "MCP Code Mode configuration",
+  
+  "projectMarkers": [],
+  
+  "dimensionFloors": {},
+  
+  "autoRecommendDefaults": {
+    "maxBestPractices": 3,
+    "enableDynamicThreshold": true,
+    "includeMetadata": false
+  }
+}
+```
+
+상세한 예시는 저장소의 `mcp.json.example` 파일을 참고하세요.
+
