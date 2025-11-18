@@ -1,10 +1,12 @@
 ---
 id: mandatory-api-detection
-version: 1.0.0
+version: 2025.11.18
 scope: project
-priority: critical
+apiType: any
+priority: 200
 mandatory: true
 tags: [api, grpc, openapi, types, validation]
+summary: API 자동 감지 및 타입 검증 - 하드코딩 방지 필수 가이드
 ---
 
 # ⚠️ 필수: API 자동 감지 및 타입 검증
