@@ -42,6 +42,7 @@
     "scan:migrate": "tsx scripts/scan/migrate-bestcases.ts",
     "scan:migrate:dry": "tsx scripts/scan/migrate-bestcases.ts --dry-run",
     "scan:validate": "tsx scripts/scan/validate-bestcases.ts",
+    "analyze:entities": "tsx scripts/test/analyze-entities.ts",
     "ci:validate-docs": "tsx scripts/ci/validate-docs-links.ts",
     "test:guides": "tsx scripts/test/test-guides-integration.ts",
     "test:yaml": "tsx scripts/test/test-yaml-parser.ts",
