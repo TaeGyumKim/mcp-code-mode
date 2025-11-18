@@ -52,10 +52,48 @@ if [ -d "$BESTCASE_STORAGE_PATH" ]; then
       HOURS_SINCE_LAST_SCAN=$(( (NOW - LAST_SCAN) / 3600 ))
 
       if [ "$HOURS_SINCE_LAST_SCAN" -lt "$SCAN_COOLDOWN_HOURS" ]; then
+        # 쿨다운 기간 내지만, 파일 변경이 있으면 스캔 필요
         echo ""
-        echo "⏭️ Skipping scan: Last scan was ${HOURS_SINCE_LAST_SCAN}h ago (cooldown: ${SCAN_COOLDOWN_HOURS}h)"
-        echo "   To force scan, set SCAN_COOLDOWN_HOURS=0 or delete $CHECKPOINT_FILE"
-        SHOULD_SCAN=false
+        echo "⏱️ Within cooldown period (${HOURS_SINCE_LAST_SCAN}h ago), checking for file changes..."
+
+        # 프로젝트 파일의 최신 수정 시간 확인 (.vue, .ts, .tsx, .js)
+        HAS_CHANGES=false
+
+        if [ -d "$PROJECTS_PATH" ]; then
+          # find로 프로젝트 파일들의 최신 수정 시간 찾기
+          LATEST_FILE_TIME=$(find "$PROJECTS_PATH" \
+            -type f \( -name "*.vue" -o -name "*.ts" -o -name "*.tsx" -o -name "*.js" \) \
+            -not -path "*/node_modules/*" \
+            -not -path "*/.nuxt/*" \
+            -not -path "*/dist/*" \
+            -not -path "*/.output/*" \
+            -exec stat -c %Y {} \; 2>/dev/null | sort -n | tail -1)
+
+          if [ -n "$LATEST_FILE_TIME" ] && [ "$LATEST_FILE_TIME" -gt "$LAST_SCAN" ]; then
+            MINUTES_SINCE_CHANGE=$(( (NOW - LATEST_FILE_TIME) / 60 ))
+            echo "   📝 File changes detected (${MINUTES_SINCE_CHANGE}m ago)"
+            HAS_CHANGES=true
+          fi
+
+          # Git 커밋 확인 (선택적)
+          if [ -d "$PROJECTS_PATH/.git" ]; then
+            LATEST_COMMIT=$(git -C "$PROJECTS_PATH" log -1 --format=%ct 2>/dev/null || echo 0)
+            if [ "$LATEST_COMMIT" -gt "$LAST_SCAN" ]; then
+              MINUTES_SINCE_COMMIT=$(( (NOW - LATEST_COMMIT) / 60 ))
+              echo "   📝 Git commits detected (${MINUTES_SINCE_COMMIT}m ago)"
+              HAS_CHANGES=true
+            fi
+          fi
+        fi
+
+        if [ "$HAS_CHANGES" = "true" ]; then
+          echo "   ✅ Changes detected, will run scan despite cooldown"
+          SHOULD_SCAN=true
+        else
+          echo "   ⏭️ No changes detected, skipping scan (cooldown: ${SCAN_COOLDOWN_HOURS}h)"
+          echo "   To force scan, set SCAN_COOLDOWN_HOURS=0 or delete $CHECKPOINT_FILE"
+          SHOULD_SCAN=false
+        fi
       else
         echo ""
         echo "✅ Cooldown expired (${HOURS_SINCE_LAST_SCAN}h ago), will run scan"
