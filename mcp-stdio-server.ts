@@ -527,12 +527,48 @@ async function loadGuidesForKeywords(
 /**
  * 프로젝트 컨텍스트 추출
  */
+/**
+ * 파일 경로에서 프로젝트 루트 추론
+ * 예: "/projects/my-app/pages/index.vue" → "/projects/my-app"
+ */
+function inferProjectRoot(filePath: string): string {
+  const defaultProjectsPath = process.env.PROJECTS_PATH || '/projects';
+
+  // filePath가 절대 경로가 아니면 기본 경로 사용
+  if (!filePath || !filePath.startsWith('/')) {
+    return defaultProjectsPath;
+  }
+
+  // 일반적인 프로젝트 마커 디렉토리들
+  const projectMarkers = ['pages', 'components', 'composables', 'stores', 'src', 'app', 'lib'];
+
+  const parts = filePath.split('/').filter(Boolean);
+
+  // 프로젝트 마커를 찾아서 그 이전까지가 프로젝트 루트
+  for (let i = parts.length - 1; i >= 0; i--) {
+    if (projectMarkers.includes(parts[i])) {
+      return '/' + parts.slice(0, i).join('/');
+    }
+  }
+
+  // 마커를 찾지 못하면 파일의 상위 2단계를 프로젝트 루트로 간주
+  // 예: /projects/my-app/file.vue → /projects/my-app
+  if (parts.length >= 2) {
+    return '/' + parts.slice(0, Math.min(parts.length - 1, 2)).join('/');
+  }
+
+  return defaultProjectsPath;
+}
+
 async function getProjectContext(filePath: string): Promise<{
   context: any;
   warning?: string;
 }> {
   try {
-    const projectPath = process.env.PROJECTS_PATH || '/projects';
+    // 개선: filePath에서 프로젝트 루트 추론
+    const projectPath = inferProjectRoot(filePath);
+    log('Inferred project root', { filePath, projectPath });
+
     const context = await extractProjectContext(projectPath);
 
     return { context };
@@ -948,11 +984,20 @@ async function createAutoContext(options: AutoRecommendOptions): Promise<AutoCon
   const extractedKeywords = ragResult.keywords;
   log('RAG recommendations', { count: recommendations.length, keywords: extractedKeywords });
 
-  // 2. 가이드 자동 로딩
+  // 2. 가이드 자동 로딩 (개선: 추천이 없어도 키워드나 설명이 있으면 로딩)
   let autoLoadedGuides = '';
-  if (!options.skipGuideLoading && recommendations.length > 0) {
-    log('Auto-loading guides...');
-    const { allKeywords, apiType } = analyzeRecommendations(recommendations, extractedKeywords);
+  const hasSearchableContent = recommendations.length > 0 || extractedKeywords.length > 0 || options.description;
+
+  if (!options.skipGuideLoading && hasSearchableContent) {
+    log('Auto-loading guides...', {
+      hasRecommendations: recommendations.length > 0,
+      hasKeywords: extractedKeywords.length > 0,
+      hasDescription: !!options.description
+    });
+
+    const { allKeywords, apiType } = recommendations.length > 0
+      ? analyzeRecommendations(recommendations, extractedKeywords)
+      : { allKeywords: extractedKeywords, apiType: undefined };
 
     const guideResult = await loadGuidesForKeywords(
       allKeywords,
@@ -970,8 +1015,8 @@ async function createAutoContext(options: AutoRecommendOptions): Promise<AutoCon
       warnings.push(guideResult.warning);
     }
     log('Guides loaded', { count: guideResult.count, length: autoLoadedGuides.length });
-  } else if (recommendations.length === 0) {
-    warnings.push('No recommendations found, skipping guide loading');
+  } else if (!hasSearchableContent) {
+    log('No searchable content (recommendations, keywords, or description), skipping guide loading');
   }
 
   // 3. 프로젝트 컨텍스트 분석
@@ -996,19 +1041,33 @@ async function createAutoContext(options: AutoRecommendOptions): Promise<AutoCon
   let searchMetadata: any = null;
   const maxBestPractices = options.maxBestPractices !== undefined ? options.maxBestPractices : 3;
 
-  // forceBestPracticeSearch가 설정되면 조건과 상관없이 검색
+  // 개선: skipBestPracticeSearch가 명시적으로 true일 때만 생략
+  // 그렇지 않으면 설명과 키워드에 기반해 베스트 프랙티스 검색
   const shouldSearch = options.forceBestPracticeSearch ||
-    (!options.skipBestPracticeSearch && maxBestPractices > 0 && (recommendations.length > 0 || extractedKeywords.length > 0));
+    (!options.skipBestPracticeSearch && maxBestPractices > 0 && hasSearchableContent);
 
   if (shouldSearch) {
-    log('Searching best practice examples...', { forced: options.forceBestPracticeSearch });
+    log('Searching best practice examples...', {
+      forced: options.forceBestPracticeSearch,
+      hasRecommendations: recommendations.length > 0,
+      hasKeywords: extractedKeywords.length > 0
+    });
 
-    // 파일 역할 추론
+    // 파일 역할 추론 (개선: 더 정교한 패턴 매칭)
     let inferredRole: string | undefined;
-    if (options.filePath.includes('pages/')) inferredRole = 'page';
-    else if (options.filePath.includes('components/')) inferredRole = 'component';
-    else if (options.filePath.includes('composables/')) inferredRole = 'composable';
-    else if (options.filePath.includes('stores/')) inferredRole = 'store';
+    const normalizedPath = options.filePath.toLowerCase();
+
+    // 정확한 디렉토리 경계 확인 (pages-edit 같은 오탐 방지)
+    if (/\/pages\//.test(normalizedPath) || normalizedPath.endsWith('/pages')) inferredRole = 'page';
+    else if (/\/components\//.test(normalizedPath) || normalizedPath.endsWith('/components')) inferredRole = 'component';
+    else if (/\/composables\//.test(normalizedPath) || normalizedPath.endsWith('/composables')) inferredRole = 'composable';
+    else if (/\/stores\//.test(normalizedPath) || normalizedPath.endsWith('/stores')) inferredRole = 'store';
+    else if (/\/utils\/|\/helpers\/|\/lib\//.test(normalizedPath)) inferredRole = 'utility';
+
+    // projectContext에서 역할 추론 (우선순위 높음)
+    if (!inferredRole && projectContext) {
+      // TODO: metadata 분석 결과에서 fileRole 판단 로직 추가 가능
+    }
 
     // 중요 차원 추론 (사용자 정의 키워드 지원)
     const importantDimensions = inferImportantDimensions(
