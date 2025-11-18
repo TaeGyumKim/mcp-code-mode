@@ -181,16 +181,27 @@ async function hybridSearch(
 
   // 파일 역할 필터
   if (request.fileRole) {
+    const beforeRoleFilter = candidates.length;
     candidates = candidates.filter(fc => fc.fileRole === request.fileRole);
+    console.error(`[autoRecommend] Role filter (${request.fileRole}): ${beforeRoleFilter} → ${candidates.length} candidates`);
   }
 
   // 엔티티 필터
   if (request.entities && request.entities.length > 0) {
+    const beforeFilter = candidates.length;
     candidates = candidates.filter(fc =>
       request.entities!.some(entity =>
         fc.analysis.entities.some(e => e.toLowerCase().includes(entity.toLowerCase()))
       )
     );
+    console.error(`[autoRecommend] Entity filter: ${beforeFilter} → ${candidates.length} candidates`);
+    if (candidates.length === 0 && beforeFilter > 0) {
+      // 디버깅: 첫 5개 파일의 엔티티 확인
+      console.error(`[autoRecommend] DEBUG: Request entities:`, request.entities);
+      console.error(`[autoRecommend] DEBUG: Sample file entities:`,
+        allCases.slice(0, 5).map(fc => ({ file: fc.filePath, entities: fc.analysis.entities }))
+      );
+    }
   }
 
   // 2단계: 유사도 계산
