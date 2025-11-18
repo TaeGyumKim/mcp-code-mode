@@ -222,7 +222,7 @@ export class EmbeddingService {
   }
 
   /**
-   * 헬스 체크
+   * 헬스 체크 (모델 존재 확인)
    */
   async healthCheck(): Promise<boolean> {
     try {
@@ -235,5 +235,74 @@ export class EmbeddingService {
     } catch (error) {
       return false;
     }
+  }
+
+  /**
+   * 실제 임베딩 생성 테스트
+   *
+   * healthCheck보다 강력한 검증 - 실제로 임베딩을 생성해봄
+   */
+  async verifyEmbedding(): Promise<{ ok: boolean; error?: string; dimension?: number }> {
+    try {
+      console.error(`[EmbeddingService] Testing embedding with model: ${this.config.model}`);
+
+      const testText = "test embedding verification";
+      const startTime = Date.now();
+
+      const response = await fetch(`${this.config.ollamaUrl}/api/embeddings`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: this.config.model,
+          prompt: testText
+        })
+      });
+
+      const elapsed = Date.now() - startTime;
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`[EmbeddingService] ❌ Embedding test failed (${response.status}): ${errorText}`);
+        return { ok: false, error: `HTTP ${response.status}: ${errorText}` };
+      }
+
+      const result = await response.json() as EmbeddingResult;
+
+      if (!result.embedding || result.embedding.length === 0) {
+        console.error(`[EmbeddingService] ❌ Embedding test failed: Empty embedding vector`);
+        return { ok: false, error: 'Empty embedding vector' };
+      }
+
+      console.error(`[EmbeddingService] ✅ Embedding test passed: ${result.embedding.length}D vector in ${elapsed}ms`);
+      return { ok: true, dimension: result.embedding.length };
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      console.error(`[EmbeddingService] ❌ Embedding test error: ${errorMsg}`);
+      return { ok: false, error: errorMsg };
+    }
+  }
+
+  /**
+   * 재시도를 포함한 임베딩 생성
+   */
+  async embedWithRetry(text: string, maxRetries: number = 2): Promise<number[]> {
+    let lastError: Error | null = null;
+
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        if (attempt > 0) {
+          console.error(`[EmbeddingService] Retry attempt ${attempt}/${maxRetries}...`);
+          // 재시도 전 짧은 대기
+          await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+        }
+
+        return await this.embed(text);
+      } catch (error) {
+        lastError = error instanceof Error ? error : new Error(String(error));
+        console.error(`[EmbeddingService] Embedding attempt ${attempt + 1} failed: ${lastError.message}`);
+      }
+    }
+
+    throw lastError || new Error('Embedding failed after retries');
   }
 }

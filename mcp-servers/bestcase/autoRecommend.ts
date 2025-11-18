@@ -203,8 +203,11 @@ async function hybridSearch(
       components: request.components
     });
 
+    console.error(`[hybridSearch] Generating query embedding for: "${queryText.substring(0, 100)}..."`);
+
     try {
-      const queryVector = await embeddingService.embed(queryText);
+      const queryVector = await embeddingService.embedWithRetry(queryText);
+      console.error(`[hybridSearch] Query embedding generated: ${queryVector.length}D vector`);
 
       for (const fileCase of candidates) {
         if (fileCase.embedding) {
@@ -332,26 +335,50 @@ export async function autoRecommend(request: RecommendationRequest): Promise<Rec
   const extractedKeywords = extractKeywordsFromRequest(request);
   const warnings: string[] = [];
 
-  // 임베딩 서비스 초기화 (선택적)
+  // 임베딩 서비스 초기화 및 검증 (선택적)
   let embeddingService: EmbeddingService | undefined;
 
   if (request.ollamaConfig) {
+    console.error(`[autoRecommend] Initializing embedding service: ${request.ollamaConfig.url}, model: ${request.ollamaConfig.embeddingModel}`);
+
     embeddingService = new EmbeddingService({
       ollamaUrl: request.ollamaConfig.url,
       model: request.ollamaConfig.embeddingModel
     });
 
+    // 1단계: 모델 존재 확인
     const isHealthy = await embeddingService.healthCheck();
     if (!isHealthy) {
-      console.error('[autoRecommend] Embedding service not available, using keyword search only');
-      warnings.push(`Ollama embedding service not available at ${request.ollamaConfig.url}. Using keyword search only.`);
+      console.error(`[autoRecommend] ❌ Embedding model '${request.ollamaConfig.embeddingModel}' not found at ${request.ollamaConfig.url}`);
+      warnings.push(`Ollama embedding model '${request.ollamaConfig.embeddingModel}' not found. Please run: docker exec ollama-code-analyzer ollama pull ${request.ollamaConfig.embeddingModel}`);
       embeddingService = undefined;
+    } else {
+      // 2단계: 실제 임베딩 생성 테스트
+      console.error('[autoRecommend] Model found, testing actual embedding generation...');
+      const verification = await embeddingService.verifyEmbedding();
+
+      if (!verification.ok) {
+        console.error(`[autoRecommend] ❌ Embedding verification failed: ${verification.error}`);
+        warnings.push(`Embedding test failed: ${verification.error}. Using keyword search only.`);
+        embeddingService = undefined;
+      } else {
+        console.error(`[autoRecommend] ✅ Embedding service verified: ${verification.dimension}D vectors`);
+      }
     }
   }
 
   // 모든 FileCase 로드
   const allCases = await storage.list();
+  const withEmbedding = allCases.filter(fc => fc.embedding && fc.embedding.length > 0).length;
+  const withoutEmbedding = allCases.length - withEmbedding;
+
   console.error('[autoRecommend] Total FileCases:', allCases.length);
+  console.error(`[autoRecommend] - With embedding: ${withEmbedding}`);
+  console.error(`[autoRecommend] - Without embedding: ${withoutEmbedding}`);
+
+  if (withoutEmbedding > 0 && embeddingService) {
+    console.error(`[autoRecommend] ⚠️ ${withoutEmbedding} files missing embeddings. Consider re-scanning with: docker exec mcp-code-mode-server node /app/scripts/dist/scan/scan-files-ai.js`);
+  }
 
   // 불일치 카운트 리셋
   EmbeddingService.resetMismatchCount();
