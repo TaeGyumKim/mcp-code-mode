@@ -1546,5 +1546,33 @@ ${execArgs.code}
   }
 });
 
+// ============= Global Error Handlers =============
+
+// Unhandled promise rejection handler
+process.on('unhandledRejection', (reason: any, promise: Promise<any>) => {
+  const errorMsg = reason instanceof Error ? reason.message : String(reason);
+  const stack = reason instanceof Error ? reason.stack : '';
+
+  log('Unhandled promise rejection', {
+    error: errorMsg,
+    stack: stack,
+    promise: String(promise)
+  });
+
+  // 프로세스를 crash하지 않고 계속 실행
+  // (MCP 서버는 계속 살아있어야 함)
+});
+
+// Uncaught exception handler
+process.on('uncaughtException', (error: Error) => {
+  log('Uncaught exception', {
+    error: error.message,
+    stack: error.stack
+  });
+
+  // Critical error이므로 프로세스 종료
+  process.exit(1);
+});
+
 // 시작 메시지
 process.stderr.write('MCP STDIO Server started\n');
