@@ -51,6 +51,11 @@ services:
       - CONCURRENCY=2  # 7B 모델은 더 크므로 동시 실행 수 줄임
       # RAG 임베딩 설정
       - EMBEDDING_MODEL=nomic-embed-text  # 임베딩 모델
+      # BestCase 검증 및 마이그레이션 설정
+      - BESTCASE_RETENTION_DAYS=90  # 보존 기간 (0: 무제한)
+      - SKIP_BESTCASE_VALIDATION=false  # 검증 생략 여부
+      - BESTCASE_BACKUP_ON_VALIDATE=false  # 삭제 전 백업
+      - BESTCASE_MIGRATE_OLD_FORMAT=true  # 구 버전 자동 마이그레이션
     deploy:
       resources:
         limits:
@@ -78,6 +83,11 @@ services:
       # RAG 임베딩 설정
       - EMBEDDING_MODEL=nomic-embed-text
       - GENERATE_EMBEDDINGS=true
+      # BestCase 검증 및 마이그레이션 설정
+      - BESTCASE_RETENTION_DAYS=90  # 보존 기간 (0: 무제한)
+      - SKIP_BESTCASE_VALIDATION=false  # 검증 생략 여부
+      - BESTCASE_BACKUP_ON_VALIDATE=false  # 삭제 전 백업
+      - BESTCASE_MIGRATE_OLD_FORMAT=true  # 구 버전 자동 마이그레이션
     deploy:
       resources:
         limits:

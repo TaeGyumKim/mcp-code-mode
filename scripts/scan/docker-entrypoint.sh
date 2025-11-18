@@ -23,11 +23,21 @@ export MAX_FILES_PER_PROJECT="${MAX_FILES_PER_PROJECT:-50}"
 # RAG 임베딩 설정
 export EMBEDDING_MODEL="${EMBEDDING_MODEL:-nomic-embed-text}"
 export GENERATE_EMBEDDINGS="${GENERATE_EMBEDDINGS:-true}"
+# BestCase 검증 및 마이그레이션 설정
+export BESTCASE_RETENTION_DAYS="${BESTCASE_RETENTION_DAYS:-90}"  # 보존 기간 (0: 무제한)
+export SKIP_BESTCASE_VALIDATION="${SKIP_BESTCASE_VALIDATION:-false}"  # 검증 생략 여부
+export BESTCASE_BACKUP_ON_VALIDATE="${BESTCASE_BACKUP_ON_VALIDATE:-false}"  # 삭제 전 백업
+export BESTCASE_MIGRATE_OLD_FORMAT="${BESTCASE_MIGRATE_OLD_FORMAT:-true}"  # 구 버전 자동 마이그레이션
 
 echo "📁 BestCase Storage: $BESTCASE_STORAGE_PATH"
 echo "🔄 Auto-scan on startup: $AUTO_MIGRATE_ON_STARTUP"
 echo "⏱️ Scan cooldown: $SCAN_COOLDOWN_HOURS hours"
 echo "🧠 LLM Model: $LLM_MODEL"
+echo "🔧 Validation settings:"
+echo "   • Retention: $BESTCASE_RETENTION_DAYS days"
+echo "   • Migration: $BESTCASE_MIGRATE_OLD_FORMAT"
+echo "   • Backup: $BESTCASE_BACKUP_ON_VALIDATE"
+echo "   • Skip validation: $SKIP_BESTCASE_VALIDATION"
 echo ""
 
 # 1. BestCase 스토리지 디렉토리 확인
@@ -106,19 +116,35 @@ if [ -d "$BESTCASE_STORAGE_PATH" ]; then
     # 스캔 실행 여부 판단
     if [ "$SHOULD_SCAN" = "true" ]; then
       echo ""
-      echo "🔍 Phase 1: Running AI file-based scan (v3.0)..."
-      echo "   This will analyze only changed/new files"
+      echo "🔍 Phase 1: Validating existing BestCases..."
       echo ""
 
-      # Ollama가 사용 가능한지 확인
-      if curl -sf http://ollama:11434/api/tags > /dev/null 2>&1; then
-        echo "✅ Ollama available, starting scan..."
-        node --experimental-specifier-resolution=node /app/scripts/dist/scan/scan-files-ai.js 2>/dev/null || true
+      # BestCase 검증 및 정리
+      node --experimental-specifier-resolution=node /app/scripts/dist/scan/validate-bestcases.js
+      VALIDATION_EXIT_CODE=$?
+      echo ""
+
+      # 검증 결과에 따라 스캔 여부 결정
+      if [ $VALIDATION_EXIT_CODE -eq 1 ] || [ $VALIDATION_EXIT_CODE -eq 2 ]; then
+        # Exit code 1: 스캔 필요, Exit code 2: 에러 발생
+        echo "🔍 Phase 2: Running AI file-based scan (v3.0)..."
+        echo "   This will analyze only changed/new files"
         echo ""
-        echo "🎉 Startup scan completed"
+
+        # Ollama가 사용 가능한지 확인
+        if curl -sf http://ollama:11434/api/tags > /dev/null 2>&1; then
+          echo "✅ Ollama available, starting scan..."
+          node --experimental-specifier-resolution=node /app/scripts/dist/scan/scan-files-ai.js 2>/dev/null || true
+          echo ""
+          echo "🎉 Startup scan completed"
+        else
+          echo "⚠️ Ollama not available, skipping AI scan"
+          echo "   Please check Ollama container status"
+        fi
       else
-        echo "⚠️ Ollama not available, skipping AI scan"
-        echo "   Please check Ollama container status"
+        # Exit code 0: 유효한 BestCase 존재, 스캔 불필요
+        echo "✅ BestCases are valid, skipping scan"
+        echo "💡 Weekly scan runs every Sunday at 2:00 AM"
       fi
     fi
   else
