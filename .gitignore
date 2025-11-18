@@ -27,6 +27,9 @@ build/
 # Compiled JS in mcp-servers (source is .ts)
 mcp-servers/**/*.js
 
+# Compiled examples (source is .ts)
+scripts/examples/**/*.js
+
 # Logs
 logs/
 *.log
@@ -96,8 +99,16 @@ ollama-data/
 # AI_*.md
 # *_GUIDE.md
 # *_SUMMARY.md
-# *_REPORT.md
 # *_PLAN.md
+
+# Analysis reports (auto-generated, can be regenerated)
+CODEBASE_ANALYSIS.md
+FILE_MATRIX.md
+CODE_REVIEW_REPORT.md
+CACHE_SYSTEM_REVIEW.md
+DOCKER_SCAN_ISSUE_REPORT.md
+*_COHERENCE*.md
+*_COMPLETION.md
 
 # Docker
 .dockerignore
