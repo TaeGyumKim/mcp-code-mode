@@ -157,6 +157,11 @@ function extractKeywordsFromRequest(request: RecommendationRequest): string[] {
     keywords.push(request.targetFunction);
   }
 
+  // 키워드가 너무 적으면 (0-1개) fileRole을 키워드로 추가
+  if (keywords.length <= 1 && request.fileRole) {
+    keywords.push(request.fileRole);
+  }
+
   return [...new Set(keywords)];
 }
 
@@ -232,6 +237,13 @@ async function hybridSearch(
               similarity: keywordScore * 0.5,  // 임베딩 없으면 점수 낮춤
               matchReason: `Keywords only: ${keywordMatches.join(', ')}`
             });
+          } else if (request.fileRole && fileCase.fileRole === request.fileRole) {
+            // fileRole만 맞으면 낮은 점수로 포함 (임베딩 없음)
+            results.push({
+              fileCase,
+              similarity: 0.05,
+              matchReason: `File role match (no embedding): ${request.fileRole}`
+            });
           }
         }
       }
@@ -250,6 +262,13 @@ async function hybridSearch(
             similarity: keywordScore,
             matchReason: `Keywords: ${keywordMatches.join(', ')}`
           });
+        } else if (request.fileRole && fileCase.fileRole === request.fileRole) {
+          // fileRole만 맞으면 낮은 점수로 포함
+          results.push({
+            fileCase,
+            similarity: 0.1,
+            matchReason: `File role match (embedding error): ${request.fileRole}`
+          });
         }
       }
     }
@@ -261,11 +280,19 @@ async function hybridSearch(
       );
       const keywordScore = keywordMatches.length / Math.max(extractedKeywords.length, 1);
 
+      // 키워드 매칭이 없어도 fileRole이 맞으면 최소 점수로 포함
       if (keywordScore > 0) {
         results.push({
           fileCase,
           similarity: keywordScore,
           matchReason: `Keywords: ${keywordMatches.join(', ')}`
+        });
+      } else if (request.fileRole && fileCase.fileRole === request.fileRole) {
+        // fileRole만 맞으면 낮은 점수로 포함
+        results.push({
+          fileCase,
+          similarity: 0.1,
+          matchReason: `File role match: ${request.fileRole}`
         });
       }
     }
