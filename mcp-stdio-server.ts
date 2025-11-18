@@ -15,88 +15,21 @@ import type { BestCaseScores } from './packages/bestcase-db/dist/index.js';
 import * as readline from 'readline';
 import * as fs from 'fs';
 
-const _fileCaseStorage = new FileCaseStorage();
+const fileCaseStorage = new FileCaseStorage();
 
-// 캐시 클리어 콜백 (나중에 설정됨)
-let onFileCaseSaved: (() => void) | null = null;
-
-/**
- * 캐시 일관성을 위한 FileCaseStorage 래퍼
- *
- * FileCase 저장/삭제 시 캐시를 자동으로 클리어하여 데이터 일관성을 보장합니다.
- */
-const fileCaseStorage = {
-  ..._fileCaseStorage,
-
-  // save 시 캐시 클리어
-  async save(fileCase: any): Promise<void> {
-    await _fileCaseStorage.save(fileCase);
-    // 캐시 클리어 - 새 데이터 반영을 위해
-    if (onFileCaseSaved) onFileCaseSaved();
-    process.stderr.write(`[${new Date().toISOString()}] FileCase saved, cache cleared for consistency: ${JSON.stringify({ id: fileCase.id })}\n`);
-  },
-
-  // delete 시 캐시 클리어
-  async delete(id: string): Promise<boolean> {
-    const result = await _fileCaseStorage.delete(id);
-    if (result) {
-      if (onFileCaseSaved) onFileCaseSaved();
-      process.stderr.write(`[${new Date().toISOString()}] FileCase deleted, cache cleared for consistency: ${JSON.stringify({ id })}\n`);
-    }
-    return result;
-  },
-
-  // list는 캐시를 활용
-  list: _fileCaseStorage.list.bind(_fileCaseStorage),
-  load: _fileCaseStorage.load.bind(_fileCaseStorage),
-  search: _fileCaseStorage.search.bind(_fileCaseStorage),
-  findByKeywords: _fileCaseStorage.findByKeywords.bind(_fileCaseStorage),
-  findByFunction: _fileCaseStorage.findByFunction.bind(_fileCaseStorage),
-  findByMinScore: _fileCaseStorage.findByMinScore.bind(_fileCaseStorage),
-  findByRole: _fileCaseStorage.findByRole.bind(_fileCaseStorage),
-  findByEntity: _fileCaseStorage.findByEntity.bind(_fileCaseStorage),
-  initialize: _fileCaseStorage.initialize.bind(_fileCaseStorage)
-};
-
-// ============= 캐싱 시스템 (LRU with size limits) =============
+// ============= LRU 캐싱 시스템 (환경 변수 제어) =============
 interface CacheEntry<T> {
   data: T;
   timestamp: number;
   ttl: number;  // Time to live in milliseconds
-  lastAccess: number;  // For LRU eviction
+  accessCount: number;
+  lastAccessed: number;
 }
 
-// Environment variable controlled cache settings
-const CACHE_TTL = parseInt(process.env.CACHE_TTL_MS || '300000', 10);  // 5분 기본
-const CACHE_MAX_ENTRIES = parseInt(process.env.CACHE_MAX_ENTRIES || '100', 10);  // 최대 100개 엔트리
+const CACHE_TTL = parseInt(process.env.CACHE_TTL_MS || '300000');  // 기본 5분, 환경변수로 제어
+const MAX_CACHE_SIZE = parseInt(process.env.MAX_CACHE_SIZE || '100');  // 최대 캐시 엔트리 수
 
-const cache = new Map<string, CacheEntry<unknown>>();
-const cacheAccessOrder: string[] = [];  // LRU 순서 추적용
-
-/**
- * LRU 기반 캐시 정리 - 최대 엔트리 수 초과 시 가장 오래된 항목 제거
- * 최적화: 별도 배열로 접근 순서 추적하여 O(n) 정렬 회피
- */
-function evictLRU(): void {
-  while (cache.size > CACHE_MAX_ENTRIES && cacheAccessOrder.length > 0) {
-    const oldestKey = cacheAccessOrder.shift();
-    if (oldestKey && cache.has(oldestKey)) {
-      cache.delete(oldestKey);
-      log('LRU cache eviction', { key: oldestKey });
-    }
-  }
-}
-
-/**
- * 캐시 접근 순서 업데이트
- */
-function updateAccessOrder(key: string): void {
-  const index = cacheAccessOrder.indexOf(key);
-  if (index > -1) {
-    cacheAccessOrder.splice(index, 1);
-  }
-  cacheAccessOrder.push(key);
-}
+const cache = new Map<string, CacheEntry<any>>();
 
 function getCached<T>(key: string): T | null {
   const entry = cache.get(key);
@@ -105,56 +38,57 @@ function getCached<T>(key: string): T | null {
   const now = Date.now();
   if (now - entry.timestamp > entry.ttl) {
     cache.delete(key);
-    const index = cacheAccessOrder.indexOf(key);
-    if (index > -1) cacheAccessOrder.splice(index, 1);
     return null;
   }
 
-  // LRU: 접근 시간 업데이트
-  entry.lastAccess = now;
-  updateAccessOrder(key);
+  // LRU: 접근 시간 및 횟수 업데이트
+  entry.accessCount++;
+  entry.lastAccessed = now;
+
   return entry.data as T;
 }
 
 function setCache<T>(key: string, data: T, ttl: number = CACHE_TTL): void {
-  const now = Date.now();
-
-  // 이미 존재하면 접근 순서 갱신
-  if (cache.has(key)) {
-    updateAccessOrder(key);
-  } else {
-    cacheAccessOrder.push(key);
+  // 캐시 크기 제한 (LRU 제거)
+  if (cache.size >= MAX_CACHE_SIZE && !cache.has(key)) {
+    evictLRU();
   }
 
   cache.set(key, {
     data,
-    timestamp: now,
+    timestamp: Date.now(),
     ttl,
-    lastAccess: now
+    accessCount: 1,
+    lastAccessed: Date.now()
   });
+}
 
-  // LRU 정리
-  evictLRU();
+function evictLRU(): void {
+  // LRU 알고리즘: 가장 오래 전에 접근한 항목 제거
+  let oldestKey: string | null = null;
+  let oldestTime = Infinity;
+
+  for (const [key, entry] of cache.entries()) {
+    if (entry.lastAccessed < oldestTime) {
+      oldestTime = entry.lastAccessed;
+      oldestKey = key;
+    }
+  }
+
+  if (oldestKey) {
+    cache.delete(oldestKey);
+    log('LRU eviction', { evictedKey: oldestKey, cacheSize: cache.size });
+  }
 }
 
 function clearCache(): void {
+  const size = cache.size;
   cache.clear();
-  cacheAccessOrder.length = 0;
-  log('Cache cleared');
-}
-
-/**
- * 캐시 통계 조회
- */
-function getCacheStats(): { size: number; maxSize: number; ttlMs: number } {
-  return {
-    size: cache.size,
-    maxSize: CACHE_MAX_ENTRIES,
-    ttlMs: CACHE_TTL
-  };
+  log('Cache cleared', { clearedEntries: size });
 }
 
 // FileCaseStorage 저장 시 캐시 클리어 콜백 설정
+let onFileCaseSaved: (() => void) | null = null;
 onFileCaseSaved = clearCache;
 
 // ============= 파일 시스템 감시자 (외부 BestCase 변경 감지) =============
@@ -317,14 +251,11 @@ interface AutoRecommendOptions {
   // NEW: 다차원 검색 옵션
   maxBestPractices?: number;       // 최대 우수 사례 수 (기본: 3, 0이면 비활성화)
   skipBestPracticeSearch?: boolean; // 다차원 검색 건너뛰기
-  minScoreThreshold?: number | Partial<Record<keyof BestCaseScores, number>>;  // 단일 값 또는 차원별 임계값
-  minScoreThresholdFloor?: number; // 동적 임계값 하한선 (기본: 50)
+  forceBestPracticeSearch?: boolean; // 다른 조건과 상관없이 검색 강제 실행
+  minScoreThreshold?: number | Record<keyof BestCaseScores, number>;  // 점수 임계값 (숫자 or 차원별 객체)
+  minScoreFloor?: number;          // 동적 임계값 최소 하한선 (기본: 50)
   enableDynamicThreshold?: boolean; // 동적 임계값 활성화 (기본: true)
-  // NEW: 사용자 정의 키워드 및 강제 검색
-  customKeywords?: Partial<Record<keyof BestCaseScores, string[]>>;  // 추가 키워드 병합
-  forceBestPracticeSearch?: boolean;  // skipBestPracticeSearch 조건 무시하고 강제 검색
-  // NEW: 결과 설명 옵션
-  includeSelectionReasons?: boolean;  // 선택 이유 포함 (기본: true)
+  customKeywords?: Partial<Record<keyof BestCaseScores, string[]>>;  // 사용자 정의 키워드 (차원별)
 }
 
 interface ExecuteParams {
@@ -339,12 +270,8 @@ interface AutoContextResult {
   guides: string;
   projectContext: any;
   warnings: string[];  // NEW: 경고 메시지 수집
-  bestPracticeExamples: BestPracticeExample[];  // NEW: 다차원 점수 기반 우수 코드 예제
-  searchMetadata?: {  // NEW: 검색 메타데이터 (임계값, 평균 점수 등)
-    effectiveThresholds: Record<string, number>;
-    candidatesCount: number;
-    avgScores: Record<string, number>;
-  } | null;
+  bestPracticeExamples: any[];  // NEW: 다차원 점수 기반 우수 코드 예제
+  searchMetadata: any;  // NEW: 검색 메타데이터 (차원, 임계값, 캐시 히트 등)
 }
 
 const rl = readline.createInterface({
@@ -659,27 +586,7 @@ const DIMENSION_KEYWORDS: Record<keyof BestCaseScores, string[]> = {
 };
 
 /**
- * 사용자 정의 키워드를 DIMENSION_KEYWORDS와 병합
- */
-function mergeCustomKeywords(
-  customKeywords?: Partial<Record<keyof BestCaseScores, string[]>>
-): Record<keyof BestCaseScores, string[]> {
-  if (!customKeywords) return DIMENSION_KEYWORDS;
-
-  const merged = { ...DIMENSION_KEYWORDS };
-  for (const [dimension, keywords] of Object.entries(customKeywords)) {
-    if (keywords && Array.isArray(keywords)) {
-      merged[dimension as keyof BestCaseScores] = [
-        ...merged[dimension as keyof BestCaseScores],
-        ...keywords
-      ];
-    }
-  }
-  return merged;
-}
-
-/**
- * 요청에서 중요한 점수 차원 추론 (확장된 키워드 사전 사용)
+ * 요청에서 중요한 점수 차원 추론 (사용자 정의 키워드 지원)
  *
  * 사용자 요청을 분석하여 어떤 점수 차원이 중요한지 결정합니다.
  */
@@ -693,8 +600,17 @@ function inferImportantDimensions(
   const allKeywords = keywords.map(k => k.toLowerCase());
   const combined = descLower + ' ' + allKeywords.join(' ');
 
-  // 사용자 정의 키워드 병합
-  const effectiveKeywords = mergeCustomKeywords(customKeywords);
+  // 키워드 사전 병합 (기본 + 사용자 정의)
+  const mergedKeywords: Record<keyof BestCaseScores, string[]> = { ...DIMENSION_KEYWORDS };
+  if (customKeywords) {
+    for (const [dimension, customList] of Object.entries(customKeywords)) {
+      const dim = dimension as keyof BestCaseScores;
+      if (customList && customList.length > 0) {
+        mergedKeywords[dim] = [...mergedKeywords[dim], ...customList];
+        log('Custom keywords added', { dimension: dim, count: customList.length });
+      }
+    }
+  }
 
   // 각 차원별 매칭 점수 계산
   const dimensionScores: Record<keyof BestCaseScores, number> = {
@@ -709,9 +625,9 @@ function inferImportantDimensions(
   };
 
   // 키워드 매칭으로 점수 계산
-  for (const [dimension, keywordList] of Object.entries(effectiveKeywords)) {
+  for (const [dimension, keywordList] of Object.entries(mergedKeywords)) {
     for (const keyword of keywordList) {
-      if (combined.includes(keyword.toLowerCase())) {
+      if (combined.includes(keyword)) {
         dimensionScores[dimension as keyof BestCaseScores]++;
       }
     }
@@ -735,41 +651,7 @@ function inferImportantDimensions(
 }
 
 /**
- * 캐시에 저장할 검색 결과 타입
- */
-interface BestPracticeSearchCache {
-  examples: BestPracticeExample[];
-  metadata: {
-    effectiveThresholds: Record<string, number>;
-    candidatesCount: number;
-    avgScores: Record<string, number>;
-  };
-}
-
-/**
- * 우수 사례 예제 타입
- */
-interface BestPracticeExample {
-  id: string;
-  projectName: string;
-  filePath: string;
-  fileRole: string;
-  excellentIn: Array<keyof BestCaseScores>;
-  topScore: number;
-  scores: Partial<Record<keyof BestCaseScores, number>>;
-  keywords: string[];
-  content: string;
-  analysis: {
-    linesOfCode: number;
-    apiMethods: string[];
-    componentsUsed: string[];
-    patterns: string[];
-  };
-  selectionReasons?: string[];
-}
-
-/**
- * 다차원 점수 기반 우수 코드 검색 (캐싱 + 동적 임계값 + 다중 차원 기록 + 선택 이유)
+ * 다차원 점수 기반 우수 코드 검색 (캐싱 + 동적 임계값 + 차원별 설정 + 설명)
  *
  * 특정 차원에서 높은 점수를 가진 파일을 검색합니다.
  */
@@ -778,26 +660,26 @@ async function searchBestPracticeExamples(
   fileRole?: string,
   maxResults: number = 3,
   options: {
-    minScoreThreshold?: number | Partial<Record<keyof BestCaseScores, number>>;
-    minScoreThresholdFloor?: number;  // 동적 임계값 하한선
+    minScoreThreshold?: number | Record<keyof BestCaseScores, number>;
+    minScoreFloor?: number;
     enableDynamicThreshold?: boolean;
-    includeSelectionReasons?: boolean;
   } = {}
 ): Promise<{
-  examples: BestPracticeExample[];
+  examples: any[];
   warning?: string;
-  searchMetadata?: {
-    effectiveThresholds: Record<string, number>;
-    candidatesCount: number;
-    avgScores: Record<string, number>;
+  searchMetadata?: {  // 설명 및 가시성 향상
+    dimensionsSearched: Array<keyof BestCaseScores>;
+    thresholdsUsed: Record<keyof BestCaseScores, number>;
+    candidateCount: number;
+    cacheHit: boolean;
   };
 }> {
-  const thresholdFloor = options.minScoreThresholdFloor ?? 50;  // 동적 임계값 하한선
+  const minThresholdInput = options.minScoreThreshold ?? 75;
+  const minFloor = options.minScoreFloor ?? 50;  // 하한선: 최소 50점
   const enableDynamic = options.enableDynamicThreshold ?? true;
-  const includeReasons = options.includeSelectionReasons ?? true;
 
-  // 차원별 임계값 처리
-  const perDimensionThresholds: Record<keyof BestCaseScores, number> = {
+  // 차원별 임계값 구성
+  const dimensionThresholds: Record<keyof BestCaseScores, number> = {
     apiConnection: 75,
     errorHandling: 75,
     typeUsage: 75,
@@ -808,83 +690,45 @@ async function searchBestPracticeExamples(
     utilityUsage: 75
   };
 
-  if (typeof options.minScoreThreshold === 'number') {
-    // 단일 값이면 모든 차원에 적용
-    for (const dim of Object.keys(perDimensionThresholds) as Array<keyof BestCaseScores>) {
-      perDimensionThresholds[dim] = options.minScoreThreshold;
+  // 사용자 설정 적용
+  if (typeof minThresholdInput === 'number') {
+    // 단일 값: 모든 차원에 적용
+    for (const dim of dimensions) {
+      dimensionThresholds[dim] = minThresholdInput;
     }
-  } else if (options.minScoreThreshold && typeof options.minScoreThreshold === 'object') {
-    // 차원별 값이면 개별 적용
-    for (const [dim, value] of Object.entries(options.minScoreThreshold)) {
-      if (value !== undefined) {
-        perDimensionThresholds[dim as keyof BestCaseScores] = value;
-      }
+  } else if (typeof minThresholdInput === 'object') {
+    // 차원별 값
+    for (const [dim, threshold] of Object.entries(minThresholdInput)) {
+      dimensionThresholds[dim as keyof BestCaseScores] = Math.max(threshold, minFloor);
     }
   }
 
   try {
     // 캐시 키 생성 (차원별 임계값 포함)
-    const thresholdKey = dimensions.map(d => `${d}:${perDimensionThresholds[d]}`).join(',');
-    const cacheKey = `bestpractice:${thresholdKey}:${fileRole || 'any'}`;
-    const cached = getCached<BestPracticeSearchCache>(cacheKey);
+    const thresholdStr = dimensions.map(d => `${d}:${dimensionThresholds[d]}`).join(',');
+    const cacheKey = `bestpractice:${thresholdStr}:${fileRole || 'any'}`;
+    const cached = getCached<{examples: any[], metadata: any}>(cacheKey);
     if (cached) {
       log('Best practice cache hit', { cacheKey });
       return {
         examples: cached.examples.slice(0, maxResults),
-        searchMetadata: cached.metadata  // 캐시 히트 시에도 메타데이터 반환
+        searchMetadata: { ...cached.metadata, cacheHit: true }
       };
     }
 
-    // 전체 파일 목록 캐시 (메모리 최적화: 필요한 필드만 캐싱)
-    interface CachedFileCase {
-      id: string;
-      projectName: string;
-      filePath: string;
-      fileRole: string;
-      scores: BestCaseScores;
-      keywords: string[];
-      content: string;
-      analysis: {
-        linesOfCode: number;
-        apiMethods: string[];
-        componentsUsed: string[];
-        patterns: string[];
-      };
-    }
-
-    let allCases = getCached<CachedFileCase[]>('all_file_cases');
+    // 전체 파일 목록 캐시 (5분간 유효)
+    let allCases = getCached<any[]>('all_file_cases');
     if (!allCases) {
       log('Loading all file cases...');
-      const fullCases = await fileCaseStorage.list();
-
-      // 메모리 최적화: 필요한 필드만 추출하여 캐싱
-      allCases = fullCases.map((fc: any) => ({
-        id: fc.id,
-        projectName: fc.projectName,
-        filePath: fc.filePath,
-        fileRole: fc.fileRole,
-        scores: fc.scores,
-        keywords: fc.keywords || [],
-        content: fc.content,
-        analysis: {
-          linesOfCode: fc.analysis?.linesOfCode || 0,
-          apiMethods: fc.analysis?.apiMethods || [],
-          componentsUsed: fc.analysis?.componentsUsed || [],
-          patterns: fc.analysis?.patterns || []
-        }
-      }));
-
+      allCases = await fileCaseStorage.list();
       setCache('all_file_cases', allCases, CACHE_TTL);
-      log('File cases cached', {
-        count: allCases.length,
-        memoryOptimized: true
-      });
+      log('File cases cached', { count: allCases.length });
     }
 
     // 파일 역할 필터링
     let candidates = allCases;
     if (fileRole) {
-      candidates = allCases.filter((fc) => fc.fileRole === fileRole);
+      candidates = allCases.filter((fc: any) => fc.fileRole === fileRole);
     }
 
     if (candidates.length === 0) {
@@ -894,59 +738,61 @@ async function searchBestPracticeExamples(
       };
     }
 
-    // 각 차원별 평균 점수 계산 (동적 임계값용)
-    const avgScores: Record<keyof BestCaseScores, number> = {
-      apiConnection: 0,
-      errorHandling: 0,
-      typeUsage: 0,
-      stateManagement: 0,
-      designSystem: 0,
-      structure: 0,
-      performance: 0,
-      utilityUsage: 0
-    };
+    // 각 파일별 차원 점수 및 우수 차원 기록
+    const fileScores: Map<string, {
+      fileCase: any;
+      excellentDimensions: Array<{
+        dimension: keyof BestCaseScores;
+        score: number;
+        threshold: number;
+        reason: string;
+      }>;
+      topScore: number;
+    }> = new Map();
 
-    for (const dimension of dimensions) {
-      const scores = candidates.map((fc: any) => fc.scores[dimension] || 0);
-      const avg = scores.reduce((a: number, b: number) => a + b, 0) / scores.length;
-      avgScores[dimension] = avg;
-    }
-
-    // 동적 임계값 조정 (차원별로 적용, 하한선 보장)
-    const effectiveThresholds = { ...perDimensionThresholds };
+    // 동적 임계값: 차원별로 상위 N% 선택
+    const effectiveThresholds = { ...dimensionThresholds };
     if (enableDynamic && candidates.length > 0) {
+      // 각 차원별 평균 점수 계산
+      const avgScores: Record<keyof BestCaseScores, number> = {
+        apiConnection: 0,
+        errorHandling: 0,
+        typeUsage: 0,
+        stateManagement: 0,
+        designSystem: 0,
+        structure: 0,
+        performance: 0,
+        utilityUsage: 0
+      };
+
       for (const dimension of dimensions) {
-        const originalThreshold = perDimensionThresholds[dimension];
-        const avgScore = avgScores[dimension];
+        const scores = candidates.map((fc: any) => fc.scores[dimension] || 0);
+        const avg = scores.reduce((a: number, b: number) => a + b, 0) / scores.length;
+        avgScores[dimension] = avg;
 
-        if (avgScore < originalThreshold) {
-          // 동적 조정: 평균 + 10% 또는 +10점, 하지만 하한선 이상 유지
-          const dynamicThreshold = Math.max(avgScore * 1.1, avgScore + 10);
-          effectiveThresholds[dimension] = Math.max(dynamicThreshold, thresholdFloor);
-
-          log('Dynamic threshold adjusted for dimension', {
+        // 평균이 임계값보다 낮으면 동적으로 조정 (하한선 적용)
+        if (avg < dimensionThresholds[dimension]) {
+          const adjusted = Math.max(avg * 1.1, avg + 10);  // 평균 + 10% 또는 +10점
+          effectiveThresholds[dimension] = Math.max(adjusted, minFloor);  // 하한선 보장
+          log('Dynamic threshold adjusted', {
             dimension,
-            original: originalThreshold,
-            average: avgScore,
-            effective: effectiveThresholds[dimension],
-            floor: thresholdFloor
+            original: dimensionThresholds[dimension],
+            adjusted: effectiveThresholds[dimension],
+            average: avg,
+            floor: minFloor
           });
         }
       }
     }
 
-    // 각 파일별 차원 점수 및 우수 차원 기록
-    const fileScores: Map<string, {
-      fileCase: any;
-      excellentDimensions: Array<keyof BestCaseScores>;
-      topScore: number;
-      selectionReasons: string[];
-    }> = new Map();
-
     // 각 파일의 차원별 점수 평가
     for (const fileCase of candidates) {
-      const excellentDimensions: Array<keyof BestCaseScores> = [];
-      const selectionReasons: string[] = [];
+      const excellentDimensions: Array<{
+        dimension: keyof BestCaseScores;
+        score: number;
+        threshold: number;
+        reason: string;  // 선택 이유 설명
+      }> = [];
       let topScore = 0;
 
       for (const dimension of dimensions) {
@@ -954,14 +800,15 @@ async function searchBestPracticeExamples(
         const threshold = effectiveThresholds[dimension];
 
         if (score >= threshold) {
-          excellentDimensions.push(dimension);
+          const exceedsBy = score - threshold;
+          const reason = `${dimension}: ${score} (threshold: ${threshold}, +${exceedsBy.toFixed(1)})`;
+          excellentDimensions.push({
+            dimension,
+            score,
+            threshold,
+            reason
+          });
           topScore = Math.max(topScore, score);
-
-          if (includeReasons) {
-            selectionReasons.push(
-              `${dimension}: ${score}점 (임계값 ${threshold}점 충족)`
-            );
-          }
         }
       }
 
@@ -969,8 +816,7 @@ async function searchBestPracticeExamples(
         fileScores.set(fileCase.id, {
           fileCase,
           excellentDimensions,
-          topScore,
-          selectionReasons
+          topScore
         });
       }
     }
@@ -989,28 +835,32 @@ async function searchBestPracticeExamples(
         .sort((a: any, b: any) => b.avgScore - a.avgScore)
         .slice(0, percentile);
 
-      for (const { fileCase, avgScore } of sortedByAvg) {
-        const excellentDimensions: Array<keyof BestCaseScores> = [];
-        const selectionReasons: string[] = [];
+      for (const { fileCase } of sortedByAvg) {
+        const excellentDimensions: Array<{
+          dimension: keyof BestCaseScores;
+          score: number;
+          threshold: number;
+          reason: string;
+        }> = [];
         let topScore = 0;
 
         for (const dimension of dimensions) {
           const score = fileCase.scores[dimension] || 0;
-          excellentDimensions.push(dimension);
+          const threshold = effectiveThresholds[dimension];
+          const reason = `${dimension}: ${score} (top percentile fallback)`;
+          excellentDimensions.push({
+            dimension,
+            score,
+            threshold,
+            reason
+          });
           topScore = Math.max(topScore, score);
-        }
-
-        if (includeReasons) {
-          selectionReasons.push(
-            `상위 ${Math.round((percentile / candidates.length) * 100)}% 선택 (평균 점수: ${avgScore.toFixed(1)})`
-          );
         }
 
         fileScores.set(fileCase.id, {
           fileCase,
           excellentDimensions,
-          topScore,
-          selectionReasons
+          topScore
         });
       }
     }
@@ -1019,17 +869,18 @@ async function searchBestPracticeExamples(
     const sortedResults = Array.from(fileScores.values())
       .sort((a, b) => b.topScore - a.topScore);
 
-    const results: BestPracticeExample[] = sortedResults.slice(0, maxResults).map(({ fileCase, excellentDimensions, topScore, selectionReasons }) => ({
+    const results = sortedResults.slice(0, maxResults).map(({ fileCase, excellentDimensions, topScore }) => ({
       id: fileCase.id,
       projectName: fileCase.projectName,
       filePath: fileCase.filePath,
       fileRole: fileCase.fileRole,
-      excellentIn: excellentDimensions,  // 배열로 변경: 여러 차원 기록
+      excellentIn: excellentDimensions.map(ed => ed.dimension),  // 차원 목록
+      excellentDetails: excellentDimensions,  // 상세 정보 (점수, 임계값, 이유)
       topScore,
       scores: {
         // 요청된 차원의 점수만 포함
         ...Object.fromEntries(dimensions.map(dim => [dim, fileCase.scores[dim] || 0]))
-      } as Partial<Record<keyof BestCaseScores, number>>,
+      },
       keywords: fileCase.keywords.slice(0, 10),
       content: fileCase.content,
       analysis: {
@@ -1037,36 +888,30 @@ async function searchBestPracticeExamples(
         apiMethods: fileCase.analysis.apiMethods,
         componentsUsed: fileCase.analysis.componentsUsed,
         patterns: fileCase.analysis.patterns
-      },
-      // NEW: 선택 이유 포함
-      ...(includeReasons && { selectionReasons })
+      }
     }));
 
-    // 메타데이터 생성
+    // 검색 메타데이터 생성 (가시성 향상)
     const searchMetadata = {
-      effectiveThresholds: Object.fromEntries(dimensions.map(d => [d, effectiveThresholds[d]])) as Record<string, number>,
-      candidatesCount: candidates.length,
-      avgScores: Object.fromEntries(dimensions.map(d => [d, avgScores[d]])) as Record<string, number>
+      dimensionsSearched: dimensions,
+      thresholdsUsed: Object.fromEntries(
+        dimensions.map(d => [d, effectiveThresholds[d]])
+      ) as Record<keyof BestCaseScores, number>,
+      candidateCount: candidates.length,
+      cacheHit: false
     };
 
-    // 결과와 메타데이터를 함께 캐싱
-    const cacheData: BestPracticeSearchCache = {
-      examples: results,
-      metadata: searchMetadata
-    };
-    setCache(cacheKey, cacheData, CACHE_TTL);
+    // 결과 캐싱 (메타데이터 포함)
+    setCache(cacheKey, { examples: results, metadata: searchMetadata }, CACHE_TTL);
 
     log('Best practice search results', {
       dimensions,
-      effectiveThresholds: searchMetadata.effectiveThresholds,
+      thresholds: effectiveThresholds,
       candidates: candidates.length,
       found: results.length
     });
 
-    return {
-      examples: results,
-      searchMetadata
-    };
+    return { examples: results, searchMetadata };
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error);
     log('Best practice search failed', { error: errorMsg });
@@ -1143,11 +988,11 @@ async function createAutoContext(options: AutoRecommendOptions): Promise<AutoCon
   let searchMetadata: any = null;
   const maxBestPractices = options.maxBestPractices !== undefined ? options.maxBestPractices : 3;
 
-  // forceBestPracticeSearch가 true면 skipBestPracticeSearch 무시
+  // forceBestPracticeSearch가 설정되면 조건과 상관없이 검색
   const shouldSearch = options.forceBestPracticeSearch ||
     (!options.skipBestPracticeSearch && maxBestPractices > 0 && (recommendations.length > 0 || extractedKeywords.length > 0));
 
-  if (shouldSearch && maxBestPractices > 0) {
+  if (shouldSearch) {
     log('Searching best practice examples...', { forced: options.forceBestPracticeSearch });
 
     // 파일 역할 추론
@@ -1157,7 +1002,7 @@ async function createAutoContext(options: AutoRecommendOptions): Promise<AutoCon
     else if (options.filePath.includes('composables/')) inferredRole = 'composable';
     else if (options.filePath.includes('stores/')) inferredRole = 'store';
 
-    // 중요 차원 추론 (사용자 정의 키워드 포함)
+    // 중요 차원 추론 (사용자 정의 키워드 지원)
     const importantDimensions = inferImportantDimensions(
       options.description,
       extractedKeywords,
@@ -1165,16 +1010,15 @@ async function createAutoContext(options: AutoRecommendOptions): Promise<AutoCon
     );
     log('Important dimensions', { dimensions: importantDimensions });
 
-    // 다차원 검색 (캐싱 + 동적 임계값 + 다중 차원 기록 + 선택 이유)
+    // 다차원 검색 (캐싱 + 동적 임계값 + 차원별 설정 + 설명)
     const bestPracticeResult = await searchBestPracticeExamples(
       importantDimensions,
       inferredRole,
       maxBestPractices,
       {
         minScoreThreshold: options.minScoreThreshold ?? 75,
-        minScoreThresholdFloor: options.minScoreThresholdFloor ?? 50,
-        enableDynamicThreshold: options.enableDynamicThreshold ?? true,
-        includeSelectionReasons: options.includeSelectionReasons ?? true
+        minScoreFloor: options.minScoreFloor ?? 50,
+        enableDynamicThreshold: options.enableDynamicThreshold ?? true
       }
     );
 
@@ -1190,7 +1034,7 @@ async function createAutoContext(options: AutoRecommendOptions): Promise<AutoCon
       excellentIn: bestPracticeExamples.map(e => e.excellentIn),
       metadata: searchMetadata
     });
-  } else if (options.skipBestPracticeSearch && !options.forceBestPracticeSearch) {
+  } else if (options.skipBestPracticeSearch) {
     log('Best practice search skipped by user');
   } else if (maxBestPractices === 0) {
     log('Best practice search disabled (maxBestPractices=0)');
@@ -1210,6 +1054,8 @@ async function createAutoContext(options: AutoRecommendOptions): Promise<AutoCon
 // ============= 요청 처리 =============
 
 rl.on('line', async (line: string) => {
+  if (!line.trim()) return;
+
   let request: JsonRpcRequest;
 
   // JSON 파싱 시도 - 상세한 오류 메시지 제공
@@ -1233,35 +1079,6 @@ rl.on('line', async (line: string) => {
           // 민감 데이터 마스킹된 미리보기
           preview: safePreview(line, MAX_LOG_PREVIEW_LENGTH)
         }
-      }
-    });
-    return;
-  }
-
-  // JSON-RPC 요청 유효성 검증
-  if (!request.jsonrpc || request.jsonrpc !== '2.0') {
-    log('Invalid JSON-RPC version', { received: request.jsonrpc });
-    sendResponse({
-      jsonrpc: '2.0',
-      id: request.id || null,
-      error: {
-        code: -32600,
-        message: 'Invalid Request: jsonrpc must be "2.0"',
-        data: { received: request.jsonrpc }
-      }
-    });
-    return;
-  }
-
-  if (!request.method || typeof request.method !== 'string') {
-    log('Invalid method', { received: request.method });
-    sendResponse({
-      jsonrpc: '2.0',
-      id: request.id || null,
-      error: {
-        code: -32600,
-        message: 'Invalid Request: method must be a string',
-        data: { received: typeof request.method }
       }
     });
     return;
@@ -1386,21 +1203,21 @@ Sandbox APIs:
                         description: 'Skip multi-dimensional best practice search',
                         default: false
                       },
+                      forceBestPracticeSearch: {
+                        type: 'boolean',
+                        description: 'Force best practice search regardless of other conditions',
+                        default: false
+                      },
                       minScoreThreshold: {
+                        description: 'Minimum score threshold (number for all dimensions, object for dimension-specific)',
                         oneOf: [
                           { type: 'number' },
-                          {
-                            type: 'object',
-                            description: 'Per-dimension thresholds',
-                            additionalProperties: { type: 'number' }
-                          }
-                        ],
-                        description: 'Minimum score threshold (single number or per-dimension object, default: 75)',
-                        default: 75
+                          { type: 'object' }
+                        ]
                       },
-                      minScoreThresholdFloor: {
+                      minScoreFloor: {
                         type: 'number',
-                        description: 'Lower bound for dynamic threshold adjustment (default: 50)',
+                        description: 'Minimum floor for dynamic thresholds (default: 50)',
                         default: 50
                       },
                       enableDynamicThreshold: {
@@ -1410,21 +1227,7 @@ Sandbox APIs:
                       },
                       customKeywords: {
                         type: 'object',
-                        description: 'Custom keywords to merge with DIMENSION_KEYWORDS for domain-specific terms',
-                        additionalProperties: {
-                          type: 'array',
-                          items: { type: 'string' }
-                        }
-                      },
-                      forceBestPracticeSearch: {
-                        type: 'boolean',
-                        description: 'Force best practice search even when skipBestPracticeSearch conditions apply',
-                        default: false
-                      },
-                      includeSelectionReasons: {
-                        type: 'boolean',
-                        description: 'Include reasons why each file was selected (default: true)',
-                        default: true
+                        description: 'Custom domain-specific keywords per dimension (e.g., {apiConnection: ["myapi", "customrpc"]})'
                       }
                     },
                     required: ['currentFile', 'filePath', 'description']
@@ -1450,60 +1253,6 @@ Sandbox APIs:
           hasAutoRecommend: !!execArgs.autoRecommend
         });
 
-        // 입력 검증
-        if (!execArgs.code || typeof execArgs.code !== 'string') {
-          sendResponse({
-            jsonrpc: '2.0',
-            id: request.id,
-            error: {
-              code: -32602,
-              message: 'Invalid params: code must be a non-empty string',
-              data: { received: typeof execArgs.code }
-            }
-          });
-          return;
-        }
-
-        if (execArgs.autoRecommend) {
-          const { currentFile, filePath, description } = execArgs.autoRecommend;
-          if (!currentFile || typeof currentFile !== 'string') {
-            sendResponse({
-              jsonrpc: '2.0',
-              id: request.id,
-              error: {
-                code: -32602,
-                message: 'Invalid params: autoRecommend.currentFile must be a non-empty string',
-                data: { received: typeof currentFile }
-              }
-            });
-            return;
-          }
-          if (!filePath || typeof filePath !== 'string') {
-            sendResponse({
-              jsonrpc: '2.0',
-              id: request.id,
-              error: {
-                code: -32602,
-                message: 'Invalid params: autoRecommend.filePath must be a non-empty string',
-                data: { received: typeof filePath }
-              }
-            });
-            return;
-          }
-          if (!description || typeof description !== 'string') {
-            sendResponse({
-              jsonrpc: '2.0',
-              id: request.id,
-              error: {
-                code: -32602,
-                message: 'Invalid params: autoRecommend.description must be a non-empty string',
-                data: { received: typeof description }
-              }
-            });
-            return;
-          }
-        }
-
         // 자동 컨텍스트 생성
         let autoContext: AutoContextResult = {
           recommendations: [],
@@ -1511,21 +1260,16 @@ Sandbox APIs:
           guides: '',
           projectContext: null,
           warnings: [],
-          bestPracticeExamples: []
+          bestPracticeExamples: [],
+          searchMetadata: null
         };
 
         if (execArgs.autoRecommend) {
           log('Auto-context enabled');
-          try {
-            autoContext = await createAutoContext(execArgs.autoRecommend);
-          } catch (contextError) {
-            const errorMsg = contextError instanceof Error ? contextError.message : String(contextError);
-            log('Auto-context creation failed', { error: errorMsg });
-            autoContext.warnings.push(`Auto-context creation failed: ${errorMsg}. Proceeding with empty context.`);
-          }
+          autoContext = await createAutoContext(execArgs.autoRecommend);
         }
 
-        // Context 주입
+        // Context 주입 (검색 메타데이터 포함)
         const wrappedCode = `
 // Auto-injected context with RAG recommendations, guides, project info, and best practices
 const context = {
@@ -1533,6 +1277,7 @@ const context = {
   hasRecommendations: ${autoContext.recommendations.length > 0},
   bestPracticeExamples: ${JSON.stringify(autoContext.bestPracticeExamples, null, 2)},
   hasBestPractices: ${autoContext.bestPracticeExamples.length > 0},
+  searchMetadata: ${JSON.stringify(autoContext.searchMetadata)},  // 검색 메타데이터 (차원, 임계값 등)
   guides: ${JSON.stringify(autoContext.guides)},
   hasGuides: ${autoContext.guides.length > 0},
   projectContext: ${JSON.stringify(autoContext.projectContext)},
@@ -1578,10 +1323,6 @@ ${execArgs.code}
           extractedKeywords: autoContext.extractedKeywords.length > 0
             ? autoContext.extractedKeywords
             : undefined,
-          // NEW: 검색 메타데이터 (임계값, 평균 점수 등)
-          searchMetadata: autoContext.searchMetadata || undefined,
-          // NEW: 캐시 통계
-          cacheStats: getCacheStats(),
           // 경고 메시지 포함
           warnings: autoContext.warnings.length > 0
             ? autoContext.warnings
@@ -1629,26 +1370,14 @@ ${execArgs.code}
 
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
-    const errorStack = error instanceof Error ? error.stack : undefined;
-
-    log('Request processing error', {
-      error: errorMessage,
-      stack: errorStack,
-      requestMethod: request.method,
-      requestId: request.id
-    });
 
     sendResponse({
       jsonrpc: '2.0',
-      id: request.id || null,
+      id: (error as any)?.id || null,
       error: {
         code: -32603,
         message: 'Internal error',
-        data: {
-          message: errorMessage,
-          method: request.method,
-          hint: 'Check server logs for more details'
-        }
+        data: errorMessage
       }
     });
   }
