@@ -44,6 +44,7 @@
     "scan:validate": "tsx scripts/scan/validate-bestcases.ts",
     "analyze:entities": "tsx scripts/test/analyze-entities.ts",
     "preflight": "tsx scripts/test/preflight-check.ts",
+    "test:live-search": "tsx scripts/test/test-live-embedding-search.ts",
     "ci:validate-docs": "tsx scripts/ci/validate-docs-links.ts",
     "test:guides": "tsx scripts/test/test-guides-integration.ts",
     "test:yaml": "tsx scripts/test/test-yaml-parser.ts",
