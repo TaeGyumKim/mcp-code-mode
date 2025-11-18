@@ -264,6 +264,10 @@ interface AutoRecommendOptions {
   minScoreFloor?: number;          // 동적 임계값 최소 하한선 (기본: 50)
   enableDynamicThreshold?: boolean; // 동적 임계값 활성화 (기본: true)
   customKeywords?: Partial<Record<keyof BestCaseScores, string[]>>;  // 사용자 정의 키워드 (차원별)
+  // NEW: 고급 설정 옵션
+  projectMarkers?: string[];       // 커스텀 프로젝트 루트 마커 (기본 마커에 추가)
+  dimensionFloors?: Partial<Record<keyof BestCaseScores, number>>;  // 차원별 하한선 (기본: minScoreFloor)
+  includeMetadata?: boolean;       // 검색 메타데이터와 선택 이유 포함 여부 (기본: false)
 }
 
 interface ExecuteParams {
@@ -530,8 +534,11 @@ async function loadGuidesForKeywords(
 /**
  * 파일 경로에서 프로젝트 루트 추론
  * 예: "/projects/my-app/pages/index.vue" → "/projects/my-app"
+ *
+ * @param filePath - 대상 파일 경로
+ * @param customMarkers - 추가 프로젝트 마커 (선택적)
  */
-function inferProjectRoot(filePath: string): string {
+function inferProjectRoot(filePath: string, customMarkers?: string[]): string {
   const defaultProjectsPath = process.env.PROJECTS_PATH || '/projects';
 
   // filePath가 절대 경로가 아니면 기본 경로 사용
@@ -539,35 +546,45 @@ function inferProjectRoot(filePath: string): string {
     return defaultProjectsPath;
   }
 
-  // 일반적인 프로젝트 마커 디렉토리들
-  const projectMarkers = ['pages', 'components', 'composables', 'stores', 'src', 'app', 'lib'];
+  // 기본 프로젝트 마커 디렉토리들
+  const defaultMarkers = ['pages', 'components', 'composables', 'stores', 'src', 'app', 'lib', 'packages', 'apps'];
+
+  // 커스텀 마커 병합 (중복 제거)
+  const projectMarkers = customMarkers
+    ? [...new Set([...defaultMarkers, ...customMarkers])]
+    : defaultMarkers;
 
   const parts = filePath.split('/').filter(Boolean);
 
   // 프로젝트 마커를 찾아서 그 이전까지가 프로젝트 루트
   for (let i = parts.length - 1; i >= 0; i--) {
     if (projectMarkers.includes(parts[i])) {
-      return '/' + parts.slice(0, i).join('/');
+      const root = '/' + parts.slice(0, i).join('/');
+      log('Project root inferred from marker', { marker: parts[i], root });
+      return root;
     }
   }
 
   // 마커를 찾지 못하면 파일의 상위 2단계를 프로젝트 루트로 간주
   // 예: /projects/my-app/file.vue → /projects/my-app
   if (parts.length >= 2) {
-    return '/' + parts.slice(0, Math.min(parts.length - 1, 2)).join('/');
+    const root = '/' + parts.slice(0, Math.min(parts.length - 1, 2)).join('/');
+    log('Project root inferred from path depth', { root });
+    return root;
   }
 
+  log('Project root fallback to default', { default: defaultProjectsPath });
   return defaultProjectsPath;
 }
 
-async function getProjectContext(filePath: string): Promise<{
+async function getProjectContext(filePath: string, customMarkers?: string[]): Promise<{
   context: any;
   warning?: string;
 }> {
   try {
-    // 개선: filePath에서 프로젝트 루트 추론
-    const projectPath = inferProjectRoot(filePath);
-    log('Inferred project root', { filePath, projectPath });
+    // 개선: filePath에서 프로젝트 루트 추론 (커스텀 마커 지원)
+    const projectPath = inferProjectRoot(filePath, customMarkers);
+    log('Inferred project root', { filePath, projectPath, customMarkers });
 
     const context = await extractProjectContext(projectPath);
 
@@ -707,6 +724,7 @@ async function searchBestPracticeExamples(
     minScoreThreshold?: number | Record<keyof BestCaseScores, number>;
     minScoreFloor?: number;
     enableDynamicThreshold?: boolean;
+    dimensionFloors?: Partial<Record<keyof BestCaseScores, number>>;  // 차원별 하한선
   } = {}
 ): Promise<{
   examples: any[];
@@ -719,8 +737,9 @@ async function searchBestPracticeExamples(
   };
 }> {
   const minThresholdInput = options.minScoreThreshold ?? 75;
-  const minFloor = options.minScoreFloor ?? 50;  // 하한선: 최소 50점
+  const minFloor = options.minScoreFloor ?? 50;  // 기본 하한선: 최소 50점
   const enableDynamic = options.enableDynamicThreshold ?? true;
+  const dimensionFloors = options.dimensionFloors || {};  // 차원별 하한선 (선택)
 
   // 차원별 임계값 구성
   const dimensionThresholds: Record<keyof BestCaseScores, number> = {
@@ -814,16 +833,20 @@ async function searchBestPracticeExamples(
         const avg = scores.reduce((a: number, b: number) => a + b, 0) / scores.length;
         avgScores[dimension] = avg;
 
-        // 평균이 임계값보다 낮으면 동적으로 조정 (하한선 적용)
+        // 차원별 하한선 적용 (우선순위: dimensionFloors > minFloor)
+        const dimFloor = dimensionFloors[dimension] ?? minFloor;
+
+        // 평균이 임계값보다 낮으면 동적으로 조정 (차원별 하한선 적용)
         if (avg < dimensionThresholds[dimension]) {
           const adjusted = Math.max(avg * 1.1, avg + 10);  // 평균 + 10% 또는 +10점
-          effectiveThresholds[dimension] = Math.max(adjusted, minFloor);  // 하한선 보장
+          effectiveThresholds[dimension] = Math.max(adjusted, dimFloor);  // 차원별 하한선 보장
           log('Dynamic threshold adjusted', {
             dimension,
             original: dimensionThresholds[dimension],
             adjusted: effectiveThresholds[dimension],
             average: avg,
-            floor: minFloor
+            floor: dimFloor,
+            customFloor: dimensionFloors[dimension] !== undefined
           });
         }
       }
@@ -1019,11 +1042,11 @@ async function createAutoContext(options: AutoRecommendOptions): Promise<AutoCon
     log('No searchable content (recommendations, keywords, or description), skipping guide loading');
   }
 
-  // 3. 프로젝트 컨텍스트 분석
+  // 3. 프로젝트 컨텍스트 분석 (커스텀 마커 지원)
   let projectContext = null;
   if (!options.skipProjectContext) {
-    log('Extracting project context...');
-    const contextResult = await getProjectContext(options.filePath);
+    log('Extracting project context...', { customMarkers: options.projectMarkers });
+    const contextResult = await getProjectContext(options.filePath, options.projectMarkers);
     projectContext = contextResult.context;
     if (contextResult.warning) {
       warnings.push(contextResult.warning);
@@ -1053,7 +1076,7 @@ async function createAutoContext(options: AutoRecommendOptions): Promise<AutoCon
       hasKeywords: extractedKeywords.length > 0
     });
 
-    // 파일 역할 추론 (개선: 더 정교한 패턴 매칭)
+    // 파일 역할 추론 (개선: 더 정교한 패턴 매칭 + projectContext 활용)
     let inferredRole: string | undefined;
     const normalizedPath = options.filePath.toLowerCase();
 
@@ -1063,11 +1086,27 @@ async function createAutoContext(options: AutoRecommendOptions): Promise<AutoCon
     else if (/\/composables\//.test(normalizedPath) || normalizedPath.endsWith('/composables')) inferredRole = 'composable';
     else if (/\/stores\//.test(normalizedPath) || normalizedPath.endsWith('/stores')) inferredRole = 'store';
     else if (/\/utils\/|\/helpers\/|\/lib\//.test(normalizedPath)) inferredRole = 'utility';
+    else if (/\/layouts\//.test(normalizedPath)) inferredRole = 'layout';
+    else if (/\/plugins\//.test(normalizedPath)) inferredRole = 'plugin';
+    else if (/\/middleware\//.test(normalizedPath)) inferredRole = 'middleware';
 
     // projectContext에서 역할 추론 (우선순위 높음)
     if (!inferredRole && projectContext) {
-      // TODO: metadata 분석 결과에서 fileRole 판단 로직 추가 가능
+      // projectContext의 패턴 정보 활용
+      const patterns = projectContext.patterns || {};
+      const relativePath = options.filePath.replace(/^\/projects\/[^/]+\//, '');
+
+      // API 타입에 따른 추론
+      if (patterns.pages && patterns.pages.some((p: string) => relativePath.includes(p))) {
+        inferredRole = 'page';
+      } else if (patterns.components && patterns.components.some((p: string) => relativePath.includes(p))) {
+        inferredRole = 'component';
+      } else if (projectContext.apiInfo?.type === 'grpc' && relativePath.includes('proto')) {
+        inferredRole = 'api-definition';
+      }
     }
+
+    log('Inferred file role', { role: inferredRole, path: options.filePath });
 
     // 중요 차원 추론 (사용자 정의 키워드 지원)
     const importantDimensions = inferImportantDimensions(
@@ -1077,7 +1116,7 @@ async function createAutoContext(options: AutoRecommendOptions): Promise<AutoCon
     );
     log('Important dimensions', { dimensions: importantDimensions });
 
-    // 다차원 검색 (캐싱 + 동적 임계값 + 차원별 설정 + 설명)
+    // 다차원 검색 (캐싱 + 동적 임계값 + 차원별 설정 + 하한선 + 설명)
     const bestPracticeResult = await searchBestPracticeExamples(
       importantDimensions,
       inferredRole,
@@ -1085,7 +1124,8 @@ async function createAutoContext(options: AutoRecommendOptions): Promise<AutoCon
       {
         minScoreThreshold: options.minScoreThreshold ?? 75,
         minScoreFloor: options.minScoreFloor ?? 50,
-        enableDynamicThreshold: options.enableDynamicThreshold ?? true
+        enableDynamicThreshold: options.enableDynamicThreshold ?? true,
+        dimensionFloors: options.dimensionFloors  // 차원별 하한선 전달
       }
     );
 
@@ -1107,14 +1147,22 @@ async function createAutoContext(options: AutoRecommendOptions): Promise<AutoCon
     log('Best practice search disabled (maxBestPractices=0)');
   }
 
+  // 메타데이터 노출 여부 결정
+  const includeMetadata = options.includeMetadata ?? false;
+
+  // 베스트 프랙티스 예제에서 상세 정보 선택적 노출
+  const finalBestPracticeExamples = includeMetadata
+    ? bestPracticeExamples  // excellentDetails 포함
+    : bestPracticeExamples.map(({ excellentDetails, ...rest }) => rest);  // 제거
+
   return {
     recommendations,
     extractedKeywords,
     guides: autoLoadedGuides,
     projectContext,
     warnings,
-    bestPracticeExamples,
-    searchMetadata
+    bestPracticeExamples: finalBestPracticeExamples,
+    ...(includeMetadata && { searchMetadata })  // 메타데이터 조건부 포함
   };
 }
 
