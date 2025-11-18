@@ -329,6 +329,8 @@ const result = await execute({
 | CACHE_TTL_MS | 300000 | 캐시 TTL (밀리초) |
 | CACHE_MAX_ENTRIES | 100 | 최대 캐시 엔트리 수 |
 | BESTCASE_STORAGE_PATH | /projects/.bestcases | BestCase 저장 경로 |
+| AUTO_MIGRATE_ON_STARTUP | true | 도커 시작 시 자동 스캔 실행 |
+| SCAN_COOLDOWN_HOURS | 24 | 스캔 쿨다운 시간 (시간) |
 | OLLAMA_URL | http://ollama:11434 | Ollama 서버 URL |
 | EMBEDDING_MODEL | nomic-embed-text | 임베딩 모델 |
 | PROJECTS_PATH | /projects | 프로젝트 경로 |
@@ -367,7 +369,33 @@ BestCase 저장소 변경을 자동으로 감지하여 캐시를 무효화합니
 **기능:**
 - **자동 디렉토리 생성**: 저장 경로가 없으면 자동 생성
 - **지수 백오프 재시도**: 오류 발생 시 최대 5회 재시도 (1s, 2s, 4s, 8s, 16s)
-- **디바운싱**: 연속적인 파일 변경을 1초 단위로 통합 처리
+- **디바운싱**: 연속적인 파일 변경을 3초 단위로 통합 처리 (도커 재시작 시 다중 이벤트 방지)
+
+### 자동 스캔 제어
+
+도커 재시작 시 불필요한 스캔을 방지하기 위한 쿨다운 기능이 추가되었습니다.
+
+```bash
+# 자동 스캔 활성화/비활성화
+export AUTO_MIGRATE_ON_STARTUP=true  # 기본값: true
+
+# 스캔 쿨다운 시간 (시간 단위)
+export SCAN_COOLDOWN_HOURS=24  # 기본값: 24시간
+```
+
+**동작 방식:**
+1. 도커 시작 시 체크포인트 파일(`.scan-checkpoint.json`) 확인
+2. 마지막 스캔이 `SCAN_COOLDOWN_HOURS` 이내면 스킵
+3. 쿨다운 기간이 지났거나 최초 스캔이면 실행
+
+**강제 스캔:**
+```bash
+# 쿨다운 무시하고 즉시 스캔
+export SCAN_COOLDOWN_HOURS=0
+
+# 또는 체크포인트 파일 삭제
+rm /projects/.bestcases/.scan-checkpoint.json
+```
 
 ```typescript
 // 감시자가 자동으로 시작됩니다

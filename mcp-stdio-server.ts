@@ -210,7 +210,7 @@ function setupBestCaseWatcher(): void {
           });
           clearCache();
           debounceTimer = null;
-        }, 1000);  // 1초 디바운스
+        }, 3000);  // 3초 디바운스 (도커 재시작 시 다중 이벤트 방지)
       }
     });
 
