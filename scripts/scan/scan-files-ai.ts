@@ -839,7 +839,8 @@ async function scanProjectWithAI(
 
       // 주기적으로 checkpoint 저장 (10개 파일마다)
       if (checkpoint && saved % 10 === 0) {
-        checkpoint.stats.totalSaved += 10;
+        // 중간 통계 업데이트 (최종 합산은 프로젝트 완료 시)
+        checkpoint.lastUpdatedAt = new Date().toISOString();
         await saveCheckpoint(checkpoint);
       }
     } catch (error) {
