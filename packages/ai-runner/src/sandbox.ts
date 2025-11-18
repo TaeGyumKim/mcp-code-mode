@@ -111,6 +111,13 @@ function preprocessCode(code: string): string {
   // const name: Type = value → const name = value
   code = code.replace(/(const|let|var)\s+(\w+)\s*:\s*[^=]+=/g, '$1 $2 =');
 
+  // TypeScript type alias 및 interface 선언 제거 (중첩 구조 지원)
+  // type Name = { ... }; → (제거)
+  // interface Name { ... } → (제거)
+  // 중첩된 중괄호를 처리하기 위해 간단한 카운팅 방식 사용
+  code = code.replace(/\btype\s+\w+\s*=\s*\{[\s\S]*?\}\s*;?/g, '');
+  code = code.replace(/\binterface\s+\w+\s*\{[\s\S]*?\}\s*;?/g, '');
+
   // 최상위 IIFE unwrap (중복 wrap 방지)
   // (async () => { ... })() 또는 (() => { ... })() 형식 감지
   const iifePattern = /^\s*\(\s*async\s*\(\s*\)\s*=>\s*\{([\s\S]*)\}\s*\)\s*\(\s*\)\s*;?\s*$/;
