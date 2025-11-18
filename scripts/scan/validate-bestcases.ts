@@ -94,70 +94,137 @@ function migrateLegacyBestCase(filePath: string): boolean {
 }
 
 /**
- * BestCase 파일 검증
+ * FileCase vs BestCase 구분
+ * FileCase: 개별 파일 분석 결과 (filePath, fileType, scores 직접 포함)
+ * BestCase: 프로젝트 우수 사례 모음 (category, patterns, files 배열 포함)
+ */
+function detectFileType(data: any): 'filecase' | 'bestcase' | 'unknown' {
+  // FileCase: filePath와 scores가 직접 있음
+  if (data.filePath && data.scores && typeof data.scores === 'object') {
+    return 'filecase';
+  }
+
+  // BestCase: category와 files 배열이 있음
+  if (data.category && Array.isArray(data.files)) {
+    return 'bestcase';
+  }
+
+  return 'unknown';
+}
+
+/**
+ * FileCase 파일 검증 (개별 파일 분석)
+ */
+function validateFileCase(data: any, filePath: string): BestCaseValidation {
+  // 1. 필수 필드 체크
+  if (!data.id || !data.projectName || !data.filePath) {
+    return { isValid: false, reason: 'FileCase 필수 필드 누락 (id, projectName, filePath)' };
+  }
+
+  // 2. scores 필드 체크
+  if (!data.scores || typeof data.scores !== 'object') {
+    return { isValid: false, reason: 'FileCase scores 필드 누락 또는 형식 오류' };
+  }
+
+  // 3. metadata 필드 체크
+  if (!data.metadata || !data.metadata.createdAt) {
+    return { isValid: false, reason: 'FileCase metadata 필드 누락' };
+  }
+
+  // 4. 날짜 체크 (보존 기간)
+  if (RETENTION_DAYS > 0 && data.metadata.createdAt) {
+    const createdDate = new Date(data.metadata.createdAt);
+    const now = new Date();
+    const diffDays = Math.floor((now.getTime() - createdDate.getTime()) / (1000 * 60 * 60 * 24));
+
+    if (diffDays > RETENTION_DAYS) {
+      return { isValid: false, reason: `${RETENTION_DAYS}일 이상 오래됨 (${diffDays}일)` };
+    }
+  }
+
+  return { isValid: true };
+}
+
+/**
+ * BestCase 파일 검증 (프로젝트 우수 사례)
+ */
+function validateBestCaseFormat(data: any, filePath: string): BestCaseValidation {
+  // 1. 필수 필드 체크
+  if (!data.id || !data.projectName || !data.category) {
+    return { isValid: false, reason: 'BestCase 필수 필드 누락 (id, projectName, category)' };
+  }
+
+  // 2. patterns 구조 체크 (새 버전)
+  if (!data.patterns) {
+    if (MIGRATE_OLD_FORMAT) {
+      return { isValid: true, needsMigration: true, reason: 'patterns 필드 누락 (마이그레이션 필요)' };
+    }
+    return { isValid: false, reason: 'patterns 필드 누락 (구 버전)' };
+  }
+
+  // 3. metadata 필드 체크 (새 버전)
+  if (!data.patterns.metadata) {
+    if (MIGRATE_OLD_FORMAT) {
+      return { isValid: true, needsMigration: true, reason: 'patterns.metadata 필드 누락 (마이그레이션 필요)' };
+    }
+    return { isValid: false, reason: 'patterns.metadata 필드 누락 (구 버전)' };
+  }
+
+  // 4. scores 필드 체크 (새 버전)
+  if (!data.patterns.scores) {
+    if (MIGRATE_OLD_FORMAT) {
+      return { isValid: true, needsMigration: true, reason: 'patterns.scores 필드 누락 (마이그레이션 필요)' };
+    }
+    return { isValid: false, reason: 'patterns.scores 필드 누락 (구 버전)' };
+  }
+
+  // 5. files 배열 체크
+  if (!Array.isArray(data.files)) {
+    return { isValid: false, reason: 'files 배열 누락' };
+  }
+
+  // 6. files에 metadata/score 있는지 체크 (새 버전)
+  if (data.files.length > 0) {
+    const firstFile = data.files[0];
+    if (!firstFile.metadata || typeof firstFile.score !== 'number') {
+      if (MIGRATE_OLD_FORMAT) {
+        return { isValid: true, needsMigration: true, reason: 'files에 metadata/score 필드 누락 (마이그레이션 필요)' };
+      }
+      return { isValid: false, reason: 'files에 metadata/score 필드 누락 (구 버전)' };
+    }
+  }
+
+  // 7. 날짜 체크 (보존 기간)
+  if (RETENTION_DAYS > 0 && data.createdAt) {
+    const createdDate = new Date(data.createdAt);
+    const now = new Date();
+    const diffDays = Math.floor((now.getTime() - createdDate.getTime()) / (1000 * 60 * 60 * 24));
+
+    if (diffDays > RETENTION_DAYS) {
+      return { isValid: false, reason: `${RETENTION_DAYS}일 이상 오래됨 (${diffDays}일)` };
+    }
+  }
+
+  return { isValid: true };
+}
+
+/**
+ * 파일 검증 (FileCase와 BestCase 자동 구분)
  */
 function validateBestCase(filePath: string): BestCaseValidation {
   try {
     const content = fs.readFileSync(filePath, 'utf-8');
     const data = JSON.parse(content);
 
-    // 1. 필수 필드 체크
-    if (!data.id || !data.projectName || !data.category) {
-      return { isValid: false, reason: '필수 필드 누락 (id, projectName, category)' };
+    const fileType = detectFileType(data);
+
+    if (fileType === 'filecase') {
+      return validateFileCase(data, filePath);
+    } else if (fileType === 'bestcase') {
+      return validateBestCaseFormat(data, filePath);
+    } else {
+      return { isValid: false, reason: '알 수 없는 파일 형식 (FileCase/BestCase 아님)' };
     }
-
-    // 2. patterns 구조 체크 (새 버전)
-    if (!data.patterns) {
-      if (MIGRATE_OLD_FORMAT) {
-        return { isValid: true, needsMigration: true, reason: 'patterns 필드 누락 (마이그레이션 필요)' };
-      }
-      return { isValid: false, reason: 'patterns 필드 누락 (구 버전)' };
-    }
-
-    // 3. metadata 필드 체크 (새 버전)
-    if (!data.patterns.metadata) {
-      if (MIGRATE_OLD_FORMAT) {
-        return { isValid: true, needsMigration: true, reason: 'patterns.metadata 필드 누락 (마이그레이션 필요)' };
-      }
-      return { isValid: false, reason: 'patterns.metadata 필드 누락 (구 버전)' };
-    }
-
-    // 4. scores 필드 체크 (새 버전)
-    if (!data.patterns.scores) {
-      if (MIGRATE_OLD_FORMAT) {
-        return { isValid: true, needsMigration: true, reason: 'patterns.scores 필드 누락 (마이그레이션 필요)' };
-      }
-      return { isValid: false, reason: 'patterns.scores 필드 누락 (구 버전)' };
-    }
-
-    // 5. files 배열 체크
-    if (!Array.isArray(data.files)) {
-      return { isValid: false, reason: 'files 배열 누락' };
-    }
-
-    // 6. files에 metadata/score 있는지 체크 (새 버전)
-    if (data.files.length > 0) {
-      const firstFile = data.files[0];
-      if (!firstFile.metadata || typeof firstFile.score !== 'number') {
-        if (MIGRATE_OLD_FORMAT) {
-          return { isValid: true, needsMigration: true, reason: 'files에 metadata/score 필드 누락 (마이그레이션 필요)' };
-        }
-        return { isValid: false, reason: 'files에 metadata/score 필드 누락 (구 버전)' };
-      }
-    }
-
-    // 7. 날짜 체크 (보존 기간)
-    if (RETENTION_DAYS > 0 && data.createdAt) {
-      const createdDate = new Date(data.createdAt);
-      const now = new Date();
-      const diffDays = Math.floor((now.getTime() - createdDate.getTime()) / (1000 * 60 * 60 * 24));
-
-      if (diffDays > RETENTION_DAYS) {
-        return { isValid: false, reason: `${RETENTION_DAYS}일 이상 오래됨 (${diffDays}일)` };
-      }
-    }
-
-    return { isValid: true };
   } catch (error) {
     return { isValid: false, reason: `JSON 파싱 에러: ${error instanceof Error ? error.message : String(error)}` };
   }
