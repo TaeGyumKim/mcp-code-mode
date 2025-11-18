@@ -574,9 +574,15 @@ async function loadGuidesForKeywords(
 function inferProjectRoot(filePath: string, customMarkers?: string[]): string {
   const defaultProjectsPath = process.env.PROJECTS_PATH || '/projects';
 
-  // filePath가 절대 경로가 아니면 기본 경로 사용
-  if (!filePath || !filePath.startsWith('/')) {
+  // filePath가 없으면 기본 경로 사용
+  if (!filePath) {
     return defaultProjectsPath;
+  }
+
+  // 상대 경로를 절대 경로로 변환 (PROJECTS_PATH 기준)
+  if (!filePath.startsWith('/')) {
+    filePath = `${defaultProjectsPath}/${filePath}`;
+    log('Converted relative path to absolute', { result: filePath });
   }
 
   // 기본 프로젝트 마커 디렉토리들
@@ -1029,7 +1035,14 @@ async function searchBestPracticeExamples(
 async function createAutoContext(options: AutoRecommendOptions): Promise<AutoContextResult> {
   const warnings: string[] = [];
 
-  // 0. 설정 파일 로드 및 옵션 병합
+  // 0-1. filePath 정규화 (상대 경로 → 절대 경로)
+  const defaultProjectsPath = process.env.PROJECTS_PATH || '/projects';
+  if (options.filePath && !options.filePath.startsWith('/')) {
+    options.filePath = `${defaultProjectsPath}/${options.filePath}`;
+    log('Normalized filePath to absolute', { filePath: options.filePath });
+  }
+
+  // 0-2. 설정 파일 로드 및 옵션 병합
   const projectRoot = inferProjectRoot(options.filePath, options.projectMarkers);
   const mcpConfig = loadMCPConfig(projectRoot);
 
@@ -1325,7 +1338,7 @@ Sandbox APIs:
                       },
                       filePath: {
                         type: 'string',
-                        description: 'File path (e.g., pages/users/index.vue)'
+                        description: 'File path - supports both absolute (/projects/app/pages/index.vue) and relative (pages/index.vue) paths'
                       },
                       description: {
                         type: 'string',
