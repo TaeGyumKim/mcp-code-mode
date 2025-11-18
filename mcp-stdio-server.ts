@@ -579,10 +579,18 @@ function inferProjectRoot(filePath: string, customMarkers?: string[]): string {
     return defaultProjectsPath;
   }
 
-  // 상대 경로를 절대 경로로 변환 (PROJECTS_PATH 기준)
+  // Windows/상대 경로를 Unix 절대 경로로 변환
   if (!filePath.startsWith('/')) {
-    filePath = `${defaultProjectsPath}/${filePath}`;
-    log('Converted relative path to absolute', { result: filePath });
+    // Windows 절대 경로 감지 (C:\, D:\, etc.)
+    if (/^[a-zA-Z]:\\/.test(filePath)) {
+      const withoutDrive = filePath.replace(/^[a-zA-Z]:/, '');
+      filePath = `${defaultProjectsPath}${withoutDrive.replace(/\\/g, '/')}`;
+      log('Converted Windows path to Unix', { result: filePath });
+    } else {
+      // 상대 경로 처리
+      filePath = `${defaultProjectsPath}/${filePath}`;
+      log('Converted relative path to absolute', { result: filePath });
+    }
   }
 
   // 기본 프로젝트 마커 디렉토리들
@@ -1035,11 +1043,21 @@ async function searchBestPracticeExamples(
 async function createAutoContext(options: AutoRecommendOptions): Promise<AutoContextResult> {
   const warnings: string[] = [];
 
-  // 0-1. filePath 정규화 (상대 경로 → 절대 경로)
+  // 0-1. filePath 정규화 (Windows/상대 경로 → Unix 절대 경로)
   const defaultProjectsPath = process.env.PROJECTS_PATH || '/projects';
   if (options.filePath && !options.filePath.startsWith('/')) {
-    options.filePath = `${defaultProjectsPath}/${options.filePath}`;
-    log('Normalized filePath to absolute', { filePath: options.filePath });
+    // Windows 절대 경로 감지 (C:\, D:\, etc.)
+    if (/^[a-zA-Z]:\\/.test(options.filePath)) {
+      // Windows 경로를 Unix 스타일로 변환
+      // D:\01.Work\01.Projects\... → /projects/01.Work/01.Projects/...
+      const withoutDrive = options.filePath.replace(/^[a-zA-Z]:/, '');
+      options.filePath = `${defaultProjectsPath}${withoutDrive.replace(/\\/g, '/')}`;
+      log('Normalized Windows path to Unix', { filePath: options.filePath });
+    } else {
+      // 상대 경로 처리
+      options.filePath = `${defaultProjectsPath}/${options.filePath}`;
+      log('Normalized relative path to absolute', { filePath: options.filePath });
+    }
   }
 
   // 0-2. 설정 파일 로드 및 옵션 병합
