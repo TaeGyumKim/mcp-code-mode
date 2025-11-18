@@ -18,6 +18,24 @@ export interface SandboxResult {
 }
 
 /**
+ * TypeScript 문법 감지 (템플릿 리터럴 및 문자열 내부 제외)
+ */
+function detectTypeScriptSyntax(code: string): boolean {
+  let cleanedCode = code
+    .replace(/`[^`]*`/gs, '""')  // 템플릿 리터럴 제거
+    .replace(/'[^']*'/g, '""')    // 작은따옴표 문자열 제거
+    .replace(/"[^"]*"/g, '""')    // 큰따옴표 문자열 제거
+    .replace(/\/\/.*$/gm, '')     // 주석 제거
+    .replace(/\/\*[\s\S]*?\*\//g, ''); // 블록 주석 제거
+
+  const hasInterface = /\binterface\s+\w+/.test(cleanedCode);
+  const hasTypeAlias = /\btype\s+\w+\s*=/.test(cleanedCode);
+  const hasTypeAnnotation = /:\s*\w+(\[\]|<[^>]+>)?\s*(=|;|\))/.test(cleanedCode);
+
+  return hasInterface || hasTypeAlias || hasTypeAnnotation;
+}
+
+/**
  * import/require 문 자동 제거 및 IIFE unwrap (전처리)
  *
  * vm2에서는 import/require가 차단되지만,
@@ -32,6 +50,16 @@ function preprocessCode(code: string): string {
 
   // 단독 import 문 제거 (예: import 'module')
   code = code.replace(/import\s+['"][^'"]+['"];?\s*/g, '');
+
+  // export default 처리 - 표현식을 IIFE로 변환
+  if (code.includes('export default')) {
+    code = code.replace(/export\s+default\s+/g, '');
+    code = code.replace(/;?\s*$/, '');
+    code = `(() => { return ${code}; })()`;
+  }
+
+  // export const/let/var/function/class 제거
+  code = code.replace(/export\s+(const|let|var|function|class)\s+/g, '$1 ');
 
   // require 문 제거 (const fs = require('fs').promises 등)
   code = code.replace(/const\s+\w+\s*=\s*require\s*\([^)]+\)(\.\w+)*\s*;?\s*/g, '');
@@ -387,8 +415,24 @@ export async function runInSandbox(code: string, timeoutMs: number = 30000): Pro
     // 일반적인 실수에 대한 친절한 가이드 제공
     let helpfulMessage = errorMessage;
 
+    // export/import 문법 사용 감지 (ES6 module)
+    if (errorMessage.includes('Unexpected token') && (code.includes('export ') || code.includes('import '))) {
+      helpfulMessage = `❌ ES6 module 문법(export/import)은 샌드박스에서 사용할 수 없습니다.
+
+원인: export default, export const, import 등을 사용했습니다.
+
+✅ 해결책: 단순 표현식이나 변수 할당을 사용하세요:
+   ❌ export default \`<template>...\`;
+   ✅ const result = \`<template>...\`;
+   ✅ result;  // 마지막 표현식이 반환됨
+
+   ❌ import { something } from 'module';
+   ✅ // sandbox API 사용: context, filesystem, bestcase, guides
+
+📚 샌드박스는 스크립트 모드로 실행되며, module 문법은 지원하지 않습니다.`;
+    }
     // JSX 문법 사용 감지
-    if (errorMessage.includes('Unexpected identifier') || errorMessage.includes('Unexpected token <')) {
+    else if (errorMessage.includes('Unexpected identifier') || errorMessage.includes('Unexpected token <')) {
       if (code.includes('<template>') || code.includes('<div') || code.includes('</')) {
         helpfulMessage = `❌ JSX/TSX 문법은 샌드박스에서 사용할 수 없습니다.
 
@@ -400,9 +444,8 @@ export async function runInSandbox(code: string, timeoutMs: number = 30000): Pro
 📚 샌드박스는 순수 JavaScript만 실행 가능합니다.`;
       }
     }
-
-    // interface/type 사용 감지
-    if (code.includes('interface ') || (code.includes('type ') && code.includes(' = {'))) {
+    // interface/type 사용 감지 (템플릿 리터럴 내부 제외)
+    else if (detectTypeScriptSyntax(code)) {
       helpfulMessage = `❌ TypeScript 문법(interface, type)은 샌드박스에서 사용할 수 없습니다.
 
 원인: interface나 type 선언을 사용했습니다.
@@ -413,6 +456,9 @@ export async function runInSandbox(code: string, timeoutMs: number = 30000): Pro
 
    ❌ const value: string = "text";
    ✅ const value = "text";
+
+💡 템플릿 리터럴 안의 TypeScript 코드는 문자열이므로 괜찮습니다:
+   ✅ const template = \`<script lang="ts" setup>\`;
 
 📚 최신 JavaScript(ES6+) 문법은 지원되지만, TypeScript 전용 문법은 불가합니다.`;
     }

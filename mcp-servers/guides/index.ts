@@ -1,4 +1,4 @@
-import { promises as fs } from 'fs';
+import { promises as fs, existsSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
@@ -27,8 +27,17 @@ export interface Guide extends GuideMetadata {
  * 지침 파일 디렉토리 스캔 및 메타데이터 추출
  */
 export async function indexGuides(): Promise<Guide[]> {
-  // Docker 컨테이너에서 실행 시: /app/mcp-servers/guides/dist/ → /app/.github/instructions/guides
-  const guidesDir = join(__dirname, '../../../.github/instructions/guides');
+  // 환경 변수 또는 기본 경로 사용
+  const appRoot = process.env.APP_ROOT || '/app';
+
+  // 1순위: APP_ROOT의 guides (전역 가이드)
+  // 2순위: 하드코딩된 상대 경로 (로컬 개발)
+  let guidesDir = join(appRoot, '.github/instructions/guides');
+
+  // 경로가 존재하지 않으면 상대 경로 시도
+  if (!existsSync(guidesDir)) {
+    guidesDir = join(__dirname, '../../../.github/instructions/guides');
+  }
 
   console.error('[indexGuides] Scanning directory:', guidesDir);
   
