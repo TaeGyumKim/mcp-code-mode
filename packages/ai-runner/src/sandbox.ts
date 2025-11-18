@@ -56,6 +56,24 @@ function detectJSXSyntax(code: string): boolean {
 }
 
 /**
+ * ES6 module 문법 감지 (템플릿 리터럴 및 문자열 내부 제외)
+ */
+function detectES6ModuleSyntax(code: string): boolean {
+  let cleanedCode = code
+    .replace(/`[^`]*`/gs, '""')  // 템플릿 리터럴 제거
+    .replace(/'[^']*'/g, '""')    // 작은따옴표 문자열 제거
+    .replace(/"[^"]*"/g, '""')    // 큰따옴표 문자열 제거
+    .replace(/\/\/.*$/gm, '')     // 주석 제거
+    .replace(/\/\*[\s\S]*?\*\//g, ''); // 블록 주석 제거
+
+  // ES6 module 키워드 감지
+  const hasImport = /^\s*import\s+/m.test(cleanedCode);  // 줄 시작에 import
+  const hasExport = /^\s*export\s+/m.test(cleanedCode);  // 줄 시작에 export
+
+  return hasImport || hasExport;
+}
+
+/**
  * import/require 문 자동 제거 및 IIFE unwrap (전처리)
  *
  * vm2에서는 import/require가 차단되지만,
@@ -435,8 +453,8 @@ export async function runInSandbox(code: string, timeoutMs: number = 30000): Pro
     // 일반적인 실수에 대한 친절한 가이드 제공
     let helpfulMessage = errorMessage;
 
-    // export/import 문법 사용 감지 (ES6 module)
-    if (errorMessage.includes('Unexpected token') && (code.includes('export ') || code.includes('import '))) {
+    // export/import 문법 사용 감지 (ES6 module) - 문자열 내부 제외
+    if (errorMessage.includes('Unexpected token') && detectES6ModuleSyntax(code)) {
       helpfulMessage = `❌ ES6 module 문법(export/import)은 샌드박스에서 사용할 수 없습니다.
 
 원인: export default, export const, import 등을 사용했습니다.
