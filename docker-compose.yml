@@ -54,11 +54,20 @@ services:
       - OLLAMA_HOST=${OLLAMA_HOST:-http://ollama:11434}
       - LLM_PROVIDER=${LLM_PROVIDER:-ollama}
       - LLM_MODEL=${LLM_MODEL:-qwen2.5-coder:7b}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-qwen2.5-coder:7b}
       - CONCURRENCY=${CONCURRENCY:-2}
       - DESIGN_SYSTEMS=${DESIGN_SYSTEMS:-openerd-nuxt3,element-plus,vuetify}
+      # RAG 임베딩 설정
+      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-nomic-embed-text}
+      - GENERATE_EMBEDDINGS=${GENERATE_EMBEDDINGS:-true}
       # BestCase 마이그레이션 설정 (시작 시 자동 체크)
       - AUTO_MIGRATE_ON_STARTUP=${AUTO_MIGRATE_ON_STARTUP:-true}
       - REANALYZE_OLD_VERSIONS=${REANALYZE_OLD_VERSIONS:-false}
+      # BestCase 검증 및 마이그레이션 설정
+      - BESTCASE_RETENTION_DAYS=${BESTCASE_RETENTION_DAYS:-90}
+      - SKIP_BESTCASE_VALIDATION=${SKIP_BESTCASE_VALIDATION:-false}
+      - BESTCASE_BACKUP_ON_VALIDATE=${BESTCASE_BACKUP_ON_VALIDATE:-false}
+      - BESTCASE_MIGRATE_OLD_FORMAT=${BESTCASE_MIGRATE_OLD_FORMAT:-true}
     deploy:
       resources:
         limits:
@@ -139,10 +148,18 @@ services:
       - LLM_MODEL=${LLM_MODEL:-qwen2.5-coder:7b}
       - CONCURRENCY=${CONCURRENCY:-2}
       - DESIGN_SYSTEMS=${DESIGN_SYSTEMS:-openerd-nuxt3,element-plus,vuetify}
+      # RAG 임베딩 설정
+      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-nomic-embed-text}
+      - GENERATE_EMBEDDINGS=${GENERATE_EMBEDDINGS:-true}
       # BestCase 마이그레이션 설정 (시작 시 자동 체크 및 재분석)
       - AUTO_MIGRATE_ON_STARTUP=${AUTO_MIGRATE_ON_STARTUP:-true}
       - REANALYZE_OLD_VERSIONS=${REANALYZE_OLD_VERSIONS:-true}
       - MAX_REANALYZE_COUNT=${MAX_REANALYZE_COUNT:-10}
+      # BestCase 검증 및 마이그레이션 설정
+      - BESTCASE_RETENTION_DAYS=${BESTCASE_RETENTION_DAYS:-90}
+      - SKIP_BESTCASE_VALIDATION=${SKIP_BESTCASE_VALIDATION:-false}
+      - BESTCASE_BACKUP_ON_VALIDATE=${BESTCASE_BACKUP_ON_VALIDATE:-false}
+      - BESTCASE_MIGRATE_OLD_FORMAT=${BESTCASE_MIGRATE_OLD_FORMAT:-true}
     deploy:
       resources:
         limits:
