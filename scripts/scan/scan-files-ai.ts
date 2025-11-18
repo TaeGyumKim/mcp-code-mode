@@ -218,10 +218,12 @@ async function retryFailedFiles(
       if (embeddingService) {
         try {
           const embeddingText = EmbeddingService.createFileCaseText(fileCase);
-          fileCase.embedding = await embeddingService.embed(embeddingText);
+          fileCase.embedding = await embeddingService.embedWithRetry(embeddingText, 2);
           checkpoint.stats.totalEmbeddings++;
-        } catch {
-          // 임베딩 실패는 무시
+        } catch (embError) {
+          // 임베딩 실패는 무시 (파일은 임베딩 없이 저장)
+          const errorMsg = embError instanceof Error ? embError.message : String(embError);
+          console.log(`   ⚠️ Embedding retry failed: ${errorMsg}`);
         }
       }
 
@@ -817,15 +819,16 @@ async function scanProjectWithAI(
         }
       };
 
-      // RAG용 임베딩 생성 (선택적)
+      // RAG용 임베딩 생성 (선택적, 재시도 포함)
       if (embeddingService) {
         try {
           const embeddingText = EmbeddingService.createFileCaseText(fileCase);
-          fileCase.embedding = await embeddingService.embed(embeddingText);
+          fileCase.embedding = await embeddingService.embedWithRetry(embeddingText, 2);
           embeddings++;
         } catch (embError) {
-          // 임베딩 실패해도 파일은 저장
-          console.log(`   ⚠️ Embedding failed for ${file.relativePath}`);
+          // 임베딩 실패해도 파일은 저장 (임베딩 없이)
+          const errorMsg = embError instanceof Error ? embError.message : String(embError);
+          console.log(`   ⚠️ Embedding failed for ${file.relativePath}: ${errorMsg}`);
         }
       }
 
@@ -941,19 +944,33 @@ async function scanAllProjects() {
   // 임베딩 서비스 초기화 (RAG용)
   let embeddingService: EmbeddingService | null = null;
   if (GENERATE_EMBEDDINGS) {
+    console.log(`🔍 Initializing embedding service: ${EMBEDDING_MODEL}`);
     embeddingService = new EmbeddingService({
       ollamaUrl: OLLAMA_URL,
       model: EMBEDDING_MODEL
     });
 
+    // 1단계: 모델 존재 확인
     const embedHealthy = await embeddingService.healthCheck();
     if (!embedHealthy) {
-      console.log(`⚠️ Embedding model (${EMBEDDING_MODEL}) not available, skipping embeddings`);
-      console.log('   To enable: ollama pull nomic-embed-text');
+      console.log(`❌ Embedding model '${EMBEDDING_MODEL}' not found`);
+      console.log(`   To install: docker exec ollama-code-analyzer ollama pull ${EMBEDDING_MODEL}`);
       embeddingService = null;
     } else {
-      console.log(`✅ Embedding service OK (${EMBEDDING_MODEL})`);
+      // 2단계: 실제 임베딩 생성 테스트
+      console.log(`✅ Embedding model found, testing actual generation...`);
+      const verification = await embeddingService.verifyEmbedding();
+
+      if (!verification.ok) {
+        console.log(`❌ Embedding verification failed: ${verification.error}`);
+        console.log(`   Skipping embeddings for this scan`);
+        embeddingService = null;
+      } else {
+        console.log(`✅ Embedding service verified: ${verification.dimension}D vectors`);
+      }
     }
+  } else {
+    console.log('⏭️  Embedding generation disabled (GENERATE_EMBEDDINGS=false)');
   }
   console.log('');
 
