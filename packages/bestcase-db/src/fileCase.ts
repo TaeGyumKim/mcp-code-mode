@@ -514,32 +514,51 @@ export function inferFileType(filePath: string): string {
 export function inferFileRole(filePath: string): string {
   const lowerPath = filePath.toLowerCase();
 
-  if (lowerPath.includes('/pages/') || lowerPath.includes('\\pages\\')) {
+  // pages/ 감지 (앞에 슬래시 있거나, 경로 시작이거나)
+  if (lowerPath.includes('/pages/') || lowerPath.includes('\\pages\\') ||
+      lowerPath.startsWith('pages/') || lowerPath.startsWith('pages\\')) {
     return 'page';
   }
-  if (lowerPath.includes('/components/') || lowerPath.includes('\\components\\')) {
+  // components/ 감지
+  if (lowerPath.includes('/components/') || lowerPath.includes('\\components\\') ||
+      lowerPath.startsWith('components/') || lowerPath.startsWith('components\\')) {
     return 'component';
   }
-  if (lowerPath.includes('/composables/') || lowerPath.includes('\\composables\\')) {
+  // composables/ 감지
+  if (lowerPath.includes('/composables/') || lowerPath.includes('\\composables\\') ||
+      lowerPath.startsWith('composables/') || lowerPath.startsWith('composables\\')) {
     return 'composable';
   }
-  if (lowerPath.includes('/stores/') || lowerPath.includes('\\stores\\')) {
+  // stores/ 감지
+  if (lowerPath.includes('/stores/') || lowerPath.includes('\\stores\\') ||
+      lowerPath.startsWith('stores/') || lowerPath.startsWith('stores\\')) {
     return 'store';
   }
-  if (lowerPath.includes('/api/') || lowerPath.includes('\\api\\')) {
+  // api/ 감지
+  if (lowerPath.includes('/api/') || lowerPath.includes('\\api\\') ||
+      lowerPath.startsWith('api/') || lowerPath.startsWith('api\\')) {
     return 'api';
   }
+  // utils/ 또는 helpers/ 감지
   if (lowerPath.includes('/utils/') || lowerPath.includes('\\utils\\') ||
-      lowerPath.includes('/helpers/') || lowerPath.includes('\\helpers\\')) {
+      lowerPath.includes('/helpers/') || lowerPath.includes('\\helpers\\') ||
+      lowerPath.startsWith('utils/') || lowerPath.startsWith('utils\\') ||
+      lowerPath.startsWith('helpers/') || lowerPath.startsWith('helpers\\')) {
     return 'util';
   }
-  if (lowerPath.includes('/layouts/') || lowerPath.includes('\\layouts\\')) {
+  // layouts/ 감지
+  if (lowerPath.includes('/layouts/') || lowerPath.includes('\\layouts\\') ||
+      lowerPath.startsWith('layouts/') || lowerPath.startsWith('layouts\\')) {
     return 'layout';
   }
-  if (lowerPath.includes('/middleware/') || lowerPath.includes('\\middleware\\')) {
+  // middleware/ 감지
+  if (lowerPath.includes('/middleware/') || lowerPath.includes('\\middleware\\') ||
+      lowerPath.startsWith('middleware/') || lowerPath.startsWith('middleware\\')) {
     return 'middleware';
   }
-  if (lowerPath.includes('/plugins/') || lowerPath.includes('\\plugins\\')) {
+  // plugins/ 감지
+  if (lowerPath.includes('/plugins/') || lowerPath.includes('\\plugins\\') ||
+      lowerPath.startsWith('plugins/') || lowerPath.startsWith('plugins\\')) {
     return 'plugin';
   }
 
