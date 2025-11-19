@@ -42,7 +42,8 @@
       "Bash(yarn workspace mcp-scripts run build:*)",
       "Bash(xargs:*)",
       "Bash(docker cp:*)",
-      "Bash(docker restart:*)"
+      "Bash(docker restart:*)",
+      "Bash(yarn build:all:*)"
     ],
     "deny": [],
     "ask": []
