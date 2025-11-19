@@ -36,7 +36,11 @@
       "Bash(docker network rm:*)",
       "Bash(yarn workspace ai-runner run build:*)",
       "Bash(yarn build)",
-      "Bash(yarn build:root:*)"
+      "Bash(yarn build:root:*)",
+      "Bash(docker images:*)",
+      "Bash(yarn workspace bestcase-db run build:*)",
+      "Bash(yarn workspace mcp-scripts run build:*)",
+      "Bash(xargs:*)"
     ],
     "deny": [],
     "ask": []
