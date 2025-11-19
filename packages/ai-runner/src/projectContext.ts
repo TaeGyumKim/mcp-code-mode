@@ -88,8 +88,13 @@ export async function extractProjectContext(projectPath?: string): Promise<Proje
       ...packageJson.devDependencies
     };
 
-    // Detect API type
-    context.apiInfo = detectApiType(allDeps);
+    // Detect API type using dynamic configuration
+    const apiTypeResult = await detectApiTypeFromDeps(allDeps, basePath);
+    context.apiInfo = {
+      type: apiTypeResult.type,
+      packages: apiTypeResult.packages,
+      confidence: apiTypeResult.confidence
+    };
 
     // Detect design system
     context.designSystemInfo = detectDesignSystem(allDeps);
@@ -133,55 +138,9 @@ export async function extractProjectContext(projectPath?: string): Promise<Proje
 }
 
 /**
- * Detect API type from dependencies
+ * Note: detectApiType has been moved to llm-analyzer/src/apiTypeMapping.ts
+ * for better configurability and maintainability
  */
-function detectApiType(dependencies: Record<string, string>): ProjectContext['apiInfo'] {
-  const apiInfo: ProjectContext['apiInfo'] = {
-    type: 'unknown',
-    packages: [],
-    confidence: 'low'
-  };
-
-  const grpcPackages = ['@grpc/grpc-js', '@grpc/proto-loader'];
-  const openapiPackages = ['@openapi', 'swagger'];
-  const restPackages = ['axios', 'fetch', 'ky'];
-
-  let grpcCount = 0;
-  let openapiCount = 0;
-  let restCount = 0;
-
-  for (const dep of Object.keys(dependencies)) {
-    if (grpcPackages.some(p => dep.includes(p))) {
-      grpcCount++;
-      apiInfo.packages.push(dep);
-    }
-    if (openapiPackages.some(p => dep.includes(p))) {
-      openapiCount++;
-      apiInfo.packages.push(dep);
-    }
-    if (restPackages.includes(dep)) {
-      restCount++;
-      apiInfo.packages.push(dep);
-    }
-  }
-
-  // Determine type
-  if (grpcCount > 0 && openapiCount > 0) {
-    apiInfo.type = 'mixed';
-    apiInfo.confidence = 'high';
-  } else if (grpcCount > 0) {
-    apiInfo.type = 'grpc';
-    apiInfo.confidence = 'high';
-  } else if (openapiCount > 0) {
-    apiInfo.type = 'openapi';
-    apiInfo.confidence = 'high';
-  } else if (restCount > 0) {
-    apiInfo.type = 'rest';
-    apiInfo.confidence = 'medium';
-  }
-
-  return apiInfo;
-}
 
 /**
  * Detect design system from dependencies
