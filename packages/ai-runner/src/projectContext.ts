@@ -4,8 +4,24 @@
  * Automatically generates project information to be included in MCP execute tool responses
  */
 
-import { promises as fs } from 'fs';
+import { promises as fs, existsSync } from 'fs';
 import { join } from 'path';
+import { detectApiType as detectApiTypeFromDeps } from '../../llm-analyzer/src/apiTypeMapping.js';
+
+export interface LocalPackageInfo {
+  id: string;
+  type: string;
+  packageName: string;
+  analyzed: boolean;
+  designSystem?: {
+    componentPatterns: string[];  // Regex patterns as strings
+    components: Record<string, any>;
+  };
+  utilityLibrary?: {
+    functionPatterns: string[];  // Regex patterns as strings
+    functions: Record<string, any>;
+  };
+}
 
 export interface ProjectContext {
   projectPath?: string;
@@ -32,14 +48,10 @@ export interface ProjectContext {
     recommended?: string;
   };
 
-  // Local package information
+  // Local package information (NEW: 분석된 패키지 상세 정보 포함)
   localPackagesInfo: {
     hasConfig: boolean;
-    packages: Array<{
-      id: string;
-      type: string;
-      analyzed: boolean;
-    }>;
+    packages: LocalPackageInfo[];
   };
 
   // Recommended action plan
