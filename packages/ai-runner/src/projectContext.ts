@@ -292,3 +292,186 @@ function generateRecommendedPlan(context: ProjectContext): void {
   context.recommendedPlan.push('2. Check BestCase for similar projects');
   context.recommendedPlan.push('3. Load relevant guides based on API type and design system');
 }
+
+/**
+ * Extract imports and component usage from file content
+ *
+ * @param fileContent - File content to analyze
+ * @returns Detected imports and components
+ */
+export interface FileContextAnalysis {
+  imports: Array<{
+    package: string;
+    items: string[];
+    type: 'type' | 'value';
+  }>;
+  components: string[];
+  composables: string[];
+  apiCalls: string[];
+}
+
+export function analyzeFileContent(fileContent: string): FileContextAnalysis {
+  const analysis: FileContextAnalysis = {
+    imports: [],
+    components: [],
+    composables: [],
+    apiCalls: []
+  };
+
+  // Extract import statements
+  // Matches: import { foo, bar } from 'package'
+  //          import type { Foo } from 'package'
+  //          import foo from 'package'
+  const importRegex = /import\s+(type\s+)?\{?([^}]+)\}?\s+from\s+['"]([^'"]+)['"]/g;
+  let match;
+
+  while ((match = importRegex.exec(fileContent)) !== null) {
+    const isType = !!match[1];
+    const items = match[2].split(',').map(s => s.trim().replace(/^(type\s+)?/, ''));
+    const packageName = match[3];
+
+    analysis.imports.push({
+      package: packageName,
+      items,
+      type: isType ? 'type' : 'value'
+    });
+  }
+
+  // Extract components from template (Vue SFC)
+  // Matches: <CommonButton, <common-button, etc.
+  if (fileContent.includes('<template>')) {
+    const templateSection = fileContent.match(/<template>[\s\S]*?<\/template>/)?.[0] || '';
+    const componentRegex = /<([A-Z][a-zA-Z0-9]*)/g;
+
+    while ((match = componentRegex.exec(templateSection)) !== null) {
+      const componentName = match[1];
+      if (!analysis.components.includes(componentName)) {
+        analysis.components.push(componentName);
+      }
+    }
+  }
+
+  // Extract composables usage
+  // Matches: useRouter(), usePaging(), etc.
+  const composableRegex = /\b(use[A-Z][a-zA-Z0-9]*)\s*\(/g;
+  while ((match = composableRegex.exec(fileContent)) !== null) {
+    const composableName = match[1];
+    if (!analysis.composables.includes(composableName)) {
+      analysis.composables.push(composableName);
+    }
+  }
+
+  // Extract API call patterns
+  // Matches: useGrpcApi(), $fetch(), axios., api.
+  const apiPatterns = [
+    /\buseGrpcApi\s*\(/g,
+    /\buseOpenApi\s*\(/g,
+    /\$fetch\s*\(/g,
+    /axios\./g,
+    /\bapi\./g,
+    /grpc\./gi
+  ];
+
+  for (const pattern of apiPatterns) {
+    if (pattern.test(fileContent)) {
+      const apiType = pattern.source.includes('Grpc') || pattern.source.includes('grpc')
+        ? 'grpc'
+        : pattern.source.includes('OpenApi') || pattern.source.includes('fetch')
+        ? 'openapi'
+        : 'rest';
+
+      if (!analysis.apiCalls.includes(apiType)) {
+        analysis.apiCalls.push(apiType);
+      }
+    }
+  }
+
+  return analysis;
+}
+
+/**
+ * Enhance project context with file-level analysis
+ *
+ * @param context - Existing project context from package.json
+ * @param fileContent - Current file content to analyze
+ * @returns Enhanced context with file-based detections
+ */
+export function enhanceContextWithFile(context: ProjectContext, fileContent: string): ProjectContext {
+  const fileAnalysis = analyzeFileContent(fileContent);
+
+  // Enhance design system detection from imports
+  const designSystemPackages = ['openerd-nuxt3', '@openerd/nuxt3', 'element-plus', 'vuetify', 'quasar', 'primevue', 'ant-design-vue', 'naive-ui'];
+
+  for (const imp of fileAnalysis.imports) {
+    for (const dsPackage of designSystemPackages) {
+      if (imp.package.includes(dsPackage) || imp.package === dsPackage) {
+        const normalizedName = dsPackage.replace('@', '').replace('/', '-');
+        if (!context.designSystemInfo.detected.includes(normalizedName)) {
+          context.designSystemInfo.detected.push(normalizedName);
+          context.designSystemInfo.confidence = 'high';
+          context.designSystemInfo.recommended = normalizedName;
+        }
+      }
+    }
+  }
+
+  // Enhance design system detection from component usage
+  // Common prefixes: Common*, El*, Q*, Prime*, A*, N*
+  const componentPrefixes: Record<string, string> = {
+    'Common': 'openerd-nuxt3',
+    'El': 'element-plus',
+    'Q': 'quasar',
+    'Prime': 'primevue',
+    'A': 'ant-design-vue',
+    'N': 'naive-ui',
+    'V': 'vuetify'
+  };
+
+  for (const component of fileAnalysis.components) {
+    for (const [prefix, packageName] of Object.entries(componentPrefixes)) {
+      if (component.startsWith(prefix)) {
+        const normalizedName = packageName.replace('@', '').replace('/', '-');
+        if (!context.designSystemInfo.detected.includes(normalizedName)) {
+          context.designSystemInfo.detected.push(normalizedName);
+          context.designSystemInfo.confidence = component.startsWith('Common') ? 'high' : 'medium';
+          if (!context.designSystemInfo.recommended) {
+            context.designSystemInfo.recommended = normalizedName;
+          }
+        }
+      }
+    }
+  }
+
+  // Enhance API type detection from file analysis
+  if (fileAnalysis.apiCalls.length > 0) {
+    const primaryApiType = fileAnalysis.apiCalls[0];
+
+    if (context.apiInfo.type === 'unknown') {
+      context.apiInfo.type = primaryApiType as any;
+      context.apiInfo.confidence = 'medium';
+    } else if (context.apiInfo.type !== primaryApiType && fileAnalysis.apiCalls.includes(context.apiInfo.type)) {
+      context.apiInfo.type = 'mixed';
+      context.apiInfo.confidence = 'high';
+    }
+  }
+
+  // Enhance utility library detection from composables
+  const utilityComposables: Record<string, string> = {
+    'use': '@vueuse/core',  // general vueuse pattern
+    'useFetch': '@vueuse/core',
+    'useLocalStorage': '@vueuse/core'
+  };
+
+  for (const composable of fileAnalysis.composables) {
+    for (const [pattern, library] of Object.entries(utilityComposables)) {
+      if (composable.startsWith(pattern) && composable !== 'useRouter' && composable !== 'useRoute') {
+        if (!context.utilityLibraryInfo.detected.includes(library)) {
+          context.utilityLibraryInfo.detected.push(library);
+          context.utilityLibraryInfo.confidence = 'medium';
+        }
+      }
+    }
+  }
+
+  return context;
+}

@@ -624,7 +624,7 @@ function inferProjectRoot(filePath: string, customMarkers?: string[]): string {
   return defaultProjectsPath;
 }
 
-async function getProjectContext(filePath: string, customMarkers?: string[]): Promise<{
+async function getProjectContext(filePath: string, customMarkers?: string[], currentFile?: string): Promise<{
   context: any;
   warning?: string;
 }> {
@@ -633,7 +633,17 @@ async function getProjectContext(filePath: string, customMarkers?: string[]): Pr
     const projectPath = inferProjectRoot(filePath, customMarkers);
     log('Inferred project root', { filePath, projectPath, customMarkers });
 
-    const context = await extractProjectContext(projectPath);
+    let context = await extractProjectContext(projectPath);
+
+    // NEW: currentFile이 제공되면 파일 내용 분석을 통해 context 강화
+    if (currentFile) {
+      const { enhanceContextWithFile } = await import('./packages/ai-runner/dist/projectContext.js');
+      context = enhanceContextWithFile(context, currentFile);
+      log('Project context enhanced with file analysis', {
+        designSystem: context.designSystemInfo.detected,
+        apiType: context.apiInfo.type
+      });
+    }
 
     return { context };
   } catch (error) {
@@ -1121,11 +1131,15 @@ async function createAutoContext(options: AutoRecommendOptions): Promise<AutoCon
     log('No searchable content (recommendations, keywords, or description), skipping guide loading');
   }
 
-  // 3. 프로젝트 컨텍스트 분석 (커스텀 마커 지원)
+  // 3. 프로젝트 컨텍스트 분석 (커스텀 마커 지원 + 파일 내용 분석)
   let projectContext = null;
   if (!mergedOptions.skipProjectContext) {
     log('Extracting project context...', { customMarkers: mergedOptions.projectMarkers });
-    const contextResult = await getProjectContext(mergedOptions.filePath, mergedOptions.projectMarkers);
+    const contextResult = await getProjectContext(
+      mergedOptions.filePath,
+      mergedOptions.projectMarkers,
+      mergedOptions.currentFile  // NEW: 파일 내용 전달
+    );
     projectContext = contextResult.context;
     if (contextResult.warning) {
       warnings.push(contextResult.warning);
