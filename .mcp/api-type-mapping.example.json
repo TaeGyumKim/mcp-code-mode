@@ -1,0 +1,47 @@
+{
+  "grpc": {
+    "patterns": [
+      "@grpc/grpc-js",
+      "@grpc/proto-loader",
+      "*proto*",
+      "grpc",
+      "protobufjs"
+    ],
+    "priority": 10,
+    "confidence": "high"
+  },
+  "openapi": {
+    "patterns": [
+      "@openapi",
+      "openapi",
+      "swagger",
+      "swagger-ui",
+      "@nestjs/swagger"
+    ],
+    "priority": 8,
+    "confidence": "high"
+  },
+  "graphql": {
+    "patterns": [
+      "graphql",
+      "apollo",
+      "@apollo/client",
+      "apollo-server",
+      "@graphql-tools/*"
+    ],
+    "priority": 9,
+    "confidence": "high"
+  },
+  "rest": {
+    "patterns": [
+      "axios",
+      "ky",
+      "got",
+      "node-fetch",
+      "isomorphic-fetch",
+      "superagent"
+    ],
+    "priority": 5,
+    "confidence": "medium"
+  }
+}

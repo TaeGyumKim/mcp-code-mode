@@ -45,6 +45,7 @@ services:
       - "3000:3000"
     volumes:
       - ${HOST_PROJECTS_PATH}:/projects
+      - ./.mcp:/app/.mcp  # 로컬 패키지 설정 파일
     environment:
       - NODE_ENV=${NODE_ENV:-production}
       - HOST_PROJECTS_PATH=${HOST_PROJECTS_PATH}  # 경로 변환에 필요
