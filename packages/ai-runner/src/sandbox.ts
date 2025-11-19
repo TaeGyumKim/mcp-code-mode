@@ -18,33 +18,236 @@ export interface SandboxResult {
 }
 
 /**
+ * 문자열과 주석을 정확하게 제거하는 헬퍼 함수
+ *
+ * 이스케이프 문자와 중첩된 템플릿 리터럴을 올바르게 처리합니다.
+ */
+function removeStringsAndComments(code: string): string {
+  let result = '';
+  let i = 0;
+
+  while (i < code.length) {
+    const char = code[i];
+    const nextChar = code[i + 1];
+
+    // 1. 블록 주석 제거: /* ... */
+    if (char === '/' && nextChar === '*') {
+      i += 2;
+      while (i < code.length - 1) {
+        if (code[i] === '*' && code[i + 1] === '/') {
+          i += 2;
+          break;
+        }
+        i++;
+      }
+      result += ' '; // 공백으로 대체
+      continue;
+    }
+
+    // 2. 라인 주석 제거: // ...
+    if (char === '/' && nextChar === '/') {
+      while (i < code.length && code[i] !== '\n') {
+        i++;
+      }
+      result += '\n'; // 줄바꿈 유지
+      i++;
+      continue;
+    }
+
+    // 3. 정규식 리터럴 제거: /pattern/flags
+    // 정규식은 = ( [ , ; : ! & | ? + - * / % return new 등 뒤에 올 수 있음
+    if (char === '/' && /[=(\[,;:!&|?+\-*/%\s]/.test(code[i - 1] || ' ')) {
+      result += '""';
+      i++;
+      while (i < code.length) {
+        if (code[i] === '\\') {
+          i += 2; // 이스케이프 문자 건너뛰기
+          continue;
+        }
+        if (code[i] === '/') {
+          i++;
+          // flags (g, i, m 등) 건너뛰기
+          while (i < code.length && /[gimsuvy]/.test(code[i])) {
+            i++;
+          }
+          break;
+        }
+        i++;
+      }
+      continue;
+    }
+
+    // 4. 템플릿 리터럴 제거: `...`
+    if (char === '`') {
+      result += '""';
+      i++;
+      let templateDepth = 1;
+
+      while (i < code.length && templateDepth > 0) {
+        if (code[i] === '\\') {
+          i += 2; // 이스케이프 문자 건너뛰기
+          continue;
+        }
+
+        // 템플릿 표현식 시작: ${
+        if (code[i] === '$' && code[i + 1] === '{') {
+          i += 2;
+          let braceDepth = 1;
+
+          // 중괄호 균형 맞춰서 표현식 끝 찾기
+          while (i < code.length && braceDepth > 0) {
+            if (code[i] === '\\') {
+              i += 2;
+              continue;
+            }
+            if (code[i] === '{') braceDepth++;
+            if (code[i] === '}') braceDepth--;
+
+            // 표현식 내부의 문자열은 재귀적으로 처리하지 않고 단순 건너뛰기
+            if (code[i] === '"' || code[i] === "'" || code[i] === '`') {
+              const quote = code[i];
+              i++;
+              while (i < code.length) {
+                if (code[i] === '\\') {
+                  i += 2;
+                  continue;
+                }
+                if (code[i] === quote) {
+                  i++;
+                  break;
+                }
+                i++;
+              }
+              continue;
+            }
+
+            i++;
+          }
+          continue;
+        }
+
+        if (code[i] === '`') {
+          templateDepth--;
+          i++;
+          break;
+        }
+
+        i++;
+      }
+      continue;
+    }
+
+    // 5. 큰따옴표 문자열 제거: "..."
+    if (char === '"') {
+      result += '""';
+      i++;
+      while (i < code.length) {
+        if (code[i] === '\\') {
+          i += 2; // 이스케이프 문자 건너뛰기
+          continue;
+        }
+        if (code[i] === '"') {
+          i++;
+          break;
+        }
+        i++;
+      }
+      continue;
+    }
+
+    // 6. 작은따옴표 문자열 제거: '...'
+    if (char === "'") {
+      result += '""';
+      i++;
+      while (i < code.length) {
+        if (code[i] === '\\') {
+          i += 2; // 이스케이프 문자 건너뛰기
+          continue;
+        }
+        if (code[i] === "'") {
+          i++;
+          break;
+        }
+        i++;
+      }
+      continue;
+    }
+
+    // 7. 일반 문자 추가
+    result += char;
+    i++;
+  }
+
+  return result;
+}
+
+/**
  * TypeScript 문법 감지 (템플릿 리터럴 및 문자열 내부 제외)
  */
 function detectTypeScriptSyntax(code: string): boolean {
-  let cleanedCode = code
-    .replace(/`[^`]*`/gs, '""')  // 템플릿 리터럴 제거
-    .replace(/'[^']*'/g, '""')    // 작은따옴표 문자열 제거
-    .replace(/"[^"]*"/g, '""')    // 큰따옴표 문자열 제거
-    .replace(/\/\/.*$/gm, '')     // 주석 제거
-    .replace(/\/\*[\s\S]*?\*\//g, ''); // 블록 주석 제거
+  const cleanedCode = removeStringsAndComments(code);
 
+  // 1. interface 선언
   const hasInterface = /\binterface\s+\w+/.test(cleanedCode);
-  const hasTypeAlias = /\btype\s+\w+\s*=/.test(cleanedCode);
-  const hasTypeAnnotation = /:\s*\w+(\[\]|<[^>]+>)?\s*(=|;|\))/.test(cleanedCode);
 
-  return hasInterface || hasTypeAlias || hasTypeAnnotation;
+  // 2. type alias 선언
+  const hasTypeAlias = /\btype\s+\w+\s*=/.test(cleanedCode);
+
+  // 3. 변수 선언 타입 어노테이션: const/let/var name: Type
+  const hasVariableTypeAnnotation = /\b(const|let|var)\s+\w+\s*:\s*\w+/.test(cleanedCode);
+
+  // 4. 함수 파라미터 타입 어노테이션: (name: Type) 또는 (name?: Type)
+  const hasParameterTypeAnnotation = /\(\s*\w+\s*\??\s*:\s*\w+/.test(cleanedCode);
+
+  // 5. 함수 반환 타입: ): Type { 또는 ): Type =>
+  const hasFunctionReturnType = /\)\s*:\s*\w+\s*(\{|=>)/.test(cleanedCode);
+
+  // 6. as 타입 어설션: value as Type
+  const hasTypeAssertion = /\bas\s+\w+/.test(cleanedCode);
+
+  // 7. enum 선언: enum Name { ... }
+  const hasEnum = /\benum\s+\w+\s*\{/.test(cleanedCode);
+
+  // 8. 제네릭 꺾쇠괄호: Array<Type>, func<Type>()
+  const hasGeneric = /<\w+[\w\s,|&]*>/.test(cleanedCode);
+
+  // 9. namespace/module 선언: namespace Name { ... }
+  const hasNamespace = /\bnamespace\s+\w+\s*\{/.test(cleanedCode);
+
+  // 10. declare 선언: declare const/function/class/var
+  const hasDeclare = /\bdeclare\s+(const|let|var|function|class|namespace|module|enum|type|interface)/.test(cleanedCode);
+
+  // 11. readonly 접근 제어자
+  const hasReadonly = /\breadonly\s+\w+\s*:/.test(cleanedCode);
+
+  // 12. public/private/protected 접근 제어자
+  const hasAccessModifier = /\b(public|private|protected)\s+\w+\s*:/.test(cleanedCode);
+
+  // 13. Non-null assertion: value!
+  const hasNonNullAssertion = /\w+!\s*\./.test(cleanedCode);
+
+  return (
+    hasInterface ||
+    hasTypeAlias ||
+    hasVariableTypeAnnotation ||
+    hasParameterTypeAnnotation ||
+    hasFunctionReturnType ||
+    hasTypeAssertion ||
+    hasEnum ||
+    hasGeneric ||
+    hasNamespace ||
+    hasDeclare ||
+    hasReadonly ||
+    hasAccessModifier ||
+    hasNonNullAssertion
+  );
 }
 
 /**
  * JSX/TSX 문법 감지 (템플릿 리터럴 및 문자열 내부 제외)
  */
 function detectJSXSyntax(code: string): boolean {
-  let cleanedCode = code
-    .replace(/`[^`]*`/gs, '""')  // 템플릿 리터럴 제거
-    .replace(/'[^']*'/g, '""')    // 작은따옴표 문자열 제거
-    .replace(/"[^"]*"/g, '""')    // 큰따옴표 문자열 제거
-    .replace(/\/\/.*$/gm, '')     // 주석 제거
-    .replace(/\/\*[\s\S]*?\*\//g, ''); // 블록 주석 제거
+  const cleanedCode = removeStringsAndComments(code);
 
   // JSX 패턴: const variable = <tag> 형식
   const hasJSXAssignment = /=\s*<\w+/.test(cleanedCode);
@@ -59,12 +262,7 @@ function detectJSXSyntax(code: string): boolean {
  * ES6 module 문법 감지 (템플릿 리터럴 및 문자열 내부 제외)
  */
 function detectES6ModuleSyntax(code: string): boolean {
-  let cleanedCode = code
-    .replace(/`[^`]*`/gs, '""')  // 템플릿 리터럴 제거
-    .replace(/'[^']*'/g, '""')    // 작은따옴표 문자열 제거
-    .replace(/"[^"]*"/g, '""')    // 큰따옴표 문자열 제거
-    .replace(/\/\/.*$/gm, '')     // 주석 제거
-    .replace(/\/\*[\s\S]*?\*\//g, ''); // 블록 주석 제거
+  const cleanedCode = removeStringsAndComments(code);
 
   // ES6 module 키워드 감지
   const hasImport = /^\s*import\s+/m.test(cleanedCode);  // 줄 시작에 import
