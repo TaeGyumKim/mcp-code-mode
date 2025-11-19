@@ -1458,9 +1458,57 @@ Sandbox APIs:
           searchMetadata: null
         };
 
-        if (execArgs.autoRecommend) {
+        // autoRecommend 자동 활성화: 항상 켜져 있음 (비용 절감 및 최대 활용)
+        let shouldAutoRecommend = !!execArgs.autoRecommend;
+        let autoRecommendOptions = execArgs.autoRecommend;
+
+        if (!shouldAutoRecommend) {
+          // 코드에서 프로젝트 파일 경로 자동 감지 시도
+          const projectsPath = process.env.PROJECTS_PATH || defaultProjectsPath;
+
+          // Windows 절대 경로: C:\path\to\file.vue 또는 D:\path\to\file.ts
+          const windowsAbsPattern = /['"`]([a-zA-Z]:[\\/][^'"`]+\.(?:vue|ts|js|tsx|jsx|json|css|scss))['"`]/;
+
+          // Unix 절대 경로: /path/to/file.vue 또는 /projects/path/to/file.ts
+          const unixAbsPattern = /['"`](\/[^'"`]+\.(?:vue|ts|js|tsx|jsx|json|css|scss))['"`]/;
+
+          let detectedPath: string | undefined = undefined;
+
+          // Windows 절대 경로 시도
+          const windowsMatch = execArgs.code.match(windowsAbsPattern);
+          if (windowsMatch) {
+            detectedPath = windowsMatch[1];
+            log('Auto-detected Windows file path', { filePath: detectedPath });
+          }
+
+          // Unix 절대 경로 시도 (프로젝트 경로 내부인지 확인)
+          if (!detectedPath) {
+            const unixMatch = execArgs.code.match(unixAbsPattern);
+            if (unixMatch && unixMatch[1].startsWith(projectsPath)) {
+              detectedPath = unixMatch[1];
+              log('Auto-detected Unix file path', { filePath: detectedPath });
+            }
+          }
+
+          // 파일 경로 유무와 상관없이 항상 autoRecommend 활성화
+          // 경로가 없으면 키워드 기반 검색만 수행
+          autoRecommendOptions = {
+            filePath: detectedPath, // undefined면 키워드 기반 검색
+            keywords: [], // createAutoContext에서 코드 내용 분석해서 자동 추출
+            ...mcpConfig?.autoRecommendDefaults
+          };
+          shouldAutoRecommend = true;
+
+          if (detectedPath) {
+            log('AutoRecommend enabled with file path', { filePath: detectedPath });
+          } else {
+            log('AutoRecommend enabled with keyword-based search (no file path)');
+          }
+        }
+
+        if (shouldAutoRecommend && autoRecommendOptions) {
           log('Auto-context enabled');
-          autoContext = await createAutoContext(execArgs.autoRecommend);
+          autoContext = await createAutoContext(autoRecommendOptions);
         }
 
         // Context 주입 (검색 메타데이터 포함)

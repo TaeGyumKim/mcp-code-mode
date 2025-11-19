@@ -452,7 +452,7 @@ export async function autoRecommend(request: RecommendationRequest): Promise<Rec
  */
 export async function analyzeAndRecommend(input: {
   currentFile: string;
-  filePath: string;
+  filePath?: string;  // filePath는 선택적
   description?: string;
   ollamaConfig?: {
     url: string;
@@ -475,23 +475,39 @@ export async function analyzeAndRecommend(input: {
     if (todoText.includes('페이지네이션') || todoText.includes('pagination')) keywords.push('pagination');
   }
 
-  // 파일 경로에서 역할 추론
-  let fileRole = 'page';
-  if (input.filePath.includes('components/')) fileRole = 'component';
-  if (input.filePath.includes('composables/')) fileRole = 'composable';
-  if (input.filePath.includes('stores/')) fileRole = 'store';
+  // 코드 내용에서 추가 키워드 추출 (파일 경로가 없을 때 더욱 중요)
+  if (content.includes('filesystem.read')) keywords.push('file', 'io');
+  if (content.includes('filesystem.write')) keywords.push('file', 'io', 'write');
+  if (content.includes('fetch') || content.includes('axios')) keywords.push('api', 'http');
+  if (content.includes('computed') || content.includes('ref(')) keywords.push('vue', 'composition');
+  if (content.includes('store') || content.includes('pinia')) keywords.push('state', 'store');
+  if (content.includes('router') || content.includes('route')) keywords.push('routing', 'navigation');
+  if (content.includes('form') || content.includes('validate')) keywords.push('form', 'validation');
+  if (content.includes('table') || content.includes('grid')) keywords.push('table', 'list');
+  if (content.includes('modal') || content.includes('dialog')) keywords.push('modal', 'ui');
 
-  // 파일명에서 엔티티 추론
+  // 파일 경로에서 역할 추론 (경로가 있을 때만)
+  let fileRole = 'page';
+  if (input.filePath) {
+    if (input.filePath.includes('components/')) fileRole = 'component';
+    if (input.filePath.includes('composables/')) fileRole = 'composable';
+    if (input.filePath.includes('stores/')) fileRole = 'store';
+    if (input.filePath.includes('utils/') || input.filePath.includes('helpers/')) fileRole = 'utility';
+  }
+
+  // 파일명에서 엔티티 추론 (경로가 있을 때만)
   const entities: string[] = [];
-  const pathParts = input.filePath.split('/');
-  for (const part of pathParts) {
-    const cleaned = part.replace(/\.(vue|ts|tsx|js)$/, '');
-    if (cleaned && cleaned !== 'index' && cleaned.length > 2) {
-      // PascalCase로 변환
-      const entity = cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
-      // 프레임워크 디렉토리 및 베이스 컨테이너 제외
-      if (!['Pages', 'Components', 'Composables', 'Stores', 'Projects'].includes(entity)) {
-        entities.push(entity);
+  if (input.filePath) {
+    const pathParts = input.filePath.split('/');
+    for (const part of pathParts) {
+      const cleaned = part.replace(/\.(vue|ts|tsx|js)$/, '');
+      if (cleaned && cleaned !== 'index' && cleaned.length > 2) {
+        // PascalCase로 변환
+        const entity = cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
+        // 프레임워크 디렉토리 및 베이스 컨테이너 제외
+        if (!['Pages', 'Components', 'Composables', 'Stores', 'Projects'].includes(entity)) {
+          entities.push(entity);
+        }
       }
     }
   }
