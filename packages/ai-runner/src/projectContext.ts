@@ -120,23 +120,62 @@ export async function extractProjectContext(projectPath?: string): Promise<Proje
   }
 
   try {
-    // Check local packages configuration
-    const localPackagesPath = join(basePath, '.mcp/local-packages.json');
+    // Check local packages configuration (NEW: 전체 정보 로드)
+    // .mcp는 글로벌 위치에서 로드 (Docker: /app/.mcp, Local: 프로젝트 루트/.mcp)
+    const globalMcpPath = process.env.MCP_CONFIG_PATH || '/app/.mcp/local-packages.json';
+    const localPackagesPath = existsSync(globalMcpPath)
+      ? globalMcpPath
+      : join(basePath, '.mcp/local-packages.json');
+
+    console.error('[extractProjectContext] Loading local packages from:', localPackagesPath);
     const localPackagesContent = await fs.readFile(localPackagesPath, 'utf-8');
-    const localPackages = JSON.parse(localPackagesContent);
+    const localPackagesData = JSON.parse(localPackagesContent);
 
     context.localPackagesInfo = {
       hasConfig: true,
-      packages: localPackages.localPackages?.map((pkg: any) => ({
+      packages: localPackagesData.localPackages?.map((pkg: any) => ({
         id: pkg.id,
         type: pkg.type,
-        analyzed: pkg.analyzed
+        packageName: pkg.packageName,
+        analyzed: pkg.analyzed,
+        designSystem: pkg.designSystem ? {
+          componentPatterns: pkg.designSystem.componentPatterns || [],
+          components: pkg.designSystem.components || {}
+        } : undefined,
+        utilityLibrary: pkg.utilityLibrary ? {
+          functionPatterns: pkg.utilityLibrary.functionPatterns || [],
+          functions: pkg.utilityLibrary.functions || {}
+        } : undefined
       })) || []
     };
 
     const unanalyzed = context.localPackagesInfo.packages.filter(p => !p.analyzed);
     if (unanalyzed.length > 0) {
       context.recommendedPlan.push(`📦 ${unanalyzed.length} local packages need analysis`);
+    }
+
+    // Auto-detect design systems from local packages
+    for (const pkg of context.localPackagesInfo.packages) {
+      if (pkg.analyzed && pkg.designSystem) {
+        const pkgName = pkg.id.replace('@', '').replace('/', '-');
+        if (!context.designSystemInfo.detected.includes(pkgName)) {
+          context.designSystemInfo.detected.push(pkgName);
+          context.designSystemInfo.confidence = 'high';
+          if (!context.designSystemInfo.recommended) {
+            context.designSystemInfo.recommended = pkgName;
+          }
+        }
+      }
+      if (pkg.analyzed && pkg.utilityLibrary) {
+        const pkgName = pkg.id.replace('@', '').replace('/', '-');
+        if (!context.utilityLibraryInfo.detected.includes(pkgName)) {
+          context.utilityLibraryInfo.detected.push(pkgName);
+          context.utilityLibraryInfo.confidence = 'high';
+          if (!context.utilityLibraryInfo.recommended) {
+            context.utilityLibraryInfo.recommended = pkgName;
+          }
+        }
+      }
     }
 
   } catch (error) {
