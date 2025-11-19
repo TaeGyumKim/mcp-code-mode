@@ -107,16 +107,64 @@ function preprocessCode(code: string): string {
   // 단독 require 호출 제거
   code = code.replace(/require\s*\([^)]+\)\s*;?\s*/g, '');
 
-  // TypeScript 타입 annotation 제거 (간단한 패턴만)
-  // const name: Type = value → const name = value
+  // Node.js fs 모듈 동기 메서드 호출 제거 및 경고
+  // fs.readFileSync, fs.writeFileSync, fs.existsSync 등
+  code = code.replace(/\bfs\s*\.\s*(readFileSync|writeFileSync|existsSync|statSync|readdirSync|unlinkSync|mkdirSync|rmdirSync)\s*\([^)]*\)/g,
+    '(() => { throw new Error("❌ Node.js fs 동기 메서드는 사용할 수 없습니다. filesystem API를 사용하세요: filesystem.readFile({ path: ... })"); })()');
+
+  // fs.promises 비동기 메서드도 filesystem API 사용 권장
+  code = code.replace(/\bfs\s*\.\s*(readFile|writeFile|readdir|stat|unlink|mkdir|rmdir)\s*\(/g, 'filesystem.readFile(');
+
+  // TypeScript 타입 annotation 제거
+  // 1. 변수 선언: const name: Type = value → const name = value
   code = code.replace(/(const|let|var)\s+(\w+)\s*:\s*[^=]+=/g, '$1 $2 =');
 
-  // TypeScript type alias 및 interface 선언 제거 (중첩 구조 지원)
+  // 2. 함수 파라미터: (param: Type) → (param)
+  //    단일 파라미터
+  code = code.replace(/\(\s*(\w+)\s*:\s*[^)]+\)/g, '($1)');
+  //    여러 파라미터: (a: Type, b: Type) → (a, b)
+  code = code.replace(/(\w+)\s*:\s*[^,)]+/g, '$1');
+
+  // 3. Arrow function 반환 타입: (): Type => → () =>
+  code = code.replace(/\)\s*:\s*[^=]+=>/g, ') =>');
+
+  // 4. 함수 반환 타입: function name(): Type { → function name() {
+  code = code.replace(/function\s+(\w+)\s*\([^)]*\)\s*:\s*[^{]+\{/g, 'function $1() {');
+
+  // TypeScript type alias 및 interface 선언 제거
   // type Name = { ... }; → (제거)
   // interface Name { ... } → (제거)
-  // 중첩된 중괄호를 처리하기 위해 간단한 카운팅 방식 사용
-  code = code.replace(/\btype\s+\w+\s*=\s*\{[\s\S]*?\}\s*;?/g, '');
-  code = code.replace(/\binterface\s+\w+\s*\{[\s\S]*?\}\s*;?/g, '');
+  // 주의: import type 구문은 유지, standalone 선언만 제거
+
+  // 줄 단위로 처리하여 import type은 보호
+  const lines = code.split('\n');
+  const processedLines = lines.map(line => {
+    // import 문은 건드리지 않음
+    if (line.trim().startsWith('import')) {
+      return line;
+    }
+
+    // standalone type 선언 제거 (단, 같은 줄에서만)
+    // type Name = ... 형식
+    if (/^\s*type\s+\w+\s*=/.test(line)) {
+      return ''; // 전체 줄 제거
+    }
+
+    // standalone interface 선언 시작 감지
+    if (/^\s*interface\s+\w+/.test(line)) {
+      return ''; // 전체 줄 제거
+    }
+
+    return line;
+  });
+
+  code = processedLines.join('\n');
+
+  // 여러 줄에 걸친 type/interface 선언 제거 (더 보수적으로)
+  // 하지만 백틱 템플릿 내부는 보호하기 위해 주의깊게 처리
+  // 간단한 케이스만 처리: type Name = { ... } 단일 라인 또는 compact 형식
+  code = code.replace(/^\s*type\s+\w+\s*=\s*[^;]*;?\s*$/gm, '');
+  code = code.replace(/^\s*interface\s+\w+\s*\{[^}]*\}\s*$/gm, '');
 
   // 최상위 IIFE unwrap (중복 wrap 방지)
   // (async () => { ... })() 또는 (() => { ... })() 형식 감지
