@@ -40,7 +40,9 @@
       "Bash(docker images:*)",
       "Bash(yarn workspace bestcase-db run build:*)",
       "Bash(yarn workspace mcp-scripts run build:*)",
-      "Bash(xargs:*)"
+      "Bash(xargs:*)",
+      "Bash(docker cp:*)",
+      "Bash(docker restart:*)"
     ],
     "deny": [],
     "ask": []
