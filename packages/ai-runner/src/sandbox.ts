@@ -115,6 +115,65 @@ function preprocessCode(code: string): string {
   // fs.promises 비동기 메서드도 filesystem API 사용 권장
   code = code.replace(/\bfs\s*\.\s*(readFile|writeFile|readdir|stat|unlink|mkdir|rmdir)\s*\(/g, 'filesystem.readFile(');
 
+  // filesystem API 호출을 객체 형식으로 변환 (Node.js 스타일 → 객체 스타일)
+  // filesystem.readFile(path) → filesystem.readFile({ path: path })
+  // filesystem.readFile(path, options) → filesystem.readFile({ path: path })
+  code = code.replace(
+    /filesystem\.readFile\s*\(\s*([a-zA-Z_$][\w$]*)\s*(?:,\s*\{[^}]*\})?\s*\)/g,
+    'filesystem.readFile({ path: $1 })'
+  );
+
+  // filesystem.writeFile(path, content) → filesystem.writeFile({ path: path, content: content })
+  code = code.replace(
+    /filesystem\.writeFile\s*\(\s*([a-zA-Z_$][\w$]*)\s*,\s*([a-zA-Z_$][\w$]*)\s*(?:,\s*\{[^}]*\})?\s*\)/g,
+    'filesystem.writeFile({ path: $1, content: $2 })'
+  );
+
+  // filesystem.searchFiles(pattern) → filesystem.searchFiles({ pattern: pattern })
+  code = code.replace(
+    /filesystem\.searchFiles\s*\(\s*([a-zA-Z_$][\w$]*)\s*\)/g,
+    'filesystem.searchFiles({ pattern: $1 })'
+  );
+
+  // 상대 경로를 절대 경로로 변환하는 헬퍼 함수 주입
+  // context.filesystem 래퍼 생성
+  const filesystemWrapper = `
+// Filesystem API wrapper with automatic path resolution
+const _originalFilesystem = filesystem;
+const filesystem = {
+  async readFile(input) {
+    if (typeof input === 'string') {
+      // Node.js style: filesystem.readFile(path)
+      input = { path: input };
+    }
+    // 상대 경로를 절대 경로로 변환
+    if (input.path && !input.path.startsWith('/') && !input.path.match(/^[a-zA-Z]:/)) {
+      input.path = (process.env.PROJECTS_PATH || '/projects') + '/' + input.path;
+    }
+    return _originalFilesystem.readFile(input);
+  },
+  async writeFile(input) {
+    if (typeof input === 'string') {
+      throw new Error('filesystem.writeFile requires an object: { path, content }');
+    }
+    // 상대 경로를 절대 경로로 변환
+    if (input.path && !input.path.startsWith('/') && !input.path.match(/^[a-zA-Z]:/)) {
+      input.path = (process.env.PROJECTS_PATH || '/projects') + '/' + input.path;
+    }
+    return _originalFilesystem.writeFile(input);
+  },
+  async searchFiles(input) {
+    if (typeof input === 'string') {
+      input = { pattern: input };
+    }
+    return _originalFilesystem.searchFiles(input);
+  }
+};
+`;
+
+  // 래퍼를 코드 맨 앞에 삽입
+  code = filesystemWrapper + '\n' + code;
+
   // TypeScript 타입 annotation 제거
   // 1. 변수 선언: const name: Type = value → const name = value
   code = code.replace(/(const|let|var)\s+(\w+)\s*:\s*[^=]+=/g, '$1 $2 =');
