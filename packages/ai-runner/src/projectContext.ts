@@ -400,7 +400,23 @@ export function analyzeFileContent(fileContent: string): FileContextAnalysis {
 }
 
 /**
- * Enhance project context with file-level analysis
+ * Convert regex pattern string to RegExp
+ * Example: "/Common[A-Z]\\w+/g" -> /Common[A-Z]\w+/g
+ */
+function parseRegexPattern(patternStr: string): RegExp | null {
+  try {
+    const match = patternStr.match(/^\/(.+)\/([gimuy]*)$/);
+    if (match) {
+      return new RegExp(match[1], match[2]);
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Enhance project context with file-level analysis (DYNAMIC PATTERNS)
  *
  * @param context - Existing project context from package.json
  * @param fileContent - Current file content to analyze
@@ -409,50 +425,160 @@ export function analyzeFileContent(fileContent: string): FileContextAnalysis {
 export function enhanceContextWithFile(context: ProjectContext, fileContent: string): ProjectContext {
   const fileAnalysis = analyzeFileContent(fileContent);
 
-  // Enhance design system detection from imports
-  const designSystemPackages = ['openerd-nuxt3', '@openerd/nuxt3', 'element-plus', 'vuetify', 'quasar', 'primevue', 'ant-design-vue', 'naive-ui'];
+  console.error('[enhanceContextWithFile] File analysis:', {
+    componentsFound: fileAnalysis.components,
+    importsFound: fileAnalysis.imports.map(i => i.package),
+    localPackagesCount: context.localPackagesInfo.packages.length
+  });
 
+  // 1. Dynamic design system detection from LOCAL PACKAGES
+  for (const localPkg of context.localPackagesInfo.packages) {
+    if (!localPkg.analyzed || !localPkg.designSystem) continue;
+
+    const pkgId = localPkg.id.replace('@', '').replace('/', '-');
+    let matched = false;
+
+    console.error(`[enhanceContextWithFile] Checking package: ${localPkg.id}`, {
+      hasPatterns: !!localPkg.designSystem.componentPatterns,
+      patternsCount: localPkg.designSystem.componentPatterns?.length,
+      componentsCount: Object.keys(localPkg.designSystem.components || {}).length
+    });
+
+    // Check import statements
+    for (const imp of fileAnalysis.imports) {
+      // Match package name exactly or normalized name
+      if (imp.package === localPkg.packageName ||
+          imp.package.includes(localPkg.id) ||
+          imp.package === localPkg.id) {
+        matched = true;
+        break;
+      }
+    }
+
+    // Check component patterns
+    if (!matched && localPkg.designSystem.componentPatterns) {
+      for (const patternStr of localPkg.designSystem.componentPatterns) {
+        const pattern = parseRegexPattern(patternStr);
+        if (pattern) {
+          for (const component of fileAnalysis.components) {
+            if (pattern.test(component)) {
+              matched = true;
+              break;
+            }
+          }
+          if (matched) break;
+        }
+      }
+    }
+
+    // Check if component exists in package's component list
+    if (!matched && localPkg.designSystem.components) {
+      const componentNames = Object.keys(localPkg.designSystem.components);
+      for (const component of fileAnalysis.components) {
+        if (componentNames.includes(component)) {
+          matched = true;
+          break;
+        }
+      }
+    }
+
+    if (matched) {
+      console.error(`[enhanceContextWithFile] ✅ Matched package: ${pkgId}`);
+      if (!context.designSystemInfo.detected.includes(pkgId)) {
+        context.designSystemInfo.detected.push(pkgId);
+        context.designSystemInfo.confidence = 'high';
+        if (!context.designSystemInfo.recommended) {
+          context.designSystemInfo.recommended = pkgId;
+        }
+      }
+    } else {
+      console.error(`[enhanceContextWithFile] ❌ No match for package: ${pkgId}`);
+    }
+  }
+
+  // 2. Fallback: Known design systems (non-local packages)
+  const knownDesignSystems = ['element-plus', 'vuetify', 'quasar', 'primevue', 'ant-design-vue', 'naive-ui'];
   for (const imp of fileAnalysis.imports) {
-    for (const dsPackage of designSystemPackages) {
+    for (const dsPackage of knownDesignSystems) {
       if (imp.package.includes(dsPackage) || imp.package === dsPackage) {
         const normalizedName = dsPackage.replace('@', '').replace('/', '-');
         if (!context.designSystemInfo.detected.includes(normalizedName)) {
           context.designSystemInfo.detected.push(normalizedName);
-          context.designSystemInfo.confidence = 'high';
-          context.designSystemInfo.recommended = normalizedName;
+          context.designSystemInfo.confidence = 'medium';
         }
       }
     }
   }
 
-  // Enhance design system detection from component usage
-  // Common prefixes: Common*, El*, Q*, Prime*, A*, N*
-  const componentPrefixes: Record<string, string> = {
-    'Common': 'openerd-nuxt3',
-    'El': 'element-plus',
-    'Q': 'quasar',
-    'Prime': 'primevue',
-    'A': 'ant-design-vue',
-    'N': 'naive-ui',
-    'V': 'vuetify'
-  };
+  // 3. Dynamic utility library detection from LOCAL PACKAGES
+  for (const localPkg of context.localPackagesInfo.packages) {
+    if (!localPkg.analyzed || !localPkg.utilityLibrary) continue;
 
-  for (const component of fileAnalysis.components) {
-    for (const [prefix, packageName] of Object.entries(componentPrefixes)) {
-      if (component.startsWith(prefix)) {
-        const normalizedName = packageName.replace('@', '').replace('/', '-');
-        if (!context.designSystemInfo.detected.includes(normalizedName)) {
-          context.designSystemInfo.detected.push(normalizedName);
-          context.designSystemInfo.confidence = component.startsWith('Common') ? 'high' : 'medium';
-          if (!context.designSystemInfo.recommended) {
-            context.designSystemInfo.recommended = normalizedName;
+    const pkgId = localPkg.id.replace('@', '').replace('/', '-');
+    let matched = false;
+
+    // Check import statements
+    for (const imp of fileAnalysis.imports) {
+      if (imp.package === localPkg.packageName ||
+          imp.package.includes(localPkg.id) ||
+          imp.package === localPkg.id) {
+        matched = true;
+        break;
+      }
+    }
+
+    // Check function patterns
+    if (!matched && localPkg.utilityLibrary.functionPatterns) {
+      for (const patternStr of localPkg.utilityLibrary.functionPatterns) {
+        const pattern = parseRegexPattern(patternStr);
+        if (pattern) {
+          for (const composable of fileAnalysis.composables) {
+            if (pattern.test(composable)) {
+              matched = true;
+              break;
+            }
           }
+          if (matched) break;
+        }
+      }
+    }
+
+    // Check if composable exists in package's function list
+    if (!matched && localPkg.utilityLibrary.functions) {
+      const functionNames = Object.keys(localPkg.utilityLibrary.functions);
+      for (const composable of fileAnalysis.composables) {
+        if (functionNames.includes(composable)) {
+          matched = true;
+          break;
+        }
+      }
+    }
+
+    if (matched) {
+      if (!context.utilityLibraryInfo.detected.includes(pkgId)) {
+        context.utilityLibraryInfo.detected.push(pkgId);
+        context.utilityLibraryInfo.confidence = 'high';
+        if (!context.utilityLibraryInfo.recommended) {
+          context.utilityLibraryInfo.recommended = pkgId;
         }
       }
     }
   }
 
-  // Enhance API type detection from file analysis
+  // 4. Fallback: Known utility libraries (non-local packages)
+  const knownUtilities = ['@vueuse/core', 'vueuse', 'lodash', 'date-fns'];
+  for (const imp of fileAnalysis.imports) {
+    for (const utilPackage of knownUtilities) {
+      if (imp.package.includes(utilPackage)) {
+        if (!context.utilityLibraryInfo.detected.includes(utilPackage)) {
+          context.utilityLibraryInfo.detected.push(utilPackage);
+          context.utilityLibraryInfo.confidence = 'medium';
+        }
+      }
+    }
+  }
+
+  // 5. API type detection (unchanged)
   if (fileAnalysis.apiCalls.length > 0) {
     const primaryApiType = fileAnalysis.apiCalls[0];
 
@@ -462,24 +588,6 @@ export function enhanceContextWithFile(context: ProjectContext, fileContent: str
     } else if (context.apiInfo.type !== primaryApiType && fileAnalysis.apiCalls.includes(context.apiInfo.type)) {
       context.apiInfo.type = 'mixed';
       context.apiInfo.confidence = 'high';
-    }
-  }
-
-  // Enhance utility library detection from composables
-  const utilityComposables: Record<string, string> = {
-    'use': '@vueuse/core',  // general vueuse pattern
-    'useFetch': '@vueuse/core',
-    'useLocalStorage': '@vueuse/core'
-  };
-
-  for (const composable of fileAnalysis.composables) {
-    for (const [pattern, library] of Object.entries(utilityComposables)) {
-      if (composable.startsWith(pattern) && composable !== 'useRouter' && composable !== 'useRoute') {
-        if (!context.utilityLibraryInfo.detected.includes(library)) {
-          context.utilityLibraryInfo.detected.push(library);
-          context.utilityLibraryInfo.confidence = 'medium';
-        }
-      }
     }
   }
 
