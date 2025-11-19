@@ -14,7 +14,7 @@ async function analyzeEntities() {
   console.log('='.repeat(80));
 
   const storage = new FileCaseStorage(BESTCASE_STORAGE_PATH);
-  const allCases = await storage.loadAll();
+  const allCases = await storage.list();
 
   console.log(`\n총 파일 케이스: ${allCases.length}개\n`);
 
