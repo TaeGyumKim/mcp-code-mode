@@ -186,14 +186,19 @@ async function hybridSearch(
     console.error(`[autoRecommend] Role filter (${request.fileRole}): ${beforeRoleFilter} → ${candidates.length} candidates`);
   }
 
-  // 엔티티 필터
+  // 엔티티 필터 (선택적: entities가 비어있는 파일은 통과)
   if (request.entities && request.entities.length > 0) {
     const beforeFilter = candidates.length;
-    candidates = candidates.filter(fc =>
-      request.entities!.some(entity =>
+    candidates = candidates.filter(fc => {
+      // 파일에 entities가 없으면 필터를 스킵하고 통과시킴
+      if (!fc.analysis.entities || fc.analysis.entities.length === 0) {
+        return true;
+      }
+      // entities가 있는 파일은 매칭 확인
+      return request.entities!.some(entity =>
         fc.analysis.entities.some(e => e.toLowerCase().includes(entity.toLowerCase()))
-      )
-    );
+      );
+    });
     console.error(`[autoRecommend] Entity filter: ${beforeFilter} → ${candidates.length} candidates`);
     if (candidates.length === 0 && beforeFilter > 0) {
       // 디버깅: 첫 5개 파일의 엔티티 확인

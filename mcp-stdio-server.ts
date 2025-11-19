@@ -1442,10 +1442,6 @@ Sandbox APIs:
 
       if (name === 'execute') {
         const execArgs = args as ExecuteParams;
-        log('Executing code', {
-          codeLength: execArgs.code?.length,
-          hasAutoRecommend: !!execArgs.autoRecommend
-        });
 
         // 자동 컨텍스트 생성
         let autoContext: AutoContextResult = {
@@ -1493,6 +1489,7 @@ Sandbox APIs:
           // 파일 경로 유무와 상관없이 항상 autoRecommend 활성화
           // 경로가 없으면 키워드 기반 검색만 수행
           autoRecommendOptions = {
+            currentFile: execArgs.code,  // 💡 코드 내용 전달 (키워드 추출용)
             filePath: detectedPath, // undefined면 키워드 기반 검색
             keywords: [], // createAutoContext에서 코드 내용 분석해서 자동 추출
             ...mcpConfig?.autoRecommendDefaults
@@ -1500,15 +1497,27 @@ Sandbox APIs:
           shouldAutoRecommend = true;
 
           if (detectedPath) {
-            log('AutoRecommend enabled with file path', { filePath: detectedPath });
+            log('AutoRecommend enabled (always-on)', { mode: 'file-based', filePath: detectedPath });
           } else {
-            log('AutoRecommend enabled with keyword-based search (no file path)');
+            log('AutoRecommend enabled (always-on)', { mode: 'keyword-based', codeLength: execArgs.code?.length });
           }
         }
 
+        log('Executing code', {
+          codeLength: execArgs.code?.length,
+          autoRecommendEnabled: shouldAutoRecommend,  // 실제 활성화 여부
+          userProvidedAutoRecommend: !!execArgs.autoRecommend  // 사용자가 제공했는지 여부
+        });
+
         if (shouldAutoRecommend && autoRecommendOptions) {
-          log('Auto-context enabled');
+          log('Fetching auto-context (RAG + guides + project info)...');
           autoContext = await createAutoContext(autoRecommendOptions);
+          log('Auto-context fetched', {
+            recommendations: autoContext.recommendations.length,
+            guides: autoContext.guides.length,
+            keywords: autoContext.extractedKeywords.length,
+            warnings: autoContext.warnings.length
+          });
         }
 
         // Context 주입 (검색 메타데이터 포함)
