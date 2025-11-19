@@ -1536,7 +1536,39 @@ Sandbox APIs:
 
         // Context 주입 (검색 메타데이터 포함)
         const wrappedCode = `
-// Auto-injected context with RAG recommendations, guides, project info, and best practices
+// ============================================================
+// 🎯 AUTO-INJECTED CONTEXT - 코드 작성 시 반드시 참고하세요!
+// ============================================================
+//
+// 📚 사용 가능한 Context:
+//
+// 1. context.recommendations - RAG로 검색된 유사한 코드 예제 (${autoContext.recommendations.length}개)
+//    - 각 recommendation은 filePath, content, keywords, similarity 포함
+//    - **반드시 참고**하여 프로젝트의 코딩 스타일, 패턴, API 사용법을 따르세요
+//
+// 2. context.bestPracticeExamples - 우수 사례 코드 (${autoContext.bestPracticeExamples.length}개)
+//    - typeUsage, stateManagement 등 특정 차원에서 우수한 파일
+//    - **모범 사례**를 따라 코드 품질을 높이세요
+//
+// 3. context.guides - 프로젝트 가이드 문서
+//    - API 연결, 에러 처리, 디자인 시스템 사용법 등
+//    - **필수 지침**을 준수하세요
+//
+// 4. context.projectContext - 프로젝트 정보
+//    - API 타입, 디자인 시스템, 유틸리티 라이브러리
+//
+// ⚠️ 중요한 규칙:
+// - ❌ export default / export const / import 문법 사용 금지 (샌드박스 제약)
+// - ✅ 변수 할당 후 마지막 표현식으로 반환
+// - ✅ context.recommendations의 코드 패턴을 따르세요
+// - ✅ context.guides의 지침을 준수하세요
+//
+// 예시:
+//   const result = \`<template>...</template>\`;
+//   result;  // 마지막 표현식이 자동 반환됨
+//
+// ============================================================
+
 const context = {
   recommendations: ${JSON.stringify(autoContext.recommendations, null, 2)},
   hasRecommendations: ${autoContext.recommendations.length > 0},
@@ -1550,7 +1582,9 @@ const context = {
   warnings: ${JSON.stringify(autoContext.warnings)}
 };
 
-// User code starts here
+// ============================================================
+// 📝 User code starts here
+// ============================================================
 ${execArgs.code}
 `;
 

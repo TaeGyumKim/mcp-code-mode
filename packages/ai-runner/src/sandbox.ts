@@ -89,15 +89,28 @@ function preprocessCode(code: string): string {
   // 단독 import 문 제거 (예: import 'module')
   code = code.replace(/import\s+['"][^'"]+['"];?\s*/g, '');
 
-  // export default 처리 - 표현식을 IIFE로 변환
+  // export default 처리 - 여러 패턴 지원
+  // 1. export default async function main() { ... }
+  // 2. export default function main() { ... }
+  // 3. export default { ... }
+  // 4. export default "value"
   if (code.includes('export default')) {
+    // export default async function -> async function
+    code = code.replace(/export\s+default\s+async\s+function/g, 'async function');
+    // export default function -> function
+    code = code.replace(/export\s+default\s+function/g, 'function');
+    // export default class -> class
+    code = code.replace(/export\s+default\s+class/g, 'class');
+    // 나머지 export default (표현식, 객체 등) 제거
     code = code.replace(/export\s+default\s+/g, '');
-    code = code.replace(/;?\s*$/, '');
-    code = `(() => { return ${code}; })()`;
   }
 
+  // named exports 제거
+  // export { foo, bar } 또는 export {} (빈 객체도 매칭)
+  code = code.replace(/export\s*\{[^}]*\}\s*;?\s*/g, '');
+
   // export const/let/var/function/class 제거
-  code = code.replace(/export\s+(const|let|var|function|class)\s+/g, '$1 ');
+  code = code.replace(/export\s+(const|let|var|function|class|async\s+function)\s+/g, '$1 ');
 
   // require 문 제거 (const fs = require('fs').promises 등)
   code = code.replace(/const\s+\w+\s*=\s*require\s*\([^)]+\)(\.\w+)*\s*;?\s*/g, '');
