@@ -13,7 +13,7 @@ export interface ProjectContext {
 
   // API type information
   apiInfo: {
-    type: 'grpc' | 'openapi' | 'rest' | 'mixed' | 'unknown';
+    type: 'grpc' | 'openapi' | 'rest' | 'graphql' | 'mixed' | 'unknown';
     packages: string[];
     confidence: 'high' | 'medium' | 'low';
   };
