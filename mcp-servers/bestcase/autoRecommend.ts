@@ -45,7 +45,7 @@ interface RecommendationRequest {
   fileRole?: string;
 
   /**
-   * 최대 결과 수 (기본값: 5)
+   * 최대 결과 수 (기본값: 10)
    */
   limit?: number;
 
@@ -347,7 +347,7 @@ async function hybridSearch(
 export async function autoRecommend(request: RecommendationRequest): Promise<RecommendationResult> {
   console.error('[autoRecommend] Request:', JSON.stringify(request, null, 2));
 
-  const limit = request.limit || 5;
+  const limit = request.limit || 10;  // 기본값 5 → 10으로 증가
   const extractedKeywords = extractKeywordsFromRequest(request);
   const warnings: string[] = [];
 
@@ -522,7 +522,7 @@ export async function analyzeAndRecommend(input: {
     targetFunction: keywords[0],
     entities,
     fileRole,
-    limit: 5,
+    limit: 10,  // 기본값 5 → 10으로 증가
     ollamaConfig: input.ollamaConfig
   });
 }
