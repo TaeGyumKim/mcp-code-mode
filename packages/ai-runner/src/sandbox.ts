@@ -289,169 +289,50 @@ function preprocessCode(code: string): string {
   // 단독 import 문 제거 (예: import 'module')
   code = code.replace(/import\s+['"][^'"]+['"];?\s*/g, '');
 
-  // export default 처리 - 여러 패턴 지원
-  // 1. export default async function main() { ... }
-  // 2. export default function main() { ... }
-  // 3. export default { ... }
-  // 4. export default "value"
-  if (code.includes('export default')) {
-    // export default async function -> async function
-    code = code.replace(/export\s+default\s+async\s+function/g, 'async function');
-    // export default function -> function
-    code = code.replace(/export\s+default\s+function/g, 'function');
-    // export default class -> class
-    code = code.replace(/export\s+default\s+class/g, 'class');
-    // 나머지 export default (표현식, 객체 등) 제거
-    code = code.replace(/export\s+default\s+/g, '');
-  }
-
   // named exports 제거
-  // export { foo, bar } 또는 export {} (빈 객체도 매칭)
+  // export { foo, bar }
   code = code.replace(/export\s*\{[^}]*\}\s*;?\s*/g, '');
 
   // export const/let/var/function/class 제거
   code = code.replace(/export\s+(const|let|var|function|class|async\s+function)\s+/g, '$1 ');
 
-  // require 문 제거 (const fs = require('fs').promises 등)
-  code = code.replace(/const\s+\w+\s*=\s*require\s*\([^)]+\)(\.\w+)*\s*;?\s*/g, '');
-  code = code.replace(/let\s+\w+\s*=\s*require\s*\([^)]+\)(\.\w+)*\s*;?\s*/g, '');
-  code = code.replace(/var\s+\w+\s*=\s*require\s*\([^)]+\)(\.\w+)*\s*;?\s*/g, '');
+  // export default 처리 - 함수를 자동으로 IIFE로 변환하고 return으로 값 전달
+  if (code.includes('export default')) {
+    // 1. export default async function name(...) { ... } -> return await (async function name(...) { ... })()
+    code = code.replace(
+      /export\s+default\s+async\s+function(\s+\w+)?\s*\(([^)]*)\)\s*\{/g,
+      'return await (async function$1($2) {'
+    );
 
-  // 단독 require 호출 제거
-  code = code.replace(/require\s*\([^)]+\)\s*;?\s*/g, '');
+    // 2. export default function name(...) { ... } -> return (function name(...) { ... })()
+    code = code.replace(
+      /export\s+default\s+function(\s+\w+)?\s*\(([^)]*)\)\s*\{/g,
+      'return (function$1($2) {'
+    );
 
-  // Node.js fs 모듈 동기 메서드 호출 제거 및 경고
-  // fs.readFileSync, fs.writeFileSync, fs.existsSync 등
-  code = code.replace(/\bfs\s*\.\s*(readFileSync|writeFileSync|existsSync|statSync|readdirSync|unlinkSync|mkdirSync|rmdirSync)\s*\([^)]*\)/g,
-    '(() => { throw new Error("❌ Node.js fs 동기 메서드는 사용할 수 없습니다. filesystem API를 사용하세요: filesystem.readFile({ path: ... })"); })()');
-
-  // fs.promises 비동기 메서드도 filesystem API 사용 권장
-  code = code.replace(/\bfs\s*\.\s*(readFile|writeFile|readdir|stat|unlink|mkdir|rmdir)\s*\(/g, 'filesystem.readFile(');
-
-  // filesystem API 호출을 객체 형식으로 변환 (Node.js 스타일 → 객체 스타일)
-  // filesystem.readFile(path) → filesystem.readFile({ path: path })
-  // filesystem.readFile(path, options) → filesystem.readFile({ path: path })
-  code = code.replace(
-    /filesystem\.readFile\s*\(\s*([a-zA-Z_$][\w$]*)\s*(?:,\s*\{[^}]*\})?\s*\)/g,
-    'filesystem.readFile({ path: $1 })'
-  );
-
-  // filesystem.writeFile(path, content) → filesystem.writeFile({ path: path, content: content })
-  code = code.replace(
-    /filesystem\.writeFile\s*\(\s*([a-zA-Z_$][\w$]*)\s*,\s*([a-zA-Z_$][\w$]*)\s*(?:,\s*\{[^}]*\})?\s*\)/g,
-    'filesystem.writeFile({ path: $1, content: $2 })'
-  );
-
-  // filesystem.searchFiles(pattern) → filesystem.searchFiles({ pattern: pattern })
-  code = code.replace(
-    /filesystem\.searchFiles\s*\(\s*([a-zA-Z_$][\w$]*)\s*\)/g,
-    'filesystem.searchFiles({ pattern: $1 })'
-  );
-
-  // 상대 경로를 절대 경로로 변환하는 헬퍼 함수 주입
-  // context.filesystem 래퍼 생성
-  const filesystemWrapper = `
-// Filesystem API wrapper with automatic path resolution
-const _originalFilesystem = filesystem;
-const filesystem = {
-  async readFile(input) {
-    if (typeof input === 'string') {
-      // Node.js style: filesystem.readFile(path)
-      input = { path: input };
+    // IIFE 닫기: 마지막 } 뒤에 )() 추가
+    if (code.match(/^return\s+(?:await\s+)?\((?:async\s+)?function/)) {
+      code = code.trimEnd();
+      if (!code.endsWith(')()') && !code.endsWith(')();')) {
+        code += ')()';
+      }
     }
-    // 상대 경로를 절대 경로로 변환
-    if (input.path && !input.path.startsWith('/') && !input.path.match(/^[a-zA-Z]:/)) {
-      input.path = (process.env.PROJECTS_PATH || '/projects') + '/' + input.path;
-    }
-    return _originalFilesystem.readFile(input);
-  },
-  async writeFile(input) {
-    if (typeof input === 'string') {
-      throw new Error('filesystem.writeFile requires an object: { path, content }');
-    }
-    // 상대 경로를 절대 경로로 변환
-    if (input.path && !input.path.startsWith('/') && !input.path.match(/^[a-zA-Z]:/)) {
-      input.path = (process.env.PROJECTS_PATH || '/projects') + '/' + input.path;
-    }
-    return _originalFilesystem.writeFile(input);
-  },
-  async searchFiles(input) {
-    if (typeof input === 'string') {
-      input = { pattern: input };
-    }
-    return _originalFilesystem.searchFiles(input);
+
+    // 3. export default class -> class
+    code = code.replace(/export\s+default\s+class/g, 'class');
+
+    // 4. 나머지 export default (표현식, 객체 등) - return으로 변환
+    code = code.replace(/export\s+default\s+/g, 'return ');
   }
-};
-`;
 
-  // 래퍼를 코드 맨 앞에 삽입
-  code = filesystemWrapper + '\n' + code;
-
-  // TypeScript 타입 annotation 제거
-  // 1. 변수 선언: const name: Type = value → const name = value
-  code = code.replace(/(const|let|var)\s+(\w+)\s*:\s*[^=]+=/g, '$1 $2 =');
-
-  // 2. 함수 파라미터: (param: Type) → (param)
-  //    단일 파라미터
-  code = code.replace(/\(\s*(\w+)\s*:\s*[^)]+\)/g, '($1)');
-  //    여러 파라미터: (a: Type, b: Type) → (a, b)
-  code = code.replace(/(\w+)\s*:\s*[^,)]+/g, '$1');
-
-  // 3. Arrow function 반환 타입: (): Type => → () =>
-  code = code.replace(/\)\s*:\s*[^=]+=>/g, ') =>');
-
-  // 4. 함수 반환 타입: function name(): Type { → function name() {
-  code = code.replace(/function\s+(\w+)\s*\([^)]*\)\s*:\s*[^{]+\{/g, 'function $1() {');
-
-  // TypeScript type alias 및 interface 선언 제거
-  // type Name = { ... }; → (제거)
-  // interface Name { ... } → (제거)
-  // 주의: import type 구문은 유지, standalone 선언만 제거
-
-  // 줄 단위로 처리하여 import type은 보호
-  const lines = code.split('\n');
-  const processedLines = lines.map(line => {
-    // import 문은 건드리지 않음
-    if (line.trim().startsWith('import')) {
-      return line;
-    }
-
-    // standalone type 선언 제거 (단, 같은 줄에서만)
-    // type Name = ... 형식
-    if (/^\s*type\s+\w+\s*=/.test(line)) {
-      return ''; // 전체 줄 제거
-    }
-
-    // standalone interface 선언 시작 감지
-    if (/^\s*interface\s+\w+/.test(line)) {
-      return ''; // 전체 줄 제거
-    }
-
-    return line;
+  // 간단한 TypeScript 타입 어노테이션 제거 (export default 처리 이후)
+  // 함수 파라미터 타입: (param:Type) -> (param), (param: Type) -> (param)
+  // 모든 : Type 패턴을 찾아서 제거 (괄호 안에서만)
+  code = code.replace(/\(([^)]*)\)/g, (match, params) => {
+    // 파라미터 목록에서 타입 제거
+    const cleanedParams = params.replace(/(\w+)\s*:\s*[\w<>|&\[\]]+/g, '$1');
+    return `(${cleanedParams})`;
   });
-
-  code = processedLines.join('\n');
-
-  // 여러 줄에 걸친 type/interface 선언 제거 (더 보수적으로)
-  // 하지만 백틱 템플릿 내부는 보호하기 위해 주의깊게 처리
-  // 간단한 케이스만 처리: type Name = { ... } 단일 라인 또는 compact 형식
-  code = code.replace(/^\s*type\s+\w+\s*=\s*[^;]*;?\s*$/gm, '');
-  code = code.replace(/^\s*interface\s+\w+\s*\{[^}]*\}\s*$/gm, '');
-
-  // 최상위 IIFE unwrap (중복 wrap 방지)
-  // (async () => { ... })() 또는 (() => { ... })() 형식 감지
-  const iifePattern = /^\s*\(\s*async\s*\(\s*\)\s*=>\s*\{([\s\S]*)\}\s*\)\s*\(\s*\)\s*;?\s*$/;
-  const syncIifePattern = /^\s*\(\s*\(\s*\)\s*=>\s*\{([\s\S]*)\}\s*\)\s*\(\s*\)\s*;?\s*$/;
-
-  let match = code.match(iifePattern);
-  if (match) {
-    code = match[1].trim();
-  } else {
-    match = code.match(syncIifePattern);
-    if (match) {
-      code = match[1].trim();
-    }
-  }
 
   return code;
 }
@@ -472,10 +353,11 @@ const filesystem = {
  */
 export async function runInSandbox(code: string, timeoutMs: number = 30000): Promise<SandboxResult> {
   const logs: string[] = [];
-  
+
+  // ✅ import/export 문 자동 제거 및 코드 전처리
+  const preprocessedCode = preprocessCode(code);
+
   try {
-    // ✅ import 문 자동 제거 (전처리)
-    const preprocessedCode = preprocessCode(code);
 
     const vm = new VM({
       timeout: timeoutMs,
@@ -763,11 +645,13 @@ export async function runInSandbox(code: string, timeoutMs: number = 30000): Pro
       }
     });
 
-    const result = await vm.run(`
+    const finalCode = `
       (async () => {
         ${preprocessedCode}
       })()
-    `);
+    `;
+
+    const result = await vm.run(finalCode);
 
     return {
       ok: true,
