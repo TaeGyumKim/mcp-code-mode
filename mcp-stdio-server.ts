@@ -1472,9 +1472,12 @@ Sandbox APIs:
         let shouldAutoRecommend = !!execArgs.autoRecommend;
         let autoRecommendOptions = execArgs.autoRecommend;
 
+        // MCP 설정 로드 (autoRecommendDefaults 사용을 위해)
+        const projectsPath = process.env.PROJECTS_PATH || defaultProjectsPath;
+        const mcpConfig = loadMCPConfig(projectsPath);
+
         if (!shouldAutoRecommend) {
           // 코드에서 프로젝트 파일 경로 자동 감지 시도
-          const projectsPath = process.env.PROJECTS_PATH || defaultProjectsPath;
 
           // Windows 절대 경로: C:\path\to\file.vue 또는 D:\path\to\file.ts
           const windowsAbsPattern = /['"`]([a-zA-Z]:[\\/][^'"`]+\.(?:vue|ts|js|tsx|jsx|json|css|scss))['"`]/;
@@ -1535,6 +1538,23 @@ Sandbox APIs:
         }
 
         // Context 주입 (검색 메타데이터 포함)
+        // 안전한 직렬화: JSON.stringify를 한 번만 사용하여 구문 오류 방지
+        const contextObject = {
+          recommendations: autoContext.recommendations,
+          hasRecommendations: autoContext.recommendations.length > 0,
+          bestPracticeExamples: autoContext.bestPracticeExamples,
+          hasBestPractices: autoContext.bestPracticeExamples.length > 0,
+          searchMetadata: autoContext.searchMetadata,
+          guides: autoContext.guides,
+          hasGuides: autoContext.guides.length > 0,
+          projectContext: autoContext.projectContext,
+          extractedKeywords: autoContext.extractedKeywords,
+          warnings: autoContext.warnings
+        };
+
+        // JSON을 안전하게 문자열로 변환 (이스케이프 처리)
+        const contextJson = JSON.stringify(contextObject);
+
         const wrappedCode = `
 // ============================================================
 // 🎯 AUTO-INJECTED CONTEXT - 코드 작성 시 반드시 참고하세요!
@@ -1569,18 +1589,7 @@ Sandbox APIs:
 //
 // ============================================================
 
-const context = {
-  recommendations: ${JSON.stringify(autoContext.recommendations, null, 2)},
-  hasRecommendations: ${autoContext.recommendations.length > 0},
-  bestPracticeExamples: ${JSON.stringify(autoContext.bestPracticeExamples, null, 2)},
-  hasBestPractices: ${autoContext.bestPracticeExamples.length > 0},
-  searchMetadata: ${JSON.stringify(autoContext.searchMetadata)},  // 검색 메타데이터 (차원, 임계값 등)
-  guides: ${JSON.stringify(autoContext.guides)},
-  hasGuides: ${autoContext.guides.length > 0},
-  projectContext: ${JSON.stringify(autoContext.projectContext)},
-  extractedKeywords: ${JSON.stringify(autoContext.extractedKeywords)},
-  warnings: ${JSON.stringify(autoContext.warnings)}
-};
+const context = JSON.parse(${JSON.stringify(contextJson)});
 
 // ============================================================
 // 📝 User code starts here
@@ -1669,10 +1678,13 @@ ${execArgs.code}
 
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
+    const errorStack = error instanceof Error ? error.stack : undefined;
+
+    log('Error handling request', { error: errorMessage, stack: errorStack });
 
     sendResponse({
       jsonrpc: '2.0',
-      id: (error as any)?.id || null,
+      id: request?.id || null,
       error: {
         code: -32603,
         message: 'Internal error',

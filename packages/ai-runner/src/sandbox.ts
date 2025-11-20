@@ -664,11 +664,12 @@ export async function runInSandbox(code: string, timeoutMs: number = 30000): Pro
     // 일반적인 실수에 대한 친절한 가이드 제공
     let helpfulMessage = errorMessage;
 
-    // export/import 문법 사용 감지 (ES6 module) - 문자열 내부 제외
-    if (errorMessage.includes('Unexpected token') && detectES6ModuleSyntax(code)) {
-      helpfulMessage = `❌ ES6 module 문법(export/import)은 샌드박스에서 사용할 수 없습니다.
+    // export/import 문법 사용 감지 (ES6 module) - 전처리 후에도 남아있는지 확인
+    // 주의: 전처리를 거친 코드(preprocessedCode)를 검사합니다
+    if (errorMessage.includes('Unexpected token') && detectES6ModuleSyntax(preprocessedCode)) {
+      helpfulMessage = `❌ ES6 module 문법(export/import)을 완전히 제거하지 못했습니다.
 
-원인: export default, export const, import 등을 사용했습니다.
+원인: 복잡한 export/import 패턴이 자동 변환에서 누락되었을 수 있습니다.
 
 ✅ 해결책: 단순 표현식이나 변수 할당을 사용하세요:
    ❌ export default \`<template>...\`;
@@ -678,11 +679,14 @@ export async function runInSandbox(code: string, timeoutMs: number = 30000): Pro
    ❌ import { something } from 'module';
    ✅ // sandbox API 사용: context, filesystem, bestcase, guides
 
+💡 단순한 export default는 자동으로 처리됩니다:
+   export default async function run() {...}  →  자동 변환됨
+
 📚 샌드박스는 스크립트 모드로 실행되며, module 문법은 지원하지 않습니다.`;
     }
     // JSX 문법 사용 감지 (문자열 내부 제외)
     else if (errorMessage.includes('Unexpected identifier') || errorMessage.includes('Unexpected token <')) {
-      if (detectJSXSyntax(code)) {
+      if (detectJSXSyntax(preprocessedCode)) {
         helpfulMessage = `❌ JSX/TSX 문법은 샌드박스에서 사용할 수 없습니다.
 
 원인: const variable = <template>... 같은 JSX 문법을 사용했습니다.
@@ -694,7 +698,7 @@ export async function runInSandbox(code: string, timeoutMs: number = 30000): Pro
       }
     }
     // interface/type 사용 감지 (템플릿 리터럴 내부 제외)
-    else if (detectTypeScriptSyntax(code)) {
+    else if (detectTypeScriptSyntax(preprocessedCode)) {
       helpfulMessage = `❌ TypeScript 문법(interface, type)은 샌드박스에서 사용할 수 없습니다.
 
 원인: interface나 type 선언을 사용했습니다.
