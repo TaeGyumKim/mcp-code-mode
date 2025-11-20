@@ -137,8 +137,10 @@ onFileCaseSaved = clearCache;
 // 감시자 상태 관리
 let currentWatcher: fs.FSWatcher | null = null;
 let watcherRetryCount = 0;
-const MAX_WATCHER_RETRIES = 5;
-const WATCHER_RETRY_DELAYS = [1000, 2000, 4000, 8000, 16000];  // 지수 백오프
+const MAX_WATCHER_RETRIES = parseInt(process.env.MAX_WATCHER_RETRIES || '5');
+const WATCHER_RETRY_DELAYS = (process.env.WATCHER_RETRY_DELAYS || '1000,2000,4000,8000,16000')
+  .split(',')
+  .map(Number);  // 지수 백오프
 
 /**
  * BestCase 저장소 디렉토리를 감시하여 외부 변경 시 캐시 무효화
@@ -185,7 +187,7 @@ function setupBestCaseWatcher(): void {
           });
           clearCache();
           debounceTimer = null;
-        }, 3000);  // 3초 디바운스 (도커 재시작 시 다중 이벤트 방지)
+        }, parseInt(process.env.WATCHER_DEBOUNCE_MS || '3000'));  // 기본 3초 디바운스 (도커 재시작 시 다중 이벤트 방지)
       }
     });
 
@@ -1116,7 +1118,7 @@ async function createAutoContext(options: AutoRecommendOptions): Promise<AutoCon
       apiType,
       recommendations[0]?.projectName || 'unknown',
       {
-        maxGuides: mergedOptions.maxGuides || 5,
+        maxGuides: mergedOptions.maxGuides || 10,  // 기본값 5 → 10으로 증가
         maxLength: mergedOptions.maxGuideLength || 50000,
         mandatoryIds: mergedOptions.mandatoryGuideIds || ['00-bestcase-priority']
       }
@@ -1155,7 +1157,7 @@ async function createAutoContext(options: AutoRecommendOptions): Promise<AutoCon
   // 4. 다차원 점수 기반 우수 코드 검색
   let bestPracticeExamples: any[] = [];
   let searchMetadata: any = null;
-  const maxBestPractices = mergedOptions.maxBestPractices !== undefined ? mergedOptions.maxBestPractices : 3;
+  const maxBestPractices = mergedOptions.maxBestPractices !== undefined ? mergedOptions.maxBestPractices : 5;  // 기본값 3 → 5로 증가
 
   // 개선: skipBestPracticeSearch가 명시적으로 true일 때만 생략
   // 그렇지 않으면 설명과 키워드에 기반해 베스트 프랙티스 검색
@@ -1472,9 +1474,8 @@ Sandbox APIs:
         let shouldAutoRecommend = !!execArgs.autoRecommend;
         let autoRecommendOptions = execArgs.autoRecommend;
 
-        // MCP 설정 로드 (autoRecommendDefaults 사용을 위해)
-        const projectsPath = process.env.PROJECTS_PATH || defaultProjectsPath;
-        const mcpConfig = loadMCPConfig(projectsPath);
+        // 기본 프로젝트 경로
+        const defaultProjectsPath = process.env.PROJECTS_PATH || '/projects';
 
         if (!shouldAutoRecommend) {
           // 코드에서 프로젝트 파일 경로 자동 감지 시도
@@ -1497,11 +1498,19 @@ Sandbox APIs:
           // Unix 절대 경로 시도 (프로젝트 경로 내부인지 확인)
           if (!detectedPath) {
             const unixMatch = execArgs.code.match(unixAbsPattern);
-            if (unixMatch && unixMatch[1].startsWith(projectsPath)) {
+            if (unixMatch && unixMatch[1].startsWith(defaultProjectsPath)) {
               detectedPath = unixMatch[1];
               log('Auto-detected Unix file path', { filePath: detectedPath });
             }
           }
+
+          // ✅ MCP 설정 로드: detectedPath로부터 프로젝트 루트 추론
+          let projectRoot = defaultProjectsPath;
+          if (detectedPath) {
+            projectRoot = inferProjectRoot(detectedPath);
+            log('Inferred project root for MCP config', { detectedPath, projectRoot });
+          }
+          const mcpConfig = loadMCPConfig(projectRoot);
 
           // 파일 경로 유무와 상관없이 항상 autoRecommend 활성화
           // 경로가 없으면 키워드 기반 검색만 수행
@@ -1514,7 +1523,7 @@ Sandbox APIs:
           shouldAutoRecommend = true;
 
           if (detectedPath) {
-            log('AutoRecommend enabled (always-on)', { mode: 'file-based', filePath: detectedPath });
+            log('AutoRecommend enabled (always-on)', { mode: 'file-based', filePath: detectedPath, projectRoot });
           } else {
             log('AutoRecommend enabled (always-on)', { mode: 'keyword-based', codeLength: execArgs.code?.length });
           }
@@ -1562,26 +1571,38 @@ Sandbox APIs:
 //
 // 📚 사용 가능한 Context:
 //
-// 1. context.recommendations - RAG로 검색된 유사한 코드 예제 (${autoContext.recommendations.length}개)
-//    - 각 recommendation은 filePath, content, keywords, similarity 포함
-//    - **반드시 참고**하여 프로젝트의 코딩 스타일, 패턴, API 사용법을 따르세요
+// 1. context.recommendations - 유사한 코드 (${autoContext.recommendations.length}개) 📋
+//    목적: 현재 작업과 비슷한 파일 참고 (구조 복사용)
+//    포함: filePath, content, keywords, similarity
+//    활용: 전체 구조와 패턴을 참고하여 빠르게 시작
+//    예시: context.recommendations[0].content
 //
-// 2. context.bestPracticeExamples - 우수 사례 코드 (${autoContext.bestPracticeExamples.length}개)
-//    - typeUsage, stateManagement 등 특정 차원에서 우수한 파일
-//    - **모범 사례**를 따라 코드 품질을 높이세요
+// 2. context.bestPracticeExamples - 우수한 코드 (${autoContext.bestPracticeExamples.length}개) ⭐
+//    목적: 특정 차원에서 우수한 파일 참고 (품질 개선용)
+//    포함: filePath, content, excellentIn, topScore, scores
+//    활용: API 연결, 에러 처리 등 우수 패턴 학습
+//    예시: context.bestPracticeExamples[0].content
+//    차원: apiConnection, errorHandling, typeUsage, stateManagement 등
 //
-// 3. context.guides - 프로젝트 가이드 문서
-//    - API 연결, 에러 처리, 디자인 시스템 사용법 등
-//    - **필수 지침**을 준수하세요
+// 3. context.guides - 가이드 문서 📖
+//    목적: 프로젝트 지침 및 모범 사례
+//    포함: API 연결 방법, 에러 처리 패턴, 디자인 시스템 사용법
+//    활용: 필수 지침을 준수하여 일관성 유지
 //
-// 4. context.projectContext - 프로젝트 정보
-//    - API 타입, 디자인 시스템, 유틸리티 라이브러리
+// 4. context.projectContext - 프로젝트 정보 🏗️
+//    목적: 프로젝트 환경 이해
+//    포함: apiInfo.type (grpc/rest/graphql), designSystem, framework
+//
+// 💡 활용 우선순위:
+//    1단계: recommendations로 구조 파악 (비슷한 코드)
+//    2단계: bestPracticeExamples로 품질 개선 (우수한 패턴)
+//    3단계: guides로 지침 확인 (필수 규칙)
 //
 // ⚠️ 중요한 규칙:
 // - ❌ export default / export const / import 문법 사용 금지 (샌드박스 제약)
 // - ✅ 변수 할당 후 마지막 표현식으로 반환
-// - ✅ context.recommendations의 코드 패턴을 따르세요
-// - ✅ context.guides의 지침을 준수하세요
+// - ✅ recommendations의 구조 + bestPracticeExamples의 품질 패턴 결합
+// - ✅ guides의 필수 지침 준수
 //
 // 예시:
 //   const result = \`<template>...</template>\`;
@@ -1603,39 +1624,95 @@ ${execArgs.code}
         });
         log('Execution result', { success: !result.error });
 
-        // 응답 생성
-        const responseText = JSON.stringify({
-          ok: result.ok,
-          output: result.output,
-          logs: result.logs,
-          error: result.error,
-          // 자동 컨텍스트 정보
-          recommendations: autoContext.recommendations.length > 0
-            ? autoContext.recommendations.map(r => ({
-                filePath: r.filePath,
-                fileRole: r.fileRole,
-                keywords: r.keywords,
-                similarity: r.similarity,
-                content: r.content,
-                analysis: r.analysis
-              }))
-            : undefined,
-          guidesLoaded: autoContext.guides.length > 0,
-          guidesLength: autoContext.guides.length,
-          projectInfo: autoContext.projectContext ? {
-            apiType: autoContext.projectContext.apiInfo?.type,
-            designSystem: autoContext.projectContext.designSystemInfo?.detected,
-            utilityLibrary: autoContext.projectContext.utilityLibraryInfo?.detected,
-            framework: autoContext.projectContext.framework
-          } : undefined,
-          extractedKeywords: autoContext.extractedKeywords.length > 0
-            ? autoContext.extractedKeywords
-            : undefined,
-          // 경고 메시지 포함
-          warnings: autoContext.warnings.length > 0
-            ? autoContext.warnings
-            : undefined
-        }, null, 2);
+        // 응답 생성 (안전한 JSON 직렬화)
+        let responseText: string;
+        try {
+          const responseData = {
+            ok: result.ok,
+            output: result.output,
+            logs: result.logs,
+            error: result.error,
+            // 자동 컨텍스트 정보
+            recommendations: autoContext.recommendations.length > 0
+              ? autoContext.recommendations.map(r => ({
+                  filePath: r.filePath,
+                  fileRole: r.fileRole,
+                  keywords: r.keywords,
+                  similarity: r.similarity,
+                  content: r.content,
+                  analysis: r.analysis
+                }))
+              : undefined,
+            // ✅ 가이드 내용을 LLM 응답에 포함 (LLM이 가이드를 보고 활용 가능)
+            guides: autoContext.guides.length > 0 ? autoContext.guides : undefined,
+            guidesLoaded: autoContext.guides.length > 0,
+            guidesLength: autoContext.guides.length,
+            // ✅ BestCase 우수 사례를 LLM 응답에 포함 (LLM이 품질 패턴 학습 가능)
+            bestPracticeExamples: autoContext.bestPracticeExamples.length > 0
+              ? autoContext.bestPracticeExamples.map(bp => ({
+                  filePath: bp.filePath,
+                  fileRole: bp.fileRole,
+                  excellentIn: bp.excellentIn,
+                  topScore: bp.topScore,
+                  scores: bp.scores,
+                  keywords: bp.keywords,
+                  content: bp.content,
+                  analysis: bp.analysis
+                }))
+              : undefined,
+            projectInfo: autoContext.projectContext ? {
+              apiType: autoContext.projectContext.apiInfo?.type,
+              designSystem: autoContext.projectContext.designSystemInfo?.detected,
+              utilityLibrary: autoContext.projectContext.utilityLibraryInfo?.detected,
+              framework: autoContext.projectContext.framework
+            } : undefined,
+            extractedKeywords: autoContext.extractedKeywords.length > 0
+              ? autoContext.extractedKeywords
+              : undefined,
+            // 경고 메시지 포함
+            warnings: autoContext.warnings.length > 0
+              ? autoContext.warnings
+              : undefined
+          };
+
+          // JSON 직렬화 (포맷팅 없이 압축)
+          responseText = JSON.stringify(responseData);
+          log('Response serialized', { size: responseText.length });
+        } catch (serializeError) {
+          const errorMsg = serializeError instanceof Error ? serializeError.message : String(serializeError);
+          log('Response serialization failed, using fallback', { error: errorMsg });
+
+          // Fallback: content 제외하고 재시도
+          responseText = JSON.stringify({
+            ok: result.ok,
+            output: result.output,
+            logs: result.logs,
+            error: result.error,
+            recommendations: autoContext.recommendations.length > 0
+              ? autoContext.recommendations.map(r => ({
+                  filePath: r.filePath,
+                  fileRole: r.fileRole,
+                  keywords: r.keywords,
+                  similarity: r.similarity,
+                  contentPreview: r.content?.substring(0, 500) + '... [truncated]',
+                  analysis: r.analysis
+                }))
+              : undefined,
+            guides: autoContext.guides.length > 0
+              ? autoContext.guides.substring(0, 10000) + '... [truncated]'
+              : undefined,
+            bestPracticeExamples: autoContext.bestPracticeExamples.length > 0
+              ? autoContext.bestPracticeExamples.map((bp: any) => ({
+                  filePath: bp.filePath,
+                  fileRole: bp.fileRole,
+                  excellentIn: bp.excellentIn,
+                  topScore: bp.topScore,
+                  contentPreview: bp.content?.substring(0, 500) + '... [truncated]'
+                }))
+              : undefined,
+            warnings: ['Response too large, content truncated', ...autoContext.warnings]
+          });
+        }
 
         sendResponse({
           jsonrpc: '2.0',

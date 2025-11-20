@@ -1,0 +1,115 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "description": "Dimension keyword configuration - Customize keywords for BestCase multi-dimensional scoring. Copy this file to 'dimension-keywords.json' in your project's .mcp/ directory.",
+
+  "apiConnection": [
+    "api",
+    "grpc",
+    "rest",
+    "graphql",
+    "openapi",
+    "endpoint",
+    "request",
+    "response",
+    "axios",
+    "fetch",
+    "client",
+    "service"
+  ],
+
+  "errorHandling": [
+    "error",
+    "try",
+    "catch",
+    "throw",
+    "exception",
+    "onError",
+    "handleError",
+    "fallback",
+    "retry",
+    "validation",
+    "boundary"
+  ],
+
+  "typeUsage": [
+    "type",
+    "interface",
+    "generic",
+    "typescript",
+    "as",
+    "enum",
+    "readonly",
+    "const",
+    "infer",
+    "utility"
+  ],
+
+  "stateManagement": [
+    "state",
+    "store",
+    "pinia",
+    "vuex",
+    "useState",
+    "reactive",
+    "ref",
+    "computed",
+    "watch",
+    "mutation",
+    "action"
+  ],
+
+  "designSystem": [
+    "component",
+    "ui",
+    "element",
+    "button",
+    "input",
+    "form",
+    "dialog",
+    "modal",
+    "layout",
+    "theme",
+    "style"
+  ],
+
+  "structure": [
+    "class",
+    "function",
+    "module",
+    "import",
+    "export",
+    "component",
+    "composable",
+    "hook",
+    "util",
+    "helper",
+    "service"
+  ],
+
+  "performance": [
+    "performance",
+    "optimize",
+    "cache",
+    "lazy",
+    "async",
+    "defer",
+    "debounce",
+    "throttle",
+    "memo",
+    "virtual",
+    "worker"
+  ],
+
+  "utilityUsage": [
+    "util",
+    "helper",
+    "vueuse",
+    "lodash",
+    "dayjs",
+    "date-fns",
+    "axios",
+    "composable",
+    "hook",
+    "shared"
+  ]
+}

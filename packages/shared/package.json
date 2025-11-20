@@ -1,0 +1,32 @@
+{
+  "name": "@mcp-code-mode/shared",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Shared utilities for MCP Code Mode",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./logger": {
+      "types": "./dist/logger.d.ts",
+      "default": "./dist/logger.js"
+    }
+  },
+  "scripts": {
+    "build": "tsup src/logger.ts src/index.ts --format esm --dts --clean"
+  },
+  "keywords": [
+    "mcp",
+    "shared",
+    "logger"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "tsup": "^8.0.0",
+    "typescript": "^5.0.0"
+  }
+}

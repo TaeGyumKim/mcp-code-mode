@@ -1,9 +1,12 @@
 import { promises as fs, existsSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
+import { createLogger } from '@mcp-code-mode/shared/logger';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
+
+const logger = createLogger('guides');
 
 export interface GuideMetadata {
   id: string;
@@ -39,18 +42,18 @@ export async function indexGuides(): Promise<Guide[]> {
     guidesDir = join(__dirname, '../../../.github/instructions/guides');
   }
 
-  console.error('[indexGuides] Scanning directory:', guidesDir);
-  
+  logger.debug('Scanning directory', { guidesDir });
+
   try {
     const guides: Guide[] = [];
-    
+
     // 재귀적으로 모든 .md 파일 검색
     await scanDirectory(guidesDir, guidesDir, guides);
-    
-    console.error('[indexGuides] Total guides loaded:', guides.length);
+
+    logger.info('Total guides loaded', { count: guides.length });
     return guides;
   } catch (error: any) {
-    console.error('[indexGuides] Failed to index guides:', error.message);
+    logger.error('Failed to index guides', { error: error.message });
     throw new Error(`Failed to index guides: ${error.message}`);
   }
 }
@@ -78,19 +81,19 @@ async function scanDirectory(baseDir: string, currentDir: string, guides: Guide[
       const metadataMatch = content.match(/^---\n([\s\S]+?)\n---/);
 
       if (!metadataMatch) {
-        console.error('[scanDirectory] No metadata in file:', fullPath);
+        logger.warn('No metadata in file', { fullPath });
         continue;
       }
-      
+
       const metadataYaml = metadataMatch[1];
       const metadata = parseYamlMetadata(metadataYaml);
-      
+
       const guideContent = content.replace(/^---\n[\s\S]+?\n---\n/, '').trim();
-      
+
       // 상대 경로 계산 (guides/ 기준)
       const relativePath = fullPath.replace(baseDir + '/', '').replace(/\\/g, '/');
-      
-      console.error('[scanDirectory] Loaded guide:', {
+
+      logger.debug('Loaded guide', {
         id: metadata.id,
         path: relativePath,
         scope: metadata.scope,
@@ -182,7 +185,7 @@ export interface SearchGuidesOutput {
  * 지침 검색 (BM25-like 스코어링)
  */
 export async function searchGuides(input: SearchGuidesInput): Promise<SearchGuidesOutput> {
-  console.error('[searchGuides] Input:', JSON.stringify(input, null, 2));
+  logger.debug('Search input', input);
 
   const allGuides = await indexGuides();
 
@@ -192,7 +195,7 @@ export async function searchGuides(input: SearchGuidesInput): Promise<SearchGuid
     .map(g => g.id);
 
   if (autoMandatoryIds.length > 0) {
-    console.error('[searchGuides] Auto-detected mandatory guides:', autoMandatoryIds);
+    logger.info('Auto-detected mandatory guides', { autoMandatoryIds });
   }
 
   // mandatoryIds와 auto-detected mandatory 병합
@@ -210,7 +213,7 @@ export async function searchGuides(input: SearchGuidesInput): Promise<SearchGuid
     for (const id of uniqueMandatoryIds) {
       const guide = allGuides.find(g => g.id === id);
       if (guide) {
-        console.error('[searchGuides] Mandatory guide loaded:', {
+        logger.debug('Mandatory guide loaded', {
           id: guide.id,
           summary: guide.summary,
           priority: guide.priority,
@@ -226,7 +229,7 @@ export async function searchGuides(input: SearchGuidesInput): Promise<SearchGuid
           guide
         });
       } else {
-        console.error('[searchGuides] Mandatory guide NOT FOUND:', id);
+        logger.warn('Mandatory guide NOT FOUND', { id });
       }
     }
   }
@@ -330,13 +333,15 @@ export async function searchGuides(input: SearchGuidesInput): Promise<SearchGuid
   
   // 점수순 정렬
   allResults.sort((a, b) => b.score - a.score);
-  
-  console.error('[searchGuides] Results:', allResults.slice(0, 10).map(g => ({
-    id: g.id,
-    score: g.score,
-    summary: g.summary,
-    mandatory: g.score === 1000
-  })));
+
+  logger.debug('Search results', {
+    results: allResults.slice(0, 10).map(g => ({
+      id: g.id,
+      score: g.score,
+      summary: g.summary,
+      mandatory: g.score === 1000
+    }))
+  });
 
   // 🔑 mandatory 가이드 경고 메시지 생성
   const mandatoryReminders: string[] = [];
@@ -373,23 +378,25 @@ export interface LoadGuideOutput {
 }
 
 export async function loadGuide(input: LoadGuideInput): Promise<LoadGuideOutput> {
-  console.error('[loadGuide] Loading guide:', input.id);
-  
+  logger.debug('Loading guide', { id: input.id });
+
   const allGuides = await indexGuides();
   const guide = allGuides.find(g => g.id === input.id);
-  
+
   if (!guide) {
-    console.error('[loadGuide] Guide not found:', input.id);
-    console.error('[loadGuide] Available guides:', allGuides.map(g => g.id));
+    logger.warn('Guide not found', {
+      id: input.id,
+      availableGuides: allGuides.map(g => g.id)
+    });
     throw new Error(`Guide not found: ${input.id}`);
   }
-  
-  console.error('[loadGuide] Guide loaded successfully:', {
+
+  logger.debug('Guide loaded successfully', {
     id: guide.id,
     scope: guide.scope,
     priority: guide.priority,
   });
-  
+
   return { guide };
 }
 
@@ -424,7 +431,7 @@ export async function combineGuides(input: CombineGuidesInput): Promise<CombineG
     .map(g => g.id);
 
   if (autoMandatoryIds.length > 0) {
-    console.error('[combineGuides] Auto-detected mandatory guides:', autoMandatoryIds);
+    logger.info('Auto-detected mandatory guides', { autoMandatoryIds });
   }
 
   // input.ids와 auto-detected mandatory 병합

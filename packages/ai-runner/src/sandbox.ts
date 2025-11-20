@@ -296,22 +296,24 @@ function preprocessCode(code: string): string {
   // export const/let/var/function/class 제거
   code = code.replace(/export\s+(const|let|var|function|class|async\s+function)\s+/g, '$1 ');
 
-  // export default 처리 - 함수를 자동으로 IIFE로 변환하고 return으로 값 전달
+  // export default 처리 - 함수를 자동으로 IIFE로 변환 (return 없이)
   if (code.includes('export default')) {
-    // 1. export default async function name(...) { ... } -> return await (async function name(...) { ... })()
+    // 1. export default async function name(...) { ... } -> await (async function name(...) { ... })()
     code = code.replace(
       /export\s+default\s+async\s+function(\s+\w+)?\s*\(([^)]*)\)\s*\{/g,
-      'return await (async function$1($2) {'
+      'await (async function$1($2) {'
     );
 
-    // 2. export default function name(...) { ... } -> return (function name(...) { ... })()
+    // 2. export default function name(...) { ... } -> (function name(...) { ... })()
     code = code.replace(
       /export\s+default\s+function(\s+\w+)?\s*\(([^)]*)\)\s*\{/g,
-      'return (function$1($2) {'
+      '(function$1($2) {'
     );
 
     // IIFE 닫기: 마지막 } 뒤에 )() 추가
-    if (code.match(/^return\s+(?:await\s+)?\((?:async\s+)?function/)) {
+    // 주석과 공백을 무시하고 코드가 await (async function 또는 (async function으로 시작하는지 확인
+    const trimmedCode = code.replace(/^(\s|\/\/.*\n|\/\*[\s\S]*?\*\/)*/, '');
+    if (trimmedCode.match(/^(?:await\s+)?\((?:async\s+)?function/)) {
       code = code.trimEnd();
       if (!code.endsWith(')()') && !code.endsWith(')();')) {
         code += ')()';
@@ -321,8 +323,8 @@ function preprocessCode(code: string): string {
     // 3. export default class -> class
     code = code.replace(/export\s+default\s+class/g, 'class');
 
-    // 4. 나머지 export default (표현식, 객체 등) - return으로 변환
-    code = code.replace(/export\s+default\s+/g, 'return ');
+    // 4. 나머지 export default (표현식, 객체 등) - 그대로 유지
+    code = code.replace(/export\s+default\s+/g, '');
   }
 
   // 간단한 TypeScript 타입 어노테이션 제거 (export default 처리 이후)
@@ -647,7 +649,7 @@ export async function runInSandbox(code: string, timeoutMs: number = 30000): Pro
 
     const finalCode = `
       (async () => {
-        ${preprocessedCode}
+        return (${preprocessedCode})
       })()
     `;
 

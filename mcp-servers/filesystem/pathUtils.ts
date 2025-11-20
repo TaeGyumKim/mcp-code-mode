@@ -4,6 +4,10 @@
  * 호스트 머신 경로를 Docker 컨테이너 경로로 변환합니다.
  */
 
+import { createLogger } from '@mcp-code-mode/shared/logger';
+
+const logger = createLogger('pathUtils');
+
 /**
  * 호스트 경로를 컨테이너 경로로 변환
  *
@@ -65,8 +69,10 @@ export function convertHostPathToContainer(path: string): string {
     }
 
     // "projects" 디렉토리가 없는 경우 경고 로그
-    console.error(`[pathUtils] Cannot convert Windows path without "projects" directory: ${normalizedPath}`);
-    console.error(`[pathUtils] Set HOST_PROJECTS_PATH environment variable for reliable path conversion.`);
+    logger.warn('Cannot convert Windows path without "projects" directory', {
+      path: normalizedPath,
+      hint: 'Set HOST_PROJECTS_PATH environment variable for reliable path conversion'
+    });
   }
 
   // 기본적으로 입력 경로 그대로 반환

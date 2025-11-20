@@ -44,7 +44,9 @@
       "Bash(docker cp:*)",
       "Bash(docker restart:*)",
       "Bash(yarn build:all:*)",
-      "Bash(yarn workspace llm-analyzer run build:*)"
+      "Bash(yarn workspace llm-analyzer run build:*)",
+      "Bash(npm run:*)",
+      "Bash(yarn install)"
     ],
     "deny": [],
     "ask": []
