@@ -172,6 +172,8 @@ export async function detectApiType(
 ): Promise<ApiTypeInfo> {
   const mapping = await getApiTypeMapping(projectPath);
 
+  console.error('[detectApiType] Checking dependencies:', Object.keys(dependencies).length, 'packages');
+
   const detectedTypes: Array<{
     type: keyof ApiTypeMapping;
     packages: string[];
@@ -187,6 +189,7 @@ export async function detectApiType(
       for (const pattern of config.patterns) {
         if (matchesPattern(dep, pattern)) {
           matchedPackages.push(dep);
+          console.error(`[detectApiType] ✅ Matched ${apiType}: ${dep} (pattern: ${pattern})`);
           break;  // Only add package once per type
         }
       }
@@ -204,6 +207,7 @@ export async function detectApiType(
 
   // No API type detected
   if (detectedTypes.length === 0) {
+    console.error('[detectApiType] ⚠️  No API type detected. Sample dependencies:', Object.keys(dependencies).slice(0, 10));
     return {
       type: 'unknown',
       packages: [],
@@ -213,11 +217,13 @@ export async function detectApiType(
 
   // Single type detected
   if (detectedTypes.length === 1) {
-    return {
+    const result = {
       type: detectedTypes[0].type,
       packages: detectedTypes[0].packages,
       confidence: detectedTypes[0].confidence
     };
+    console.error(`[detectApiType] ✅ Detected API type: ${result.type}`, result.packages);
+    return result;
   }
 
   // Multiple types detected - return mixed or highest priority
@@ -226,17 +232,21 @@ export async function detectApiType(
 
   // If top 2 have similar priority (within 2 points), consider it mixed
   if (detectedTypes[0].priority - detectedTypes[1].priority <= 2) {
-    return {
-      type: 'mixed',
+    const result = {
+      type: 'mixed' as const,
       packages: detectedTypes.flatMap(d => d.packages),
-      confidence: 'high'
+      confidence: 'high' as const
     };
+    console.error(`[detectApiType] ✅ Detected multiple API types (mixed):`, detectedTypes.map(d => d.type));
+    return result;
   }
 
   // Return highest priority type
-  return {
+  const result = {
     type: detectedTypes[0].type,
     packages: detectedTypes[0].packages,
     confidence: detectedTypes[0].confidence
   };
+  console.error(`[detectApiType] ✅ Detected API type (highest priority): ${result.type}`, result.packages);
+  return result;
 }
