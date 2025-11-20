@@ -43,7 +43,8 @@
       "Bash(xargs:*)",
       "Bash(docker cp:*)",
       "Bash(docker restart:*)",
-      "Bash(yarn build:all:*)"
+      "Bash(yarn build:all:*)",
+      "Bash(yarn workspace llm-analyzer run build:*)"
     ],
     "deny": [],
     "ask": []
