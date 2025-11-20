@@ -21,8 +21,9 @@ export interface SandboxResult {
  * 문자열과 주석을 정확하게 제거하는 헬퍼 함수
  *
  * 이스케이프 문자와 중첩된 템플릿 리터럴을 올바르게 처리합니다.
+ * @internal - 테스트용으로만 export됨
  */
-function removeStringsAndComments(code: string): string {
+export function removeStringsAndComments(code: string): string {
   let result = '';
   let i = 0;
 
@@ -183,8 +184,9 @@ function removeStringsAndComments(code: string): string {
 
 /**
  * TypeScript 문법 감지 (템플릿 리터럴 및 문자열 내부 제외)
+ * @internal - 테스트용으로만 export됨
  */
-function detectTypeScriptSyntax(code: string): boolean {
+export function detectTypeScriptSyntax(code: string): boolean {
   const cleanedCode = removeStringsAndComments(code);
 
   // 1. interface 선언
