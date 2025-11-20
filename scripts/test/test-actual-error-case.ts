@@ -22,7 +22,7 @@ const actualCode = `(async function main(){
     const scriptSetup = section('scriptSetup', /<script[^>]*setup[^>]*>[\\s\\S]*?<\\/script>/i);
     const script = section('script', /<script(?![^>]*setup)[^>]*>[\\s\\S]*?<\\/script>/i);
 
-    const importRx = /import\\s+([^;]+?)\\s+from\\s+['\"]([^'\"]+)['\"]/g;
+    const importRx = /import\\s+([^;]+?)\\s+from\\s+['\"]([^'\"]+)['\"]/ g;
     const imports = [];
     let im;
     while((im = importRx.exec(content)) !== null){
@@ -50,8 +50,8 @@ const actualCode = `(async function main(){
       try{
         const arrText = headersMatch[0].replace(/const\\s+headers\\s*[:=]\\s*/,'');
         const jsonLike = arrText
-          .replace(/(\\w+)\\s*:/g, '\"$1\":')
-          .replace(/'(.*?)'/g, '\"$1\"')
+          .replace(/(\\w+)\\s*:/g, '\\"$1\\":')
+          .replace(/'(.*?)'/g, '\\"$1\\"')
           .replace(/\\,\\s*\\]/g, ']');
         const firstBracket = jsonLike.match(/\\[([\\s\\S]*?)\\]/);
         if(firstBracket){
@@ -99,7 +99,7 @@ console.log(`TypeScript 문법 감지: ${hasTS}`);
 // 3. 정규식 패턴 찾기
 console.log('\n3. 타입 어노테이션 패턴 찾기');
 console.log('==============================');
-const typeAnnotationRegex = /:\s*\w+(\[\]|<[^>]+>)?\s*(=|;|\))/g;
+const typeAnnotationRegex = /:\s*\w+([\]|<[^>]+>)?\s*(=|;|\))/g;
 let match;
 let matchCount = 0;
 while ((match = typeAnnotationRegex.exec(cleaned)) !== null) {
