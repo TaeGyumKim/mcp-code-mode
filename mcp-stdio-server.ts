@@ -1087,53 +1087,7 @@ async function createAutoContext(options: AutoRecommendOptions): Promise<AutoCon
 
   log('Merged options with config', { hasConfig: !!mcpConfig, projectRoot });
 
-  // 1. RAG 추천 가져오기
-  log('Fetching RAG recommendations...');
-  const ragResult = await fetchRecommendations(mergedOptions);
-  if (ragResult.warnings.length > 0) {
-    warnings.push(...ragResult.warnings);
-  }
-
-  const recommendations = ragResult.recommendations;
-  const extractedKeywords = ragResult.keywords;
-  log('RAG recommendations', { count: recommendations.length, keywords: extractedKeywords });
-
-  // 2. 가이드 자동 로딩 (개선: 추천이 없어도 키워드나 설명이 있으면 로딩)
-  let autoLoadedGuides = '';
-  const hasSearchableContent = recommendations.length > 0 || extractedKeywords.length > 0 || mergedOptions.description;
-
-  if (!mergedOptions.skipGuideLoading && hasSearchableContent) {
-    log('Auto-loading guides...', {
-      hasRecommendations: recommendations.length > 0,
-      hasKeywords: extractedKeywords.length > 0,
-      hasDescription: !!mergedOptions.description
-    });
-
-    const { allKeywords, apiType } = recommendations.length > 0
-      ? analyzeRecommendations(recommendations, extractedKeywords)
-      : { allKeywords: extractedKeywords, apiType: undefined };
-
-    const guideResult = await loadGuidesForKeywords(
-      allKeywords,
-      apiType,
-      recommendations[0]?.projectName || 'unknown',
-      {
-        maxGuides: mergedOptions.maxGuides || 10,  // 기본값 5 → 10으로 증가
-        maxLength: mergedOptions.maxGuideLength || 50000,
-        mandatoryIds: mergedOptions.mandatoryGuideIds || ['00-bestcase-priority']
-      }
-    );
-
-    autoLoadedGuides = guideResult.combined;
-    if (guideResult.warning) {
-      warnings.push(guideResult.warning);
-    }
-    log('Guides loaded', { count: guideResult.count, length: autoLoadedGuides.length });
-  } else if (!hasSearchableContent) {
-    log('No searchable content (recommendations, keywords, or description), skipping guide loading');
-  }
-
-  // 3. 프로젝트 컨텍스트 분석 (커스텀 마커 지원 + 파일 내용 분석)
+  // 1. ✅ 프로젝트 컨텍스트 분석 먼저 실행 (package.json에서 apiType 읽기)
   let projectContext = null;
   if (!mergedOptions.skipProjectContext) {
     log('Extracting project context...', { customMarkers: mergedOptions.projectMarkers });
@@ -1153,6 +1107,56 @@ async function createAutoContext(options: AutoRecommendOptions): Promise<AutoCon
       });
     }
   }
+
+  // 2. RAG 추천 가져오기
+  log('Fetching RAG recommendations...');
+  const ragResult = await fetchRecommendations(mergedOptions);
+  if (ragResult.warnings.length > 0) {
+    warnings.push(...ragResult.warnings);
+  }
+
+  const recommendations = ragResult.recommendations;
+  const extractedKeywords = ragResult.keywords;
+  log('RAG recommendations', { count: recommendations.length, keywords: extractedKeywords });
+
+  // 3. ✅ 가이드 자동 로딩 (projectContext의 apiType 우선 사용)
+  let autoLoadedGuides = '';
+  const hasSearchableContent = recommendations.length > 0 || extractedKeywords.length > 0 || mergedOptions.description;
+
+  if (!mergedOptions.skipGuideLoading && hasSearchableContent) {
+    log('Auto-loading guides...', {
+      hasRecommendations: recommendations.length > 0,
+      hasKeywords: extractedKeywords.length > 0,
+      hasDescription: !!mergedOptions.description
+    });
+
+    // ✅ apiType: projectContext에서 먼저 가져오고, 없으면 recommendations에서 추론
+    const { allKeywords, apiType: apiTypeFromRecs } = recommendations.length > 0
+      ? analyzeRecommendations(recommendations, extractedKeywords)
+      : { allKeywords: extractedKeywords, apiType: undefined };
+
+    const apiType = projectContext?.apiInfo?.type || apiTypeFromRecs;
+
+    const guideResult = await loadGuidesForKeywords(
+      allKeywords,
+      apiType,
+      recommendations[0]?.projectName || 'unknown',
+      {
+        maxGuides: mergedOptions.maxGuides || 10,  // 기본값 5 → 10으로 증가
+        maxLength: mergedOptions.maxGuideLength || 50000,
+        mandatoryIds: mergedOptions.mandatoryGuideIds || ['00-bestcase-priority']
+      }
+    );
+
+    autoLoadedGuides = guideResult.combined;
+    if (guideResult.warning) {
+      warnings.push(guideResult.warning);
+    }
+    log('Guides loaded', { count: guideResult.count, length: autoLoadedGuides.length, apiType });
+  } else if (!hasSearchableContent) {
+    log('No searchable content (recommendations, keywords, or description), skipping guide loading');
+  }
+
 
   // 4. 다차원 점수 기반 우수 코드 검색
   let bestPracticeExamples: any[] = [];
