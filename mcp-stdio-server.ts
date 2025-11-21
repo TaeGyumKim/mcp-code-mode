@@ -282,9 +282,10 @@ interface ToolCallParams {
 }
 
 interface AutoRecommendOptions {
-  currentFile: string;
-  filePath: string;
-  description: string;
+  currentFile?: string;            // 현재 파일 내용 (키워드 추출용, optional)
+  filePath?: string;               // 파일 경로 (optional, 없으면 키워드 기반 검색)
+  description?: string;            // 작업 설명 (optional)
+  keywords?: string[];             // 사용자 제공 키워드 (optional, 자동 추출 가능)
   // NEW: 가이드 로딩 옵션
   maxGuides?: number;              // 최대 로드할 가이드 수 (기본: 5)
   maxGuideLength?: number;         // 최대 가이드 총 길이 (기본: 50000)
@@ -1566,7 +1567,32 @@ Sandbox APIs:
         };
 
         // ✅ Context 객체를 코드에 직접 주입 (템플릿 리터럴 특수 문자 문제 방지)
-        const contextJson = JSON.stringify(contextObject);
+        let contextJson: string;
+        try {
+          contextJson = JSON.stringify(contextObject);
+        } catch (stringifyError) {
+          const errorMsg = stringifyError instanceof Error ? stringifyError.message : String(stringifyError);
+          log('Context serialization failed, using minimal context', { error: errorMsg });
+          // Fallback: 최소한의 컨텍스트만 제공
+          contextJson = JSON.stringify({
+            recommendations: [],
+            hasRecommendations: false,
+            bestPracticeExamples: [],
+            hasBestPractices: false,
+            searchMetadata: null,
+            guides: '',
+            hasGuides: false,
+            projectContext: null,
+            extractedKeywords: [],
+            warnings: [`Context serialization failed: ${errorMsg}`, ...autoContext.warnings]
+          });
+        }
+
+        // ✅ 사용자 코드의 템플릿 리터럴 특수 문자 이스케이프
+        const escapedUserCode = execArgs.code
+          .replace(/\\/g, '\\\\')   // 백슬래시 이스케이프
+          .replace(/`/g, '\\`')     // 백틱 이스케이프
+          .replace(/\$/g, '\\$');   // $ 이스케이프
 
         const wrappedCode = `
 // ============================================================
@@ -1619,9 +1645,8 @@ const context = ${contextJson};
 // ============================================================
 // 📝 User code starts here
 // ============================================================
-${execArgs.code}
+${escapedUserCode}
 `;
-
         const result = await runAgentScript({
           code: wrappedCode,
           timeoutMs: execArgs.timeoutMs || 30000
@@ -1676,6 +1701,8 @@ ${execArgs.code}
             extractedKeywords: autoContext.extractedKeywords.length > 0
               ? autoContext.extractedKeywords
               : undefined,
+            // 검색 메타데이터 포함
+            searchMetadata: autoContext.searchMetadata || undefined,
             // 경고 메시지 포함
             warnings: autoContext.warnings.length > 0
               ? autoContext.warnings
@@ -1701,22 +1728,45 @@ ${execArgs.code}
                   fileRole: r.fileRole,
                   keywords: r.keywords,
                   similarity: r.similarity,
-                  contentPreview: r.content?.substring(0, 500) + '... [truncated]',
+                  contentPreview: r.content ? r.content.substring(0, 500) + '... [truncated]' : '[No content]',
                   analysis: r.analysis
                 }))
               : undefined,
             guides: autoContext.guides.length > 0
               ? autoContext.guides.substring(0, 10000) + '... [truncated]'
               : undefined,
+            guidesLoaded: autoContext.guides.length > 0,
+            guidesLength: autoContext.guides.length,
             bestPracticeExamples: autoContext.bestPracticeExamples.length > 0
               ? autoContext.bestPracticeExamples.map((bp: any) => ({
                   filePath: bp.filePath,
                   fileRole: bp.fileRole,
                   excellentIn: bp.excellentIn,
                   topScore: bp.topScore,
-                  contentPreview: bp.content?.substring(0, 500) + '... [truncated]'
+                  scores: bp.scores,
+                  keywords: bp.keywords,
+                  contentPreview: bp.content ? bp.content.substring(0, 500) + '... [truncated]' : '[No content]'
                 }))
               : undefined,
+            projectInfo: autoContext.projectContext ? {
+              apiType: autoContext.projectContext.apiInfo?.type,
+              apiPackages: autoContext.projectContext.apiInfo?.packages || [],
+              apiConfidence: autoContext.projectContext.apiInfo?.confidence,
+              designSystem: autoContext.projectContext.designSystemInfo?.detected,
+              utilityLibrary: autoContext.projectContext.utilityLibraryInfo?.detected,
+              framework: autoContext.projectContext.framework,
+              hasPackageJson: autoContext.projectContext.hasPackageJson
+            } : undefined,
+            extractedKeywords: autoContext.extractedKeywords.length > 0
+              ? autoContext.extractedKeywords
+              : undefined,
+            searchMetadata: autoContext.searchMetadata ? {
+              totalResults: autoContext.searchMetadata.totalResults,
+              vectorCount: autoContext.searchMetadata.vectorCount,
+              keywordCount: autoContext.searchMetadata.keywordCount,
+              cacheHit: autoContext.searchMetadata.cacheHit,
+              dimensions: autoContext.searchMetadata.dimensions
+            } : undefined,
             warnings: ['Response too large, content truncated', ...autoContext.warnings]
           });
         }
