@@ -18,6 +18,7 @@ import { globalCacheManager, generateBestPracticeCacheKey } from './mcp-servers/
 import * as readline from 'readline';
 import * as fs from 'fs';
 import * as path from 'path';
+import { transform } from 'esbuild';
 
 const fileCaseStorage = new FileCaseStorage();
 
@@ -1328,8 +1329,37 @@ Sandbox APIs:
           });
         }
 
+        // ✅ TypeScript → JavaScript 트랜스파일 (esbuild)
+        let processedCode = execArgs.code;
+        try {
+          const transpileResult = await transform(execArgs.code, {
+            loader: 'ts',
+            format: 'esm',
+            target: 'esnext',
+            sourcemap: false,
+            tsconfigRaw: {
+              compilerOptions: {
+                // TypeScript 타입 제거 및 기본 설정
+                target: 'esnext',
+                module: 'esnext',
+                removeComments: false,
+                importsNotUsedAsValues: 'remove'
+              }
+            }
+          });
+          processedCode = transpileResult.code;
+          log('TypeScript transpiled successfully', {
+            originalLength: execArgs.code.length,
+            transpiledLength: processedCode.length
+          });
+        } catch (transpileError) {
+          const errorMsg = transpileError instanceof Error ? transpileError.message : String(transpileError);
+          log('TypeScript transpilation failed, using original code', { error: errorMsg });
+          // Fail-safe: 트랜스파일 실패 시 원본 코드 사용 (JS 코드일 가능성)
+        }
+
         // ✅ 사용자 코드의 템플릿 리터럴 특수 문자 이스케이프
-        const escapedUserCode = execArgs.code
+        const escapedUserCode = processedCode
           .replace(/\\/g, '\\\\')   // 백슬래시 이스케이프
           .replace(/`/g, '\\`')     // 백틱 이스케이프
           .replace(/\$/g, '\\$');   // $ 이스케이프
