@@ -6,7 +6,7 @@
 
 import { promises as fs, existsSync } from 'fs';
 import { join } from 'path';
-import { detectApiType as detectApiTypeFromDeps } from '../../llm-analyzer/src/apiTypeMapping.js';
+import { detectApiType as detectApiTypeFromDeps, DEFAULT_API_TYPE_MAPPING, matchesPattern } from '../../llm-analyzer/src/apiTypeMapping.js';
 
 export interface LocalPackageInfo {
   id: string;
@@ -578,7 +578,49 @@ export function enhanceContextWithFile(context: ProjectContext, fileContent: str
     }
   }
 
-  // 5. API type detection (unchanged)
+  // 5. API type detection from imports (more reliable than apiCalls patterns)
+  // Only enhance if current type is unknown or has low confidence
+  if (context.apiInfo.type === 'unknown' || context.apiInfo.confidence === 'low') {
+    const apiTypeMatches: Array<{ type: string; packages: string[]; priority: number; confidence: 'high' | 'medium' | 'low' }> = [];
+
+    // Check imports against API type patterns from apiTypeMapping
+    for (const [apiType, config] of Object.entries(DEFAULT_API_TYPE_MAPPING)) {
+      const matchedPackages: string[] = [];
+
+      for (const imp of fileAnalysis.imports) {
+        for (const pattern of config.patterns) {
+          if (matchesPattern(imp.package, pattern)) {
+            matchedPackages.push(imp.package);
+            console.error(`[enhanceContextWithFile] ✅ Matched API type ${apiType}: ${imp.package}`);
+            break;  // Only add package once per type
+          }
+        }
+      }
+
+      if (matchedPackages.length > 0) {
+        apiTypeMatches.push({
+          type: apiType,
+          packages: matchedPackages,
+          priority: config.priority,
+          confidence: config.confidence
+        });
+      }
+    }
+
+    if (apiTypeMatches.length > 0) {
+      // Sort by priority (highest first)
+      apiTypeMatches.sort((a, b) => b.priority - a.priority);
+
+      const topMatch = apiTypeMatches[0];
+      context.apiInfo.type = topMatch.type as any;
+      context.apiInfo.packages = [...new Set([...context.apiInfo.packages, ...topMatch.packages])];
+      context.apiInfo.confidence = topMatch.confidence;
+
+      console.error(`[enhanceContextWithFile] ✅ API type detected from imports: ${topMatch.type}`, topMatch.packages);
+    }
+  }
+
+  // 6. Fallback: API type detection from apiCalls patterns
   if (fileAnalysis.apiCalls.length > 0) {
     const primaryApiType = fileAnalysis.apiCalls[0];
 

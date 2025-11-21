@@ -61,7 +61,11 @@
       "Bash(else echo \"instructions directory not found\")",
       "Bash(rm:*)",
       "Bash(tree:*)",
-      "Bash(docker --version:*)"
+      "Bash(docker --version:*)",
+      "Bash(npx jest:*)",
+      "Bash(tsx scripts/test/test-execute-integration.ts:*)",
+      "Bash(MSYS_NO_PATHCONV=1 echo:*)",
+      "Bash(yarn run)"
     ],
     "deny": [],
     "ask": []

@@ -12,6 +12,9 @@ import * as guides from './mcp-servers/guides/dist/index.js';
 import { extractProjectContext } from './packages/ai-runner/dist/projectContext.js';
 import { FileCaseStorage } from './packages/bestcase-db/dist/index.js';
 import type { BestCaseScores } from './packages/bestcase-db/dist/index.js';
+import { searchBestPractices } from './mcp-servers/bestcase/searchBestPractices.js';
+import { inferImportantDimensionsV2, type WeightedKeyword } from './mcp-servers/bestcase/dimensionKeywords.js';
+import { globalCacheManager, generateBestPracticeCacheKey } from './mcp-servers/cache/cacheManager.js';
 import * as readline from 'readline';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -50,81 +53,33 @@ function loadMCPConfig(projectRoot: string): MCPConfig | null {
   return null;
 }
 
-// ============= LRU 캐싱 시스템 (환경 변수 제어) =============
-interface CacheEntry<T> {
-  data: T;
-  timestamp: number;
-  ttl: number;  // Time to live in milliseconds
-  accessCount: number;
-  lastAccessed: number;
-}
+// ============= 캐시 관리 =============
+// 캐시는 globalCacheManager (mcp-servers/cache/cacheManager.ts)를 사용합니다.
 
-const CACHE_TTL = parseInt(process.env.CACHE_TTL_MS || '300000');  // 기본 5분, 환경변수로 제어
-const MAX_CACHE_SIZE = parseInt(process.env.CACHE_MAX_ENTRIES || '100');  // 최대 캐시 엔트리 수
-
-const cache = new Map<string, CacheEntry<any>>();
-
-function getCached<T>(key: string): T | null {
-  const entry = cache.get(key);
-  if (!entry) return null;
-
-  const now = Date.now();
-  if (now - entry.timestamp > entry.ttl) {
-    cache.delete(key);
-    return null;
-  }
-
-  // LRU: 접근 시간 및 횟수 업데이트
-  entry.accessCount++;
-  entry.lastAccessed = now;
-
-  return entry.data as T;
-}
-
-function setCache<T>(key: string, data: T, ttl: number = CACHE_TTL): void {
-  // 캐시 크기 제한 (LRU 제거)
-  if (cache.size >= MAX_CACHE_SIZE && !cache.has(key)) {
-    evictLRU();
-  }
-
-  cache.set(key, {
-    data,
-    timestamp: Date.now(),
-    ttl,
-    accessCount: 1,
-    lastAccessed: Date.now()
-  });
-}
-
-function evictLRU(): void {
-  // LRU 알고리즘: 가장 오래 전에 접근한 항목 제거
-  let oldestKey: string | null = null;
-  let oldestTime = Infinity;
-
-  for (const [key, entry] of cache.entries()) {
-    if (entry.lastAccessed < oldestTime) {
-      oldestTime = entry.lastAccessed;
-      oldestKey = key;
-    }
-  }
-
-  if (oldestKey) {
-    cache.delete(oldestKey);
-    log('LRU eviction', { evictedKey: oldestKey, cacheSize: cache.size });
+function clearCache(pattern?: string): void {
+  if (pattern) {
+    const deleted = globalCacheManager.invalidate(pattern);
+    log('Cache invalidated by pattern', { pattern, deletedEntries: deleted });
+  } else {
+    globalCacheManager.clear();
+    log('Cache cleared');
   }
 }
 
-function clearCache(): void {
-  const size = cache.size;
-  cache.clear();
-  log('Cache cleared', { clearedEntries: size });
-}
-
-function getCacheStats(): { size: number; maxSize: number; ttlMs: number } {
+function getCacheStats(): {
+  size: number;
+  maxSize: number;
+  hitCount: number;
+  missCount: number;
+  evictionCount: number;
+  hitRate: number;
+  memoryUsageBytes: number;
+  memoryUsageMB: number;
+} {
+  const stats = globalCacheManager.getStats();
   return {
-    size: cache.size,
-    maxSize: MAX_CACHE_SIZE,
-    ttlMs: CACHE_TTL
+    ...stats,
+    memoryUsageMB: Math.round(stats.memoryUsageBytes / 1024 / 1024 * 100) / 100
   };
 }
 
@@ -661,117 +616,6 @@ async function getProjectContext(filePath: string, customMarkers?: string[], cur
 }
 
 /**
- * 확장된 키워드 사전 (한글/영문 혼용 지원)
- */
-const DIMENSION_KEYWORDS: Record<keyof BestCaseScores, string[]> = {
-  apiConnection: [
-    'api', 'grpc', 'rest', 'fetch', 'axios', 'client', 'server', 'endpoint', 'request', 'response',
-    'http', 'websocket', 'graphql', 'backend', 'service', 'call', 'invoke',
-    '서버', '클라이언트', '요청', '응답', '호출', '통신', '연결', '엔드포인트'
-  ],
-  errorHandling: [
-    'error', 'try', 'catch', 'throw', 'exception', 'validation', 'validate', 'check', 'guard',
-    'handle', 'handler', 'fallback', 'retry', 'recover', 'fail', 'success',
-    '에러', '오류', '예외', '검증', '유효성', '처리', '실패', '성공', '재시도'
-  ],
-  typeUsage: [
-    'type', 'interface', 'generic', 'typescript', 'typing', 'typed', 'schema', 'model', 'dto',
-    'class', 'enum', 'union', 'intersection', 'extends', 'implements',
-    '타입', '인터페이스', '제네릭', '스키마', '모델', '정의', '타입스크립트'
-  ],
-  stateManagement: [
-    'state', 'store', 'pinia', 'vuex', 'reactive', 'ref', 'computed', 'watch', 'action', 'mutation',
-    'getter', 'setter', 'persist', 'hydrate', 'subscribe', 'dispatch',
-    '상태', '스토어', '반응형', '액션', '뮤테이션', '구독', '저장', '관리'
-  ],
-  designSystem: [
-    'element', 'el-', 'ui', 'component', 'button', 'input', 'form', 'table', 'dialog', 'modal',
-    'layout', 'style', 'css', 'scss', 'tailwind', 'theme', 'icon', 'card', 'menu', 'nav',
-    '컴포넌트', '디자인', '레이아웃', '스타일', '테마', '아이콘', 'UI', '화면'
-  ],
-  structure: [
-    'structure', 'pattern', 'architecture', 'composable', 'hook', 'mixin', 'plugin', 'module',
-    'organize', 'layout', 'hierarchy', 'dependency', 'inject', 'provide', 'factory', 'singleton',
-    '구조', '패턴', '아키텍처', '컴포저블', '훅', '모듈', '구성', '조직', '계층'
-  ],
-  performance: [
-    'performance', 'optimize', 'lazy', 'cache', 'memo', 'virtual', 'debounce', 'throttle',
-    'async', 'await', 'promise', 'concurrent', 'parallel', 'batch', 'chunk', 'stream',
-    '성능', '최적화', '캐시', '지연', '비동기', '병렬', '메모이제이션', '가상화'
-  ],
-  utilityUsage: [
-    'utility', 'helper', 'util', 'common', 'shared', 'lib', 'tool', 'format', 'parse', 'convert',
-    'transform', 'sanitize', 'escape', 'encode', 'decode', 'serialize', 'deserialize',
-    '유틸', '헬퍼', '도우미', '공통', '변환', '포맷', '파싱', '직렬화'
-  ]
-};
-
-/**
- * 요청에서 중요한 점수 차원 추론 (사용자 정의 키워드 지원)
- *
- * 사용자 요청을 분석하여 어떤 점수 차원이 중요한지 결정합니다.
- */
-function inferImportantDimensions(
-  description: string,
-  keywords: string[],
-  customKeywords?: Partial<Record<keyof BestCaseScores, string[]>>
-): Array<keyof BestCaseScores> {
-  const dimensions: Array<keyof BestCaseScores> = [];
-  const descLower = description.toLowerCase();
-  const allKeywords = keywords.map(k => k.toLowerCase());
-  const combined = descLower + ' ' + allKeywords.join(' ');
-
-  // 키워드 사전 병합 (기본 + 사용자 정의)
-  const mergedKeywords: Record<keyof BestCaseScores, string[]> = { ...DIMENSION_KEYWORDS };
-  if (customKeywords) {
-    for (const [dimension, customList] of Object.entries(customKeywords)) {
-      const dim = dimension as keyof BestCaseScores;
-      if (customList && customList.length > 0) {
-        mergedKeywords[dim] = [...mergedKeywords[dim], ...customList];
-        log('Custom keywords added', { dimension: dim, count: customList.length });
-      }
-    }
-  }
-
-  // 각 차원별 매칭 점수 계산
-  const dimensionScores: Record<keyof BestCaseScores, number> = {
-    apiConnection: 0,
-    errorHandling: 0,
-    typeUsage: 0,
-    stateManagement: 0,
-    designSystem: 0,
-    structure: 0,
-    performance: 0,
-    utilityUsage: 0
-  };
-
-  // 키워드 매칭으로 점수 계산
-  for (const [dimension, keywordList] of Object.entries(mergedKeywords)) {
-    for (const keyword of keywordList) {
-      if (combined.includes(keyword)) {
-        dimensionScores[dimension as keyof BestCaseScores]++;
-      }
-    }
-  }
-
-  // 점수가 있는 차원만 추가 (높은 점수 순)
-  const sortedDimensions = Object.entries(dimensionScores)
-    .filter(([, score]) => score > 0)
-    .sort((a, b) => b[1] - a[1])
-    .map(([dim]) => dim as keyof BestCaseScores);
-
-  if (sortedDimensions.length > 0) {
-    // 최대 3개 차원만 선택 (너무 많으면 검색 부하 증가)
-    dimensions.push(...sortedDimensions.slice(0, 3));
-  } else {
-    // 기본값: 구조와 API 연결
-    dimensions.push('structure', 'apiConnection');
-  }
-
-  return dimensions;
-}
-
-/**
  * 다차원 점수 기반 우수 코드 검색 (캐싱 + 동적 임계값 + 차원별 설정 + 설명)
  *
  * 특정 차원에서 높은 점수를 가진 파일을 검색합니다.
@@ -827,218 +671,91 @@ async function searchBestPracticeExamples(
   }
 
   try {
-    // 캐시 키 생성 (차원별 임계값 포함)
-    const thresholdStr = dimensions.map(d => `${d}:${dimensionThresholds[d]}`).join(',');
-    const cacheKey = `bestpractice:${thresholdStr}:${fileRole || 'any'}`;
-    const cached = getCached<{examples: any[], metadata: any}>(cacheKey);
-    if (cached) {
-      log('Best practice cache hit', { cacheKey });
-      return {
-        examples: cached.examples.slice(0, maxResults),
-        searchMetadata: { ...cached.metadata, cacheHit: true }
-      };
-    }
-
-    // 전체 파일 목록 캐시 (5분간 유효)
-    let allCases = getCached<any[]>('all_file_cases');
-    if (!allCases) {
-      log('Loading all file cases...');
-      allCases = await fileCaseStorage.list();
-      setCache('all_file_cases', allCases, CACHE_TTL);
-      log('File cases cached', { count: allCases.length });
-    }
-
-    // 파일 역할 필터링
-    let candidates = allCases;
-    if (fileRole) {
-      candidates = allCases.filter((fc: any) => fc.fileRole === fileRole);
-    }
-
-    if (candidates.length === 0) {
-      return {
-        examples: [],
-        warning: `No files found for role: ${fileRole || 'any'}`
-      };
-    }
-
-    // 각 파일별 차원 점수 및 우수 차원 기록
-    const fileScores: Map<string, {
-      fileCase: any;
-      excellentDimensions: Array<{
-        dimension: keyof BestCaseScores;
-        score: number;
-        threshold: number;
-        reason: string;
-      }>;
-      topScore: number;
-    }> = new Map();
-
-    // 동적 임계값: 차원별로 상위 N% 선택
-    const effectiveThresholds = { ...dimensionThresholds };
-    if (enableDynamic && candidates.length > 0) {
-      // 각 차원별 평균 점수 계산
-      const avgScores: Record<keyof BestCaseScores, number> = {
-        apiConnection: 0,
-        errorHandling: 0,
-        typeUsage: 0,
-        stateManagement: 0,
-        designSystem: 0,
-        structure: 0,
-        performance: 0,
-        utilityUsage: 0
-      };
-
-      for (const dimension of dimensions) {
-        const scores = candidates.map((fc: any) => fc.scores[dimension] || 0);
-        const avg = scores.reduce((a: number, b: number) => a + b, 0) / scores.length;
-        avgScores[dimension] = avg;
-
-        // 차원별 하한선 적용 (우선순위: dimensionFloors > minFloor)
-        const dimFloor = dimensionFloors[dimension] ?? minFloor;
-
-        // 평균이 임계값보다 낮으면 동적으로 조정 (차원별 하한선 적용)
-        if (avg < dimensionThresholds[dimension]) {
-          const adjusted = Math.max(avg * 1.1, avg + 10);  // 평균 + 10% 또는 +10점
-          effectiveThresholds[dimension] = Math.max(adjusted, dimFloor);  // 차원별 하한선 보장
-          log('Dynamic threshold adjusted', {
-            dimension,
-            original: dimensionThresholds[dimension],
-            adjusted: effectiveThresholds[dimension],
-            average: avg,
-            floor: dimFloor,
-            customFloor: dimensionFloors[dimension] !== undefined
-          });
-        }
-      }
-    }
-
-    // 각 파일의 차원별 점수 평가
-    for (const fileCase of candidates) {
-      const excellentDimensions: Array<{
-        dimension: keyof BestCaseScores;
-        score: number;
-        threshold: number;
-        reason: string;  // 선택 이유 설명
-      }> = [];
-      let topScore = 0;
-
-      for (const dimension of dimensions) {
-        const score = fileCase.scores[dimension] || 0;
-        const threshold = effectiveThresholds[dimension];
-
-        if (score >= threshold) {
-          const exceedsBy = score - threshold;
-          const reason = `${dimension}: ${score} (threshold: ${threshold}, +${exceedsBy.toFixed(1)})`;
-          excellentDimensions.push({
-            dimension,
-            score,
-            threshold,
-            reason
-          });
-          topScore = Math.max(topScore, score);
-        }
-      }
-
-      if (excellentDimensions.length > 0) {
-        fileScores.set(fileCase.id, {
-          fileCase,
-          excellentDimensions,
-          topScore
-        });
-      }
-    }
-
-    // Fallback: 임계값을 낮춰서 재검색
-    if (fileScores.size === 0 && enableDynamic) {
-      log('No files found above threshold, falling back to top percentile');
-
-      // 상위 10% 파일 선택
-      const percentile = Math.ceil(candidates.length * 0.1);
-      const sortedByAvg = candidates
-        .map((fc: any) => ({
-          fileCase: fc,
-          avgScore: dimensions.reduce((sum, dim) => sum + (fc.scores[dim] || 0), 0) / dimensions.length
-        }))
-        .sort((a: any, b: any) => b.avgScore - a.avgScore)
-        .slice(0, percentile);
-
-      for (const { fileCase } of sortedByAvg) {
-        const excellentDimensions: Array<{
-          dimension: keyof BestCaseScores;
-          score: number;
-          threshold: number;
-          reason: string;
-        }> = [];
-        let topScore = 0;
-
-        for (const dimension of dimensions) {
-          const score = fileCase.scores[dimension] || 0;
-          const threshold = effectiveThresholds[dimension];
-          const reason = `${dimension}: ${score} (top percentile fallback)`;
-          excellentDimensions.push({
-            dimension,
-            score,
-            threshold,
-            reason
-          });
-          topScore = Math.max(topScore, score);
-        }
-
-        fileScores.set(fileCase.id, {
-          fileCase,
-          excellentDimensions,
-          topScore
-        });
-      }
-    }
-
-    // 점수순 정렬 및 결과 생성
-    const sortedResults = Array.from(fileScores.values())
-      .sort((a, b) => b.topScore - a.topScore);
-
-    const results = sortedResults.slice(0, maxResults).map(({ fileCase, excellentDimensions, topScore }) => ({
-      id: fileCase.id,
-      projectName: fileCase.projectName,
-      filePath: fileCase.filePath,
-      fileRole: fileCase.fileRole,
-      excellentIn: excellentDimensions.map(ed => ed.dimension),  // 차원 목록
-      excellentDetails: excellentDimensions,  // 상세 정보 (점수, 임계값, 이유)
-      topScore,
-      scores: {
-        // 요청된 차원의 점수만 포함
-        ...Object.fromEntries(dimensions.map(dim => [dim, fileCase.scores[dim] || 0]))
-      },
-      keywords: fileCase.keywords.slice(0, 10),
-      content: fileCase.content,
-      analysis: {
-        linesOfCode: fileCase.analysis.linesOfCode,
-        apiMethods: fileCase.analysis.apiMethods,
-        componentsUsed: fileCase.analysis.componentsUsed,
-        patterns: fileCase.analysis.patterns
-      }
-    }));
-
-    // 검색 메타데이터 생성 (가시성 향상)
-    const searchMetadata = {
-      dimensionsSearched: dimensions,
-      thresholdsUsed: Object.fromEntries(
-        dimensions.map(d => [d, effectiveThresholds[d]])
-      ) as Record<keyof BestCaseScores, number>,
-      candidateCount: candidates.length,
-      cacheHit: false
-    };
-
-    // 결과 캐싱 (메타데이터 포함)
-    setCache(cacheKey, { examples: results, metadata: searchMetadata }, CACHE_TTL);
-
-    log('Best practice search results', {
+    // 1. 스마트 캐시 키 생성 (동적 임계값 고려)
+    const cacheKeyData = generateBestPracticeCacheKey({
       dimensions,
-      thresholds: effectiveThresholds,
-      candidates: candidates.length,
-      found: results.length
+      fileRole,
+      thresholds: dimensionThresholds,
+      enableDynamicThreshold: enableDynamic
+      // effectiveThresholds는 아직 모르므로 일단 제외
     });
 
-    return { examples: results, searchMetadata };
+    // 2. 캐시 조회
+    const cached = globalCacheManager.get<{
+      examples: any[];
+      searchMetadata: any;
+    }>(cacheKeyData.key);
+
+    if (cached) {
+      log('BestPractice cache hit', {
+        key: cacheKeyData.key,
+        examples: cached.data.examples.length
+      });
+
+      return {
+        examples: cached.data.examples,
+        searchMetadata: {
+          ...cached.data.searchMetadata,
+          cacheHit: true
+        }
+      };
+    }
+
+    log('BestPractice cache miss', { key: cacheKeyData.key });
+
+    // 3. 검색 수행
+    const result = await searchBestPractices({
+      dimensions,
+      dimensionThresholds,
+      dimensionFloors,
+      minFloor,
+      enableDynamicThreshold: enableDynamic,
+      fileRole,
+      maxResults
+    });
+
+    // 4. 결과 캐싱 (실효 임계값 메타데이터 포함)
+    const effectiveThresholds = result.searchMetadata.thresholdsUsed;
+    const finalCacheKey = enableDynamic
+      ? generateBestPracticeCacheKey({
+          dimensions,
+          fileRole,
+          thresholds: dimensionThresholds,
+          enableDynamicThreshold: enableDynamic,
+          effectiveThresholds
+        }).key
+      : cacheKeyData.key;
+
+    globalCacheManager.set(
+      finalCacheKey,
+      {
+        examples: result.examples,
+        searchMetadata: result.searchMetadata
+      },
+      {
+        metadata: {
+          dimensions,
+          fileRole,
+          originalThresholds: dimensionThresholds,
+          effectiveThresholds,
+          enableDynamicThreshold: enableDynamic
+        }
+      }
+    );
+
+    log('BestPractice result cached', {
+      key: finalCacheKey,
+      examples: result.examples.length,
+      metadata: { effectiveThresholds }
+    });
+
+    return {
+      examples: result.examples,
+      searchMetadata: {
+        ...result.searchMetadata,
+        cacheHit: false
+      }
+    };
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error);
     log('Best practice search failed', { error: errorMsg });
@@ -1178,7 +895,7 @@ async function createAutoContext(options: AutoRecommendOptions): Promise<AutoCon
 
     // 파일 역할 추론 (개선: 더 정교한 패턴 매칭 + projectContext 활용)
     let inferredRole: string | undefined;
-    const normalizedPath = mergedOptions.filePath.toLowerCase();
+    const normalizedPath = mergedOptions.filePath?.toLowerCase() || '';
 
     // 정확한 디렉토리 경계 확인 (pages-edit 같은 오탐 방지)
     if (/\/pages\//.test(normalizedPath) || normalizedPath.endsWith('/pages')) inferredRole = 'page';
@@ -1191,7 +908,7 @@ async function createAutoContext(options: AutoRecommendOptions): Promise<AutoCon
     else if (/\/middleware\//.test(normalizedPath)) inferredRole = 'middleware';
 
     // projectContext에서 역할 추론 (우선순위 높음)
-    if (!inferredRole && projectContext) {
+    if (!inferredRole && projectContext && mergedOptions.filePath) {
       // projectContext의 패턴 정보 활용
       const patterns = projectContext.patterns || {};
       const relativePath = mergedOptions.filePath.replace(/^\/projects\/[^/]+\//, '');
@@ -1208,13 +925,35 @@ async function createAutoContext(options: AutoRecommendOptions): Promise<AutoCon
 
     log('Inferred file role', { role: inferredRole, path: mergedOptions.filePath });
 
-    // 중요 차원 추론 (사용자 정의 키워드 지원)
-    const importantDimensions = inferImportantDimensions(
+    // 중요 차원 추론 (V2: TF-IDF 스타일 + 가중치)
+    const customKeywordsWeighted: Partial<Record<keyof BestCaseScores, WeightedKeyword[]>> | undefined =
+      mergedOptions.customKeywords
+        ? Object.fromEntries(
+            Object.entries(mergedOptions.customKeywords).map(([dim, keywords]) => [
+              dim,
+              keywords?.map(k => ({ keyword: k, weight: 2.0 })) || []
+            ])
+          )
+        : undefined;
+
+    const dimensionInference = inferImportantDimensionsV2(
       mergedOptions.description,
       extractedKeywords,
-      mergedOptions.customKeywords
+      customKeywordsWeighted,
+      3  // 최대 3개 차원
     );
-    log('Important dimensions', { dimensions: importantDimensions });
+
+    const importantDimensions = dimensionInference.dimensions;
+
+    log('Important dimensions inferred (V2)', {
+      dimensions: importantDimensions,
+      scores: dimensionInference.scores,
+      details: dimensionInference.details.map(d => ({
+        dimension: d.dimension,
+        score: d.score.toFixed(2),
+        matchedKeywords: d.matchedKeywords.slice(0, 3)
+      }))
+    });
 
     // 다차원 검색 (캐싱 + 동적 임계값 + 차원별 설정 + 하한선 + 설명)
     const bestPracticeResult = await searchBestPracticeExamples(
@@ -1689,15 +1428,16 @@ ${escapedUserCode}
                   analysis: bp.analysis
                 }))
               : undefined,
-            projectInfo: autoContext.projectContext ? {
-              apiType: autoContext.projectContext.apiInfo?.type,
-              apiPackages: autoContext.projectContext.apiInfo?.packages || [],
-              apiConfidence: autoContext.projectContext.apiInfo?.confidence,
-              designSystem: autoContext.projectContext.designSystemInfo?.detected,
-              utilityLibrary: autoContext.projectContext.utilityLibraryInfo?.detected,
-              framework: autoContext.projectContext.framework,
-              hasPackageJson: autoContext.projectContext.hasPackageJson
-            } : undefined,
+            // ✅ Always include projectInfo (even if projectContext is null)
+            projectInfo: {
+              apiType: autoContext.projectContext?.apiInfo?.type || 'unknown',
+              apiPackages: autoContext.projectContext?.apiInfo?.packages || [],
+              apiConfidence: autoContext.projectContext?.apiInfo?.confidence || 'low',
+              designSystem: autoContext.projectContext?.designSystemInfo?.detected || [],
+              utilityLibrary: autoContext.projectContext?.utilityLibraryInfo?.detected || [],
+              framework: autoContext.projectContext?.framework,
+              hasPackageJson: autoContext.projectContext?.hasPackageJson || false
+            },
             extractedKeywords: autoContext.extractedKeywords.length > 0
               ? autoContext.extractedKeywords
               : undefined,
@@ -1748,15 +1488,16 @@ ${escapedUserCode}
                   contentPreview: bp.content ? bp.content.substring(0, 500) + '... [truncated]' : '[No content]'
                 }))
               : undefined,
-            projectInfo: autoContext.projectContext ? {
-              apiType: autoContext.projectContext.apiInfo?.type,
-              apiPackages: autoContext.projectContext.apiInfo?.packages || [],
-              apiConfidence: autoContext.projectContext.apiInfo?.confidence,
-              designSystem: autoContext.projectContext.designSystemInfo?.detected,
-              utilityLibrary: autoContext.projectContext.utilityLibraryInfo?.detected,
-              framework: autoContext.projectContext.framework,
-              hasPackageJson: autoContext.projectContext.hasPackageJson
-            } : undefined,
+            // ✅ Always include projectInfo (even if projectContext is null)
+            projectInfo: {
+              apiType: autoContext.projectContext?.apiInfo?.type || 'unknown',
+              apiPackages: autoContext.projectContext?.apiInfo?.packages || [],
+              apiConfidence: autoContext.projectContext?.apiInfo?.confidence || 'low',
+              designSystem: autoContext.projectContext?.designSystemInfo?.detected || [],
+              utilityLibrary: autoContext.projectContext?.utilityLibraryInfo?.detected || [],
+              framework: autoContext.projectContext?.framework,
+              hasPackageJson: autoContext.projectContext?.hasPackageJson || false
+            },
             extractedKeywords: autoContext.extractedKeywords.length > 0
               ? autoContext.extractedKeywords
               : undefined,

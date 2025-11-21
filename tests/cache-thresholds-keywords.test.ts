@@ -236,24 +236,80 @@ describe('Per-Dimension Threshold', () => {
     const avgScore = 40;
     const originalThreshold = 75;
 
-    // 동적 조정 시뮬레이션
+    // 동적 조정 시뮬레이션 (새로운 완화 전용 로직)
     let effectiveThreshold = originalThreshold;
     if (avgScore < originalThreshold) {
-      const dynamicThreshold = Math.max(avgScore * 1.1, avgScore + 10);
-      effectiveThreshold = Math.max(dynamicThreshold, thresholdFloor);
+      const dynamicAdjusted = Math.max(avgScore * 1.1, avgScore + 10);  // max(44, 50) = 50
+      const withFloor = Math.max(dynamicAdjusted, thresholdFloor);      // max(50, 50) = 50
+      const relaxedThreshold = Math.min(originalThreshold, withFloor);  // min(75, 50) = 50
+
+      // 완화 방향으로만 조정
+      if (relaxedThreshold < originalThreshold) {
+        effectiveThreshold = relaxedThreshold;
+      }
     }
 
-    expect(effectiveThreshold).toBe(50);  // floor에 의해 제한됨
+    expect(effectiveThreshold).toBe(50);  // floor에 의해 제한되어 50으로 완화됨
   });
 
   it('should not go below floor even with low averages', () => {
     const thresholdFloor = 50;
     const avgScore = 30;  // 매우 낮은 평균
+    const originalThreshold = 75;
 
-    const dynamicThreshold = Math.max(avgScore * 1.1, avgScore + 10);  // 40
-    const effectiveThreshold = Math.max(dynamicThreshold, thresholdFloor);  // 50
+    let effectiveThreshold = originalThreshold;
+    if (avgScore < originalThreshold) {
+      const dynamicAdjusted = Math.max(avgScore * 1.1, avgScore + 10);  // max(33, 40) = 40
+      const withFloor = Math.max(dynamicAdjusted, thresholdFloor);      // max(40, 50) = 50
+      const relaxedThreshold = Math.min(originalThreshold, withFloor);  // min(75, 50) = 50
 
-    expect(effectiveThreshold).toBe(50);
+      if (relaxedThreshold < originalThreshold) {
+        effectiveThreshold = relaxedThreshold;
+      }
+    }
+
+    expect(effectiveThreshold).toBe(50);  // floor를 넘지 않음
+  });
+
+  it('should NOT raise threshold even when dynamic calculation suggests higher value', () => {
+    // 문제 케이스: avg가 threshold보다 약간 낮을 때
+    const thresholdFloor = 50;
+    const avgScore = 70;
+    const originalThreshold = 75;
+
+    let effectiveThreshold = originalThreshold;
+    if (avgScore < originalThreshold) {
+      const dynamicAdjusted = Math.max(avgScore * 1.1, avgScore + 10);  // max(77, 80) = 80
+      const withFloor = Math.max(dynamicAdjusted, thresholdFloor);      // max(80, 50) = 80
+      const relaxedThreshold = Math.min(originalThreshold, withFloor);  // min(75, 80) = 75
+
+      // ✅ 완화 방향 체크: 75 < 75? NO → 조정하지 않음
+      if (relaxedThreshold < originalThreshold) {
+        effectiveThreshold = relaxedThreshold;
+      }
+    }
+
+    expect(effectiveThreshold).toBe(75);  // ✅ 원래 임계값 유지 (80으로 상승하지 않음)
+  });
+
+  it('should relax threshold when average is moderately low', () => {
+    const thresholdFloor = 50;
+    const avgScore = 60;
+    const originalThreshold = 75;
+
+    let effectiveThreshold = originalThreshold;
+    if (avgScore < originalThreshold) {
+      const dynamicAdjusted = Math.max(avgScore * 1.1, avgScore + 10);  // max(66, 70) = 70
+      const withFloor = Math.max(dynamicAdjusted, thresholdFloor);      // max(70, 50) = 70
+      const relaxedThreshold = Math.min(originalThreshold, withFloor);  // min(75, 70) = 70
+
+      // 완화 방향 체크: 70 < 75? YES → 완화
+      if (relaxedThreshold < originalThreshold) {
+        effectiveThreshold = relaxedThreshold;
+      }
+    }
+
+    expect(effectiveThreshold).toBe(70);  // ✅ 70으로 완화됨 (상승하지 않음)
   });
 });
 
