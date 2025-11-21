@@ -1561,7 +1561,7 @@ Sandbox APIs:
           warnings: autoContext.warnings
         };
 
-        // JSON을 안전하게 문자열로 변환 (이스케이프 처리)
+        // ✅ Context 객체를 코드에 직접 주입 (템플릿 리터럴 특수 문자 문제 방지)
         const contextJson = JSON.stringify(contextObject);
 
         const wrappedCode = `
@@ -1610,7 +1610,7 @@ Sandbox APIs:
 //
 // ============================================================
 
-const context = JSON.parse(${JSON.stringify(contextJson)});
+const context = ${contextJson};
 
 // ============================================================
 // 📝 User code starts here
