@@ -2462,6 +2462,7 @@ __metadata:
   dependencies:
     ai-bindings: "workspace:*"
     tsup: "npm:^8.5.0"
+    typescript: "npm:^5.9.3"
     vm2: "npm:^3.10.0"
   languageName: unknown
   linkType: soft

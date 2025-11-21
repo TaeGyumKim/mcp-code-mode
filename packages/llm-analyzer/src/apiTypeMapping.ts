@@ -4,6 +4,8 @@
  * Configurable mapping for detecting API types from package.json dependencies
  */
 
+import { promises as fs, existsSync } from 'fs';
+
 export interface ApiTypePattern {
   /**
    * Patterns to match in package names (supports wildcards)
@@ -128,9 +130,6 @@ export async function getApiTypeMapping(projectPath?: string): Promise<ApiTypeMa
   const localMcpPath = `${basePath}/.mcp/api-type-mapping.json`;
 
   try {
-    // Use static imports for better compatibility
-    const { promises: fs, existsSync } = require('fs');
-
     // Try global path first, then local path
     const configPath = existsSync(globalMcpPath) ? globalMcpPath : localMcpPath;
 

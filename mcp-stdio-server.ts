@@ -1662,9 +1662,12 @@ ${execArgs.code}
               : undefined,
             projectInfo: autoContext.projectContext ? {
               apiType: autoContext.projectContext.apiInfo?.type,
+              apiPackages: autoContext.projectContext.apiInfo?.packages || [],
+              apiConfidence: autoContext.projectContext.apiInfo?.confidence,
               designSystem: autoContext.projectContext.designSystemInfo?.detected,
               utilityLibrary: autoContext.projectContext.utilityLibraryInfo?.detected,
-              framework: autoContext.projectContext.framework
+              framework: autoContext.projectContext.framework,
+              hasPackageJson: autoContext.projectContext.hasPackageJson
             } : undefined,
             extractedKeywords: autoContext.extractedKeywords.length > 0
               ? autoContext.extractedKeywords

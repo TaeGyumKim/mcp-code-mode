@@ -274,6 +274,37 @@ function detectES6ModuleSyntax(code: string): boolean {
 }
 
 /**
+ * TypeScript를 JavaScript로 트랜스파일
+ *
+ * TypeScript Compiler API를 사용하여 완벽한 TypeScript 지원 제공
+ */
+async function transpileTypeScript(code: string): Promise<string> {
+  try {
+    // 동적 import로 TypeScript 로드 (빌드 시 번들링 방지)
+    const ts = await import('typescript');
+
+    const result = ts.transpileModule(code, {
+      compilerOptions: {
+        target: ts.ScriptTarget.ES2020,
+        module: ts.ModuleKind.ESNext,
+        jsx: ts.JsxEmit.React,
+        removeComments: false,
+        esModuleInterop: true,
+        allowSyntheticDefaultImports: true,
+        strict: false,
+        skipLibCheck: true,
+      }
+    });
+
+    return result.outputText;
+  } catch (error) {
+    // 트랜스파일 실패 시 원본 코드 반환
+    console.error('[transpileTypeScript] Failed to transpile:', error instanceof Error ? error.message : String(error));
+    return code;
+  }
+}
+
+/**
  * import/require 문 자동 제거 및 IIFE unwrap (전처리)
  *
  * vm2에서는 import/require가 차단되지만,
@@ -282,59 +313,90 @@ function detectES6ModuleSyntax(code: string): boolean {
  *
  * 또한 최상위 IIFE를 자동으로 unwrap하여 중복 wrap을 방지합니다.
  */
-function preprocessCode(code: string): string {
-  // import 문 전체 제거
-  code = code.replace(/import\s+.+?from\s+['"][^'"]+['"];?\s*/g, '');
+async function preprocessCode(code: string): Promise<string> {
+  // 0. 코드 앞뒤 공백 제거
+  code = code.trim();
 
-  // 단독 import 문 제거 (예: import 'module')
+  // 1. TypeScript 문법이 있으면 먼저 JavaScript로 변환
+  let wasTranspiled = false;
+  if (detectTypeScriptSyntax(code)) {
+    console.error('[preprocessCode] TypeScript detected, transpiling to JavaScript...');
+    code = await transpileTypeScript(code);
+    wasTranspiled = true;
+  }
+
+  // 2. import 문 제거 (여러 줄에 걸친 것도 포함)
+  // import type { ... } from '...'; 제거
+  code = code.replace(/import\s+type\s+\{[\s\S]*?\}\s+from\s+['"][^'"]+['"];?\s*/g, '');
+  code = code.replace(/import\s+type\s+[\w*]+\s+from\s+['"][^'"]+['"];?\s*/g, '');
+
+  // import { ... } from '...'; 제거 (여러 줄 가능)
+  code = code.replace(/import\s+\{[\s\S]*?\}\s+from\s+['"][^'"]+['"];?\s*/g, '');
+
+  // import * as Name from '...'; 제거
+  code = code.replace(/import\s+\*\s+as\s+\w+\s+from\s+['"][^'"]+['"];?\s*/g, '');
+
+  // import Name from '...'; 제거
+  code = code.replace(/import\s+\w+\s+from\s+['"][^'"]+['"];?\s*/g, '');
+
+  // import Name, { ... } from '...'; 제거
+  code = code.replace(/import\s+\w+,\s*\{[\s\S]*?\}\s+from\s+['"][^'"]+['"];?\s*/g, '');
+
+  // import '...'; 제거
   code = code.replace(/import\s+['"][^'"]+['"];?\s*/g, '');
 
-  // named exports 제거
-  // export { foo, bar }
-  code = code.replace(/export\s*\{[^}]*\}\s*;?\s*/g, '');
+  // 3. TypeScript 타입 어노테이션 제거 (TypeScript transpiler를 거치지 않은 경우만)
+  // TypeScript transpiler가 이미 모든 타입을 제거했으므로, 추가 regex 처리는 불필요하고 위험함
+  //
+  // 주의: 만약 TypeScript 문법이 없는 경우, regex 기반 타입 제거는 위험하므로 최소한만 적용
+  if (!wasTranspiled) {
+    // Vue PropType 제거만 안전하게 적용: as PropType<...> -> (빈 문자열)
+    code = code.replace(/\s+as\s+PropType<[^>]+>/g, '');
 
-  // export const/let/var/function/class 제거
+    // 나머지 TypeScript 관련 제거는 TypeScript transpiler가 처리하도록 함
+    // (regex 기반 타입 제거는 object literal의 콜론을 망가뜨릴 수 있어 위험)
+  }
+
+  // 4. named exports 제거
+  code = code.replace(/export\s*\{[^}]*\}\s*;?\s*/gm, '');
+
+  // 5. export const/let/var/function/class 제거
   code = code.replace(/export\s+(const|let|var|function|class|async\s+function)\s+/g, '$1 ');
 
-  // export default 처리 - 함수를 자동으로 IIFE로 변환 (return 없이)
+  // 6. export default 처리
   if (code.includes('export default')) {
-    // 1. export default async function name(...) { ... } -> await (async function name(...) { ... })()
+    // 6a. export default async function
     code = code.replace(
       /export\s+default\s+async\s+function(\s+\w+)?\s*\(([^)]*)\)\s*\{/g,
       'await (async function$1($2) {'
     );
 
-    // 2. export default function name(...) { ... } -> (function name(...) { ... })()
+    // 6b. export default function
     code = code.replace(
       /export\s+default\s+function(\s+\w+)?\s*\(([^)]*)\)\s*\{/g,
       '(function$1($2) {'
     );
 
-    // IIFE 닫기: 마지막 } 뒤에 )() 추가
-    // 주석과 공백을 무시하고 코드가 await (async function 또는 (async function으로 시작하는지 확인
-    const trimmedCode = code.replace(/^(\s|\/\/.*\n|\/\*[\s\S]*?\*\/)*/, '');
-    if (trimmedCode.match(/^(?:await\s+)?\((?:async\s+)?function/)) {
+    // 6c. ✅ IIFE 패턴이 코드 내 어디든 존재하면 )(를 추가
+    // (context injection으로 인해 코드 시작 부분이 아닐 수 있음)
+    if (/(?:await\s+)?\((?:async\s+)?function/.test(code)) {
       code = code.trimEnd();
       if (!code.endsWith(')()') && !code.endsWith(')();')) {
         code += ')()';
       }
     }
 
-    // 3. export default class -> class
+    // 6d. export default class
     code = code.replace(/export\s+default\s+class/g, 'class');
 
-    // 4. 나머지 export default (표현식, 객체 등) - 그대로 유지
-    code = code.replace(/export\s+default\s+/g, '');
-  }
+    // 6e. ✅ export default 객체 리터럴 처리
+    // 객체 리터럴이 statement position에 오면 block으로 해석되는 문제 방지
+    // export default { ... }; → return { ... };
+    code = code.replace(/export\s+default\s+(\{[\s\S]*?\})\s*;?/g, 'return $1;');
 
-  // 간단한 TypeScript 타입 어노테이션 제거 (export default 처리 이후)
-  // 함수 파라미터 타입: (param:Type) -> (param), (param: Type) -> (param)
-  // 모든 : Type 패턴을 찾아서 제거 (괄호 안에서만)
-  code = code.replace(/\(([^)]*)\)/g, (match, params) => {
-    // 파라미터 목록에서 타입 제거
-    const cleanedParams = params.replace(/(\w+)\s*:\s*[\w<>|&\[\]]+/g, '$1');
-    return `(${cleanedParams})`;
-  });
+    // 6f. 나머지 export default (배열, 문자열, 숫자 등)
+    code = code.replace(/export\s+default\s+/g, 'return ');
+  }
 
   return code;
 }
@@ -357,7 +419,7 @@ export async function runInSandbox(code: string, timeoutMs: number = 30000): Pro
   const logs: string[] = [];
 
   // ✅ import/export 문 자동 제거 및 코드 전처리
-  const preprocessedCode = preprocessCode(code);
+  const preprocessedCode = await preprocessCode(code);
 
   try {
 
@@ -376,6 +438,211 @@ export async function runInSandbox(code: string, timeoutMs: number = 30000): Pro
 
         // Guides API (동적 가이드 로딩)
         guides,
+
+        // ===== Vue 3 / Nuxt 3 Mock Functions =====
+        // Vue Composition API
+        ref: (value: any) => ({ value }),
+        computed: (getter: () => any) => ({ value: getter() }),
+        watch: () => {},
+        watchEffect: () => {},
+        onMounted: () => {},
+        onUnmounted: () => {},
+        onBeforeMount: () => {},
+        onBeforeUnmount: () => {},
+        onUpdated: () => {},
+        onBeforeUpdate: () => {},
+        reactive: (obj: any) => obj,
+        readonly: (obj: any) => obj,
+        toRef: (obj: any, key: string) => ({ value: obj[key] }),
+        toRefs: (obj: any) => obj,
+        isRef: (val: any) => false,
+        unref: (val: any) => val,
+        shallowRef: (value: any) => ({ value }),
+        triggerRef: () => {},
+        customRef: () => ({ value: undefined }),
+        shallowReactive: (obj: any) => obj,
+        shallowReadonly: (obj: any) => obj,
+        toRaw: (obj: any) => obj,
+        markRaw: (obj: any) => obj,
+        provide: () => {},
+        inject: () => undefined,
+        nextTick: async () => {},
+
+        // Nuxt Composables
+        definePageMeta: () => {},
+        defineNuxtComponent: () => ({}),
+        defineNuxtPlugin: () => {},
+        defineNuxtRouteMiddleware: () => {},
+        useRouter: () => ({
+          push: () => {},
+          replace: () => {},
+          go: () => {},
+          back: () => {},
+          forward: () => {},
+          currentRoute: { value: {} }
+        }),
+        useRoute: () => ({
+          path: '/',
+          query: {},
+          params: {},
+          hash: '',
+          fullPath: '/',
+          matched: [],
+          name: undefined,
+          meta: {},
+          redirectedFrom: undefined
+        }),
+        useCookie: (name: string) => ({ value: undefined }),
+        useState: (key: string, init?: () => any) => ({ value: init ? init() : undefined }),
+        useFetch: async () => ({ data: { value: null }, pending: { value: false }, error: { value: null }, refresh: async () => {} }),
+        useAsyncData: async () => ({ data: { value: null }, pending: { value: false }, error: { value: null }, refresh: async () => {} }),
+        useLazyFetch: async () => ({ data: { value: null }, pending: { value: false }, error: { value: null }, refresh: async () => {} }),
+        useLazyAsyncData: async () => ({ data: { value: null }, pending: { value: false }, error: { value: null }, refresh: async () => {} }),
+        useHead: () => {},
+        useSeoMeta: () => {},
+        useServerSeoMeta: () => {},
+        useNuxtApp: () => ({
+          provide: () => {},
+          hook: () => {},
+          callHook: () => {},
+          $config: {}
+        }),
+        useRuntimeConfig: () => ({ public: {}, app: {} }),
+        navigateTo: () => {},
+        abortNavigation: () => {},
+        setPageLayout: () => {},
+
+        // Supabase Mock
+        useSupabaseClient: () => ({}),
+        useSupabaseUser: () => ({ value: null }),
+        useSupabaseSession: () => ({ value: null }),
+        useSupabaseAuthOptionsAsync: async () => ({}),
+
+        // Custom Composables (Project-specific mocks)
+        LoadingManager: class {
+          static instance: any;
+          static getInstance() {
+            if (!this.instance) {
+              this.instance = new this();
+            }
+            return this.instance;
+          }
+          constructor() {}
+          show() {}
+          hide() {}
+          isLoading() { return false; }
+        },
+        useMobileCheck: () => ({ isMobile: { value: false } }),
+        useFormatting: () => ({
+          formatDate: (date: any) => String(date),
+          formatNumber: (num: any) => String(num),
+          formatCurrency: (amount: any) => String(amount)
+        }),
+        useBackendClient: () => new Proxy({}, {
+          get: (target, prop) => {
+            // Return async function for any method call
+            return async (...args: any[]) => ({ data: null, response: null });
+          }
+        }),
+        useCartStore: () => ({}),
+        useBrandStore: () => ({
+          getBrandId: (name: string) => null,
+          getBrandName: (id: number) => ''
+        }),
+        useAuth: () => ({ data: { value: null }, status: { value: 'unauthenticated' } }),
+
+        // Additional Project-specific Composables (luxurypanda-v2)
+        useOrderCookie: () => ({ value: null }),
+        useCategories: () => ({
+          categories: { value: [] },
+          loading: { value: false },
+          getDepthCategory: (path: string) => [],
+          getCategoryNodes: async () => []
+        }),
+        usePaging: (initialData?: any) => ({
+          currentPage: { value: 1 },
+          totalPages: { value: 1 },
+          pageSize: { value: 10 },
+          items: { value: initialData || [] },
+          goToPage: (page: number) => {},
+          nextPage: () => {},
+          prevPage: () => {}
+        }),
+        useBrand: async () => ({
+          brands: { value: [] },
+          loading: { value: false },
+          getBrandId: (name: string) => null,
+          getBrandName: (id: number) => '',
+          getBrands: async () => []
+        }),
+        useWish: () => ({
+          items: { value: [] },
+          addToWish: async () => {},
+          removeFromWish: async () => {}
+        }),
+        useRecent: () => ({ items: { value: [] } }),
+
+        // Swiper Library (swiper.js)
+        Pagination: {},
+        Navigation: {},
+        FreeMode: {},
+        Autoplay: {},
+        EffectFade: {},
+
+        // Utility Libraries
+        DateTime: {
+          now: () => ({
+            toISO: () => new Date().toISOString(),
+            toJSDate: () => new Date()
+          }),
+          fromISO: (iso: string) => ({
+            toISO: () => iso,
+            toJSDate: () => new Date(iso)
+          }),
+          fromJSDate: (date: Date) => ({
+            toISO: () => date.toISOString(),
+            toJSDate: () => date
+          })
+        },
+
+        // Utility Functions
+        getStaticUrl: (path: string) => `https://static.example.com${path}`,
+        moneyFormat: (amount: any) => String(amount),
+        moneyToNumber: (amount: any) => typeof amount === 'number' ? amount : parseFloat(String(amount).replace(/[^0-9.-]/g, '')) || 0,
+        rfdc: (obj: any) => JSON.parse(JSON.stringify(obj)), // fast deep clone mock
+        fastRedact: (opts?: any) => (obj: any) => obj, // fast-redact mock
+        storeToRefs: (store: any) => store, // Pinia storeToRefs mock
+        changeUint8ArrayToString: (arr: Uint8Array) => new TextDecoder().decode(arr),
+
+        // ConnectRPC (@connectrpc/connect) mocks
+        createContextKey: (defaultValue: any) => ({ id: Symbol('context-key'), defaultValue }),
+        createPromiseClient: (service: any) => ({}),
+        createGrpcWebTransport: (opts: any) => ({}),
+        ConnectError: class extends Error {
+          constructor(message: string) {
+            super(message);
+            this.name = 'ConnectError';
+          }
+        },
+
+        // Proto Enums/Constants (mock common ones)
+        GetMileagesRequest_Status: { ACTIVE: 0, EXPIRED: 1, USED: 2 },
+        OrderItemState: { PENDING: 0, CONFIRMED: 1, SHIPPED: 2, DELIVERED: 3 },
+
+        // Global objects
+        process: {
+          env: {
+            NODE_ENV: 'development',
+            NUXT_PUBLIC_API_BASE: 'http://localhost:3000'
+          }
+        },
+        pkg: { version: '1.0.0', name: 'mock-package' },
+
+        // Vue Props
+        defineProps: (props: any) => ({}),
+        defineEmits: (emits: any) => () => {},
+        defineExpose: (exposed: any) => {},
+        withDefaults: (props: any, defaults: any) => props,
 
         // Metadata API (메타데이터 추출)
         metadata: {
@@ -647,11 +914,23 @@ export async function runInSandbox(code: string, timeoutMs: number = 30000): Pro
       }
     });
 
-    const finalCode = `
-      (async () => {
-        return (${preprocessedCode})
-      })()
-    `;
+    // IIFE인지 확인: 코드가 )()로 끝나면 IIFE로 간주
+    // ✅ context injection으로 인해 다른 문장(const context = ...)이 앞에 올 수 있음
+    //    이 경우 마지막 IIFE 호출 결과를 리턴하도록 수정
+    const endsWithIIFECall = /\)\(\)\s*;?\s*$/.test(preprocessedCode.trim());
+
+    let finalCode: string;
+    if (endsWithIIFECall) {
+      // IIFE 호출이 있으면, 마지막 await 앞에 return 추가
+      const codeWithReturn = preprocessedCode.replace(
+        /(^|[\s\S]*\n\s*)(await\s+\([^)]*function[\s\S]+\)\(\)\s*;?\s*)$/,
+        '$1return $2'
+      );
+      finalCode = `(async () => { ${codeWithReturn} })()`;
+    } else {
+      finalCode = `(async () => { ${preprocessedCode} })()`;
+    }
+
 
     const result = await vm.run(finalCode);
 

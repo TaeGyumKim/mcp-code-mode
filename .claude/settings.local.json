@@ -46,7 +46,22 @@
       "Bash(yarn build:all:*)",
       "Bash(yarn workspace llm-analyzer run build:*)",
       "Bash(npm run:*)",
-      "Bash(yarn install)"
+      "Bash(yarn install)",
+      "Bash(tsx scripts/test/test-api-type-flow.ts:*)",
+      "Bash(yarn test:api-type-flow:*)",
+      "Bash(yarn add typescript)",
+      "Bash(timeout 60 bash:*)",
+      "Bash(if [ -f test-bestcases-results.json ])",
+      "Bash(then cat test-bestcases-results.json)",
+      "Bash(else echo \"Results file not found\")",
+      "Bash(else echo \"No results yet\")",
+      "Bash(else echo \"No test results file found\")",
+      "Bash(if [ -d \"d:\\01.Work\\08.rf\\mcp-code-mode-starter\\.github\\instructions\" ])",
+      "Bash(then ls -la \"d:\\01.Work\\08.rf\\mcp-code-mode-starter\\.github\\instructions\")",
+      "Bash(else echo \"instructions directory not found\")",
+      "Bash(rm:*)",
+      "Bash(tree:*)",
+      "Bash(docker --version:*)"
     ],
     "deny": [],
     "ask": []
