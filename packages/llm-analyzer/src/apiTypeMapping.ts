@@ -31,6 +31,7 @@ export interface ApiTypePattern {
 export interface ApiTypeMapping {
   grpc: ApiTypePattern;
   openapi: ApiTypePattern;
+  trpc: ApiTypePattern;
   rest: ApiTypePattern;
   graphql: ApiTypePattern;
 }
@@ -56,11 +57,24 @@ export const DEFAULT_API_TYPE_MAPPING: ApiTypeMapping = {
     patterns: [
       '@openapi',
       'openapi',
+      'openapi-types',
+      'openapi-typescript',
+      '*openapi*',
       'swagger',
       'swagger-ui',
       '@nestjs/swagger'
     ],
     priority: 8,
+    confidence: 'high'
+  },
+  trpc: {
+    patterns: [
+      '@trpc/client',
+      '@trpc/server',
+      '@trpc/*',
+      'trpc'
+    ],
+    priority: 7,
     confidence: 'high'
   },
   graphql: {
@@ -160,7 +174,7 @@ export async function getApiTypeMapping(projectPath?: string): Promise<ApiTypeMa
  * @returns Detected API type with confidence and matched packages
  */
 export interface ApiTypeInfo {
-  type: 'grpc' | 'openapi' | 'rest' | 'graphql' | 'mixed' | 'unknown';
+  type: 'grpc' | 'openapi' | 'trpc' | 'rest' | 'graphql' | 'mixed' | 'unknown';
   packages: string[];
   confidence: 'high' | 'medium' | 'low';
 }

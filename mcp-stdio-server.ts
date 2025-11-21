@@ -591,7 +591,8 @@ async function getProjectContext(filePath: string, customMarkers?: string[], cur
     const projectPath = inferProjectRoot(filePath, customMarkers);
     log('Inferred project root', { filePath, projectPath, customMarkers });
 
-    let context = await extractProjectContext(projectPath);
+    // filePath를 전달하여 package.json 기반 API 타입 추론 강화
+    let context = await extractProjectContext(projectPath, filePath);
 
     // NEW: currentFile이 제공되면 파일 내용 분석을 통해 context 강화
     if (currentFile) {

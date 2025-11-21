@@ -14,6 +14,14 @@ import { inferImportantDimensionsV2, type WeightedKeyword } from './dimensionKey
 
 const storage = new FileCaseStorage();
 
+// 디버그 로그 헬퍼
+const DEBUG = process.env.DEBUG_BESTPRACTICE === 'true';
+function debugLog(message: string, data?: any): void {
+  if (DEBUG) {
+    console.error(`[searchBestPractices] ${message}`, data ? JSON.stringify(data, null, 2) : '');
+  }
+}
+
 export interface SearchBestPracticesInput {
   /**
    * 검색할 차원 (중요도 순)
@@ -169,17 +177,15 @@ export async function searchBestPractices(
 
       const dimFloor = dimensionFloors[dimension] ?? minFloor;
 
-      // 평균이 임계값보다 낮으면 동적으로 조정
+      // 평균이 임계값보다 낮으면 임계값을 avg 근처로 완화
       if (avg < dimensionThresholds[dimension]) {
-        const dynamicAdjusted = Math.max(avg * 1.1, avg + 10);
-        const withFloor = Math.max(dynamicAdjusted, dimFloor);
+        // avg에서 5% 여유를 두되, floor 이상으로 유지
+        const relaxedThreshold = Math.max(avg * 0.95, dimFloor);
 
-        // ✅ 임계값은 완화 방향으로만 조정
-        const relaxedThreshold = Math.min(dimensionThresholds[dimension], withFloor);
-
+        // 임계값이 실제로 낮아진 경우에만 적용
         if (relaxedThreshold < dimensionThresholds[dimension]) {
           effectiveThresholds[dimension] = relaxedThreshold;
-          console.error(`[searchBestPractices] Threshold relaxed: ${dimension} ${dimensionThresholds[dimension]} → ${relaxedThreshold}`);
+          debugLog(`Threshold relaxed: ${dimension} ${dimensionThresholds[dimension]} → ${relaxedThreshold.toFixed(1)} (avg: ${avg.toFixed(1)})`);
         }
       }
     }
@@ -236,7 +242,7 @@ export async function searchBestPractices(
 
   // 4. Fallback: 임계값을 충족하는 파일이 없으면 상위 10% 선택
   if (fileScores.size === 0 && enableDynamicThreshold) {
-    console.error('[searchBestPractices] Fallback: No files above threshold, selecting top 10%');
+    debugLog('Fallback: No files above threshold, selecting top 10%');
 
     const percentile = Math.ceil(candidates.length * 0.1);
     const sortedByAvg = candidates
@@ -268,16 +274,17 @@ export async function searchBestPractices(
         const rank = dimensionScores.indexOf(score);
         const percentile = (1 - rank / dimensionScores.length) * 100;
 
-        // ✅ 조건: 상위 50% 이상이거나 평균 이상인 차원만 포함
+        // ✅ Fallback에서도 엄격한 기준: 상위 30% 이상이고, 임계값의 70% 이상인 경우만 포함
         const dimAvg = avgScores[dimension];
-        const isExcellent = percentile >= 50 || score >= dimAvg;
+        const minFallbackScore = threshold * 0.7; // 임계값의 70% 이상
+        const isExcellent = percentile >= 70 && score >= minFallbackScore;
 
         if (isExcellent) {
           excellentDimensions.push({
             dimension,
             score,
             threshold,
-            reason: `${dimension}: ${score} (top ${percentile.toFixed(1)}% in fallback, avg: ${dimAvg.toFixed(1)})`
+            reason: `fallback: top ${percentile.toFixed(1)}% (${score.toFixed(1)}/${threshold}, avg: ${dimAvg.toFixed(1)})`
           });
         }
         topScore = Math.max(topScore, score);
@@ -349,7 +356,7 @@ export async function searchBestPractices(
     fallbackPercentile: fallbackUsed ? Math.ceil(candidates.length * 0.1) : undefined
   };
 
-  console.error('[searchBestPractices] Results:', {
+  debugLog('Search completed', {
     candidates: candidates.length,
     found: results.length,
     fallbackUsed,

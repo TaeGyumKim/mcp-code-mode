@@ -29,7 +29,7 @@ export interface ProjectContext {
 
   // API type information
   apiInfo: {
-    type: 'grpc' | 'openapi' | 'rest' | 'graphql' | 'mixed' | 'unknown';
+    type: 'grpc' | 'openapi' | 'trpc' | 'rest' | 'graphql' | 'mixed' | 'unknown';
     packages: string[];
     confidence: 'high' | 'medium' | 'low';
   };
@@ -59,10 +59,56 @@ export interface ProjectContext {
 }
 
 /**
- * Extract project context from package.json
+ * Infer project root from file path by searching for package.json
  */
-export async function extractProjectContext(projectPath?: string): Promise<ProjectContext> {
-  const basePath = projectPath || process.env.PROJECTS_PATH || '/projects';
+async function inferProjectRoot(filePath: string): Promise<string | null> {
+  const { dirname, isAbsolute, join: pathJoin } = await import('path');
+  const { existsSync } = await import('fs');
+
+  // If relative path, use current working directory as base
+  let currentDir = isAbsolute(filePath) ? dirname(filePath) : process.cwd();
+
+  // Traverse up to find package.json (max 10 levels)
+  for (let i = 0; i < 10; i++) {
+    const packageJsonPath = pathJoin(currentDir, 'package.json');
+    if (existsSync(packageJsonPath)) {
+      console.error(`[inferProjectRoot] Found package.json at: ${currentDir}`);
+      return currentDir;
+    }
+
+    const parentDir = dirname(currentDir);
+    if (parentDir === currentDir) {
+      // Reached root directory
+      break;
+    }
+    currentDir = parentDir;
+  }
+
+  console.error(`[inferProjectRoot] No package.json found for: ${filePath}`);
+  return null;
+}
+
+/**
+ * Extract project context from package.json
+ *
+ * @param projectPath - Explicit project path (priority 1)
+ * @param filePath - File path to infer project root from (priority 2)
+ */
+export async function extractProjectContext(projectPath?: string, filePath?: string): Promise<ProjectContext> {
+  // Priority: explicit projectPath > inferred from filePath > env PROJECTS_PATH
+  let basePath = projectPath;
+
+  if (!basePath && filePath) {
+    const inferredRoot = await inferProjectRoot(filePath);
+    if (inferredRoot) {
+      basePath = inferredRoot;
+      console.error(`[extractProjectContext] Using inferred root from filePath: ${basePath}`);
+    }
+  }
+
+  if (!basePath) {
+    basePath = process.env.PROJECTS_PATH || '/projects';
+  }
 
   const context: ProjectContext = {
     projectPath: basePath,
